@@ -1,0 +1,21 @@
+{
+  "task_key": "choose_funeral_provider",
+  "version": 1,
+  "title": "Choose a funeral home",
+  "plain_summary": "You have the right to an itemized price list from any funeral home, in person or over the phone. You only need to buy the goods and services you want.",
+  "journey_week": 1,
+  "sort_order": 20,
+  "due_offset_days": 2,
+  "jurisdiction": "US",
+  "applies_when": { "always": true },
+  "attorney_referral": false,
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "Federal Trade Commission, Funeral Rule",
+      "url": "https://www.ftc.gov/legal-library/browse/rules/funeral-rule",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

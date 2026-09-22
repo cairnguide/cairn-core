@@ -1,0 +1,21 @@
+{
+  "task_key": "order_death_certificates",
+  "version": 1,
+  "title": "Order death certificates",
+  "plain_summary": "Most families need several certified copies, one for each bank, insurer, and agency. The funeral home can often order them for you. If not, order from the vital records office in the state where the death happened.",
+  "journey_week": 1,
+  "sort_order": 10,
+  "due_offset_days": 3,
+  "jurisdiction": "US",
+  "applies_when": { "always": true },
+  "attorney_referral": false,
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "CDC National Center for Health Statistics, Where to Write for Vital Records",
+      "url": "https://www.cdc.gov/nchs/w2w/index.htm",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

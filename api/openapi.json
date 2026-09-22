@@ -1,0 +1,2829 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Cairn API",
+    "description": "\nCairn walks a family through the logistics of a death, one step at a time.\n\nEvery response that moves a conversation forward carries a `next_step` with a\nsingle prompt, so clients can ask one question at a time. Errors use RFC 9457\nproblem details (`application/problem+json`) and never echo submitted values.\n\nAuthentication is an OIDC bearer token from the identity provider. The case is\nthe security boundary and is enforced in the database with row-level security.\n",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/v1/policies": {
+      "get": {
+        "tags": [
+          "Registration"
+        ],
+        "summary": "Current terms and privacy policy versions",
+        "operationId": "current_policies_v1_policies_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyVersions"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/registrations": {
+      "post": {
+        "tags": [
+          "Registration"
+        ],
+        "summary": "Create the Cairn account for a signed-in identity",
+        "description": "Call after the identity provider has signed the user in (password or passkey) and confirmed their email. Email comes from the verified token, never from the body. Records acceptance of the current terms and privacy policy. Safe to repeat: a returning user gets 200 and their existing account.",
+        "operationId": "register_v1_registrations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Account already existed. Returned unchanged apart from any name edits."
+          },
+          "403": {
+            "description": "Email not yet confirmed with the identity provider."
+          },
+          "422": {
+            "description": "Terms or privacy version is not the current one."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/me": {
+      "get": {
+        "tags": [
+          "Registration"
+        ],
+        "summary": "The signed-in user's account",
+        "operationId": "me_v1_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/cases": {
+      "post": {
+        "tags": [
+          "Cases"
+        ],
+        "summary": "Start a case and record who died",
+        "description": "UC-5. Creates the case, the caller's owner membership, and the deceased record in one transaction. UC-8: a fiduciary can include death_event and estate_flags in the same request, and set start_journey to build the journey once the minimum fields are present.",
+        "operationId": "create_case_v1_cases_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, not an owner, or the case does not exist."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/cases/{case_id}": {
+      "get": {
+        "tags": [
+          "Cases"
+        ],
+        "summary": "Case, deceased, and intake progress",
+        "operationId": "get_case_v1_cases__case_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, not an owner, or the case does not exist."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/deceased": {
+      "patch": {
+        "tags": [
+          "Cases"
+        ],
+        "summary": "Correct the deceased's identifying details",
+        "operationId": "patch_deceased_v1_cases__case_id__deceased_patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeceasedIdentityPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, not an owner, or the case does not exist."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/death-event": {
+      "put": {
+        "tags": [
+          "Cases"
+        ],
+        "summary": "Record the death event",
+        "description": "UC-6. Replaces all death-event fields. Omitted optional fields are cleared.",
+        "operationId": "put_death_event_v1_cases__case_id__death_event_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeathEventIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, not an owner, or the case does not exist."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/estate-flags": {
+      "patch": {
+        "tags": [
+          "Cases"
+        ],
+        "summary": "Answer the veteran and will questions",
+        "description": "UC-7. Send one answer at a time. Omitted answers are unchanged. 'skip' saves 'unknown'.",
+        "operationId": "patch_estate_flags_v1_cases__case_id__estate_flags_patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EstateFlagsIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, not an owner, or the case does not exist."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/journey": {
+      "post": {
+        "tags": [
+          "Journey"
+        ],
+        "summary": "Build the four-week journey",
+        "description": "UC-9. Matches the deceased's details to the current task templates and creates the case's tasks. Returns 409 with the missing fields until the date and state of death are recorded. Safe to repeat.",
+        "operationId": "build_journey_v1_cases__case_id__journey_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JourneyResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, not an owner, or the case does not exist."
+          },
+          "409": {
+            "description": "Required intake fields are missing."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Journey"
+        ],
+        "summary": "The journey, with one next action in front",
+        "description": "UC-9 and UC-12. While paused, returns a calm check-in and no task list.",
+        "operationId": "get_journey_v1_cases__case_id__journey_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JourneyResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, not an owner, or the case does not exist."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/journey/pause": {
+      "post": {
+        "tags": [
+          "Journey"
+        ],
+        "summary": "Step back from tasks for a while",
+        "description": "UC-12. Holds all progress exactly as it is. Stores only the time the pause ends. No reason or feeling is collected or stored.",
+        "operationId": "pause_journey_v1_cases__case_id__journey_pause_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PauseRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Req"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JourneyResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, not an owner, or the case does not exist."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/journey/resume": {
+      "post": {
+        "tags": [
+          "Journey"
+        ],
+        "summary": "Pick the tasks back up",
+        "description": "UC-12. Returns the journey with the same single next action as before the pause.",
+        "operationId": "resume_journey_v1_cases__case_id__journey_resume_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JourneyResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, not an owner, or the case does not exist."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/status": {
+      "get": {
+        "tags": [
+          "Journey"
+        ],
+        "summary": "Everything done, in progress, and next, in one view",
+        "description": "UC-13. Grouped by certificates, agencies, financial institutions, and other areas.",
+        "operationId": "case_status_v1_cases__case_id__status_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseStatusResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, not an owner, or the case does not exist."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/tasks/{task_id}": {
+      "get": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "Open a task with its guidance and sources",
+        "description": "Guidance, citations to the issuing authority, and anything already recorded for it.",
+        "operationId": "get_task_v1_cases__case_id__tasks__task_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, not an owner, or the task does not exist."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "Change a task's status or snooze it",
+        "description": "Setting status to done records the completion time. The response carries the next action.",
+        "operationId": "update_task_v1_cases__case_id__tasks__task_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, not an owner, or the task does not exist."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/tasks/{task_id}/certificate-order": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "Record a death certificate order",
+        "description": "UC-10. Saves copies and expected arrival, marks the task done, and returns the next task.",
+        "operationId": "record_certificate_order_v1_cases__case_id__tasks__task_id__certificate_order_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CertificateOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, not an owner, or the task does not exist."
+          },
+          "409": {
+            "description": "This task is not the death certificate task."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/tasks/{task_id}/institution-notices": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "Record that an institution was notified",
+        "description": "UC-11. Records the institution as notified and, by default, marks the task done so the journey moves on. Sending the same institution name again updates that entry.",
+        "operationId": "record_institution_notice_v1_cases__case_id__tasks__task_id__institution_notices_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstitutionNoticeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, not an owner, or the task does not exist."
+          },
+          "409": {
+            "description": "This task is not an institution notification task."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CaseOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "paused",
+              "closed"
+            ],
+            "title": "Status"
+          },
+          "relationship": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Relationship"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "journey_started_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Journey Started On"
+          },
+          "tasks_paused_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tasks Paused Until"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "relationship",
+          "journey_started_on",
+          "tasks_paused_until",
+          "created_at"
+        ],
+        "title": "CaseOut"
+      },
+      "CaseResponse": {
+        "properties": {
+          "case": {
+            "$ref": "#/components/schemas/CaseOut"
+          },
+          "deceased": {
+            "$ref": "#/components/schemas/DeceasedOut"
+          },
+          "intake": {
+            "$ref": "#/components/schemas/IntakeStatus"
+          },
+          "journey_task_count": {
+            "type": "integer",
+            "title": "Journey Task Count"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/Note"
+            },
+            "type": "array",
+            "title": "Notes"
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
+          }
+        },
+        "type": "object",
+        "required": [
+          "case",
+          "deceased",
+          "intake",
+          "journey_task_count",
+          "notes",
+          "next_step"
+        ],
+        "title": "CaseResponse"
+      },
+      "CaseStatusResponse": {
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Case Id"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date-time",
+            "title": "As Of"
+          },
+          "deceased_name": {
+            "type": "string",
+            "title": "Deceased Name"
+          },
+          "journey_paused": {
+            "type": "boolean",
+            "title": "Journey Paused"
+          },
+          "paused_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused Until"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/StatusCounts"
+          },
+          "next_action": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryStatus"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "certificate_order": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CertificateOrderRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "institution_notices": {
+            "items": {
+              "$ref": "#/components/schemas/InstitutionNotice"
+            },
+            "type": "array",
+            "title": "Institution Notices"
+          }
+        },
+        "type": "object",
+        "required": [
+          "case_id",
+          "as_of",
+          "deceased_name",
+          "journey_paused",
+          "paused_until",
+          "counts",
+          "next_action",
+          "categories",
+          "certificate_order",
+          "institution_notices"
+        ],
+        "title": "CaseStatusResponse"
+      },
+      "CategoryStatus": {
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/TaskCategory"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "done": {
+            "items": {
+              "$ref": "#/components/schemas/TaskSummary"
+            },
+            "type": "array",
+            "title": "Done"
+          },
+          "in_progress": {
+            "items": {
+              "$ref": "#/components/schemas/TaskSummary"
+            },
+            "type": "array",
+            "title": "In Progress"
+          },
+          "up_next": {
+            "items": {
+              "$ref": "#/components/schemas/TaskSummary"
+            },
+            "type": "array",
+            "title": "Up Next"
+          },
+          "set_aside": {
+            "items": {
+              "$ref": "#/components/schemas/TaskSummary"
+            },
+            "type": "array",
+            "title": "Set Aside",
+            "description": "Skipped or not applicable."
+          }
+        },
+        "type": "object",
+        "required": [
+          "category",
+          "label",
+          "done",
+          "in_progress",
+          "up_next",
+          "set_aside"
+        ],
+        "title": "CategoryStatus"
+      },
+      "CertificateOrderRecord": {
+        "properties": {
+          "copies_requested": {
+            "type": "integer",
+            "title": "Copies Requested"
+          },
+          "ordered_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Ordered On"
+          },
+          "expected_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected By"
+          },
+          "issuing_office": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issuing Office"
+          }
+        },
+        "type": "object",
+        "required": [
+          "copies_requested",
+          "ordered_on"
+        ],
+        "title": "CertificateOrderRecord"
+      },
+      "CertificateOrderRequest": {
+        "properties": {
+          "copies_requested": {
+            "type": "integer",
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Copies Requested"
+          },
+          "ordered_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Ordered On"
+          },
+          "expected_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected By"
+          },
+          "issuing_office": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issuing Office"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "copies_requested"
+        ],
+        "title": "CertificateOrderRequest"
+      },
+      "CheckIn": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/Option"
+            },
+            "type": "array",
+            "title": "Options"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message",
+          "options"
+        ],
+        "title": "CheckIn"
+      },
+      "CitationOut": {
+        "properties": {
+          "authority_name": {
+            "type": "string",
+            "title": "Authority Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "jurisdiction": {
+            "type": "string",
+            "title": "Jurisdiction"
+          },
+          "last_verified_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Verified On"
+          }
+        },
+        "type": "object",
+        "required": [
+          "authority_name",
+          "url",
+          "jurisdiction",
+          "last_verified_on"
+        ],
+        "title": "CitationOut"
+      },
+      "ConsentOut": {
+        "properties": {
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "terms",
+              "privacy",
+              "ai_processing"
+            ],
+            "title": "Purpose"
+          },
+          "policy_version": {
+            "type": "string",
+            "title": "Policy Version"
+          },
+          "granted_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Granted At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "purpose",
+          "policy_version",
+          "granted_at"
+        ],
+        "title": "ConsentOut"
+      },
+      "CreateCaseRequest": {
+        "properties": {
+          "relationship": {
+            "$ref": "#/components/schemas/Relationship"
+          },
+          "deceased": {
+            "$ref": "#/components/schemas/DeceasedIdentityIn"
+          },
+          "death_event": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeathEventIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "estate_flags": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EstateFlagsIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start_journey": {
+            "type": "boolean",
+            "title": "Start Journey",
+            "description": "Generate the journey in the same request if the minimum fields are present.",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "relationship",
+          "deceased"
+        ],
+        "title": "CreateCaseRequest",
+        "description": "Creates the case, the first owner membership, and the deceased record in one transaction.\n\ndeath_event and estate_flags are optional so a fiduciary with complete\nrecords can send everything in one session (UC-8). Each section is still\nvalidated and audited on its own."
+      },
+      "DeathEventIn": {
+        "properties": {
+          "date_of_death": {
+            "type": "string",
+            "format": "date",
+            "title": "Date Of Death"
+          },
+          "death_state": {
+            "type": "string",
+            "title": "Death State",
+            "description": "State where the death occurred. This decides which vital records office issues the certificate. It may differ from the state of residence.",
+            "examples": [
+              "NH"
+            ]
+          },
+          "place_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlaceType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "county": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "County"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "facility_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Facility Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "date_of_death",
+          "death_state"
+        ],
+        "title": "DeathEventIn"
+      },
+      "DeceasedIdentityIn": {
+        "properties": {
+          "legal_first_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Legal First Name"
+          },
+          "legal_middle_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legal Middle Name"
+          },
+          "legal_last_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Legal Last Name"
+          },
+          "date_of_birth": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Of Birth"
+          },
+          "domicile_state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "examples": [
+                  "NH"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domicile State",
+            "description": "State of legal residence."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "legal_first_name",
+          "legal_last_name"
+        ],
+        "title": "DeceasedIdentityIn"
+      },
+      "DeceasedIdentityPatch": {
+        "properties": {
+          "legal_first_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legal First Name"
+          },
+          "legal_middle_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legal Middle Name"
+          },
+          "legal_last_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legal Last Name"
+          },
+          "date_of_birth": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Of Birth"
+          },
+          "domicile_state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "examples": [
+                  "NH"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domicile State"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "DeceasedIdentityPatch",
+        "description": "Edits after the first save. Omitted fields are left unchanged. Null clears an optional field."
+      },
+      "DeceasedOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "legal_first_name": {
+            "type": "string",
+            "title": "Legal First Name"
+          },
+          "legal_middle_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legal Middle Name"
+          },
+          "legal_last_name": {
+            "type": "string",
+            "title": "Legal Last Name"
+          },
+          "date_of_birth": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Of Birth"
+          },
+          "domicile_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domicile State"
+          },
+          "veteran_status": {
+            "$ref": "#/components/schemas/TriState"
+          },
+          "has_will": {
+            "$ref": "#/components/schemas/TriState"
+          },
+          "date_of_death": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Of Death"
+          },
+          "place_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlaceType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "death_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Death State"
+          },
+          "county": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "County"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "facility_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Facility Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "legal_first_name",
+          "legal_middle_name",
+          "legal_last_name",
+          "date_of_birth",
+          "domicile_state",
+          "veteran_status",
+          "has_will",
+          "date_of_death",
+          "place_type",
+          "death_state",
+          "county",
+          "city",
+          "facility_name"
+        ],
+        "title": "DeceasedOut"
+      },
+      "EstateFlagsIn": {
+        "properties": {
+          "veteran_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TriStateAnswer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "has_will": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TriStateAnswer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "EstateFlagsIn",
+        "description": "Answer one question at a time. Omitted fields are unchanged. 'skip' saves 'unknown'."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "InstitutionNotice": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "institution_name": {
+            "type": "string",
+            "title": "Institution Name"
+          },
+          "institution_type": {
+            "type": "string",
+            "title": "Institution Type"
+          },
+          "notified_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Notified On"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          },
+          "status": {
+            "type": "string",
+            "const": "notified",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "institution_name",
+          "institution_type",
+          "notified_on",
+          "status"
+        ],
+        "title": "InstitutionNotice"
+      },
+      "InstitutionNoticeRequest": {
+        "properties": {
+          "institution_name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Institution Name"
+          },
+          "institution_type": {
+            "$ref": "#/components/schemas/InstitutionType",
+            "default": "bank"
+          },
+          "notified_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Notified On"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "phone",
+                  "in_person",
+                  "mail",
+                  "online"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          },
+          "complete_task": {
+            "type": "boolean",
+            "title": "Complete Task",
+            "description": "Mark the task done after recording this notice.",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "institution_name"
+        ],
+        "title": "InstitutionNoticeRequest",
+        "description": "Record that an institution was told. Do not send account numbers. There is no field for them."
+      },
+      "InstitutionType": {
+        "type": "string",
+        "enum": [
+          "bank",
+          "credit_union",
+          "brokerage",
+          "insurer",
+          "credit_bureau",
+          "other"
+        ],
+        "title": "InstitutionType"
+      },
+      "IntakeStatus": {
+        "properties": {
+          "ready_for_journey": {
+            "type": "boolean",
+            "title": "Ready For Journey",
+            "description": "True when the minimum fields for the journey are present."
+          },
+          "missing_required": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Required"
+          },
+          "unanswered_optional": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unanswered Optional"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ready_for_journey",
+          "missing_required",
+          "unanswered_optional"
+        ],
+        "title": "IntakeStatus"
+      },
+      "JourneyResponse": {
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Case Id"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "tasks",
+              "paused",
+              "not_started"
+            ],
+            "title": "Mode"
+          },
+          "journey_started_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Journey Started On"
+          },
+          "current_week": {
+            "type": "integer",
+            "title": "Current Week"
+          },
+          "paused_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused Until"
+          },
+          "check_in": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheckIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "next_action": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "weeks": {
+            "items": {
+              "$ref": "#/components/schemas/WeekOut"
+            },
+            "type": "array",
+            "title": "Weeks"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/Note"
+            },
+            "type": "array",
+            "title": "Notes"
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
+          }
+        },
+        "type": "object",
+        "required": [
+          "case_id",
+          "mode",
+          "journey_started_on",
+          "current_week",
+          "weeks",
+          "notes",
+          "next_step"
+        ],
+        "title": "JourneyResponse"
+      },
+      "NextStep": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "title": "Action",
+            "description": "Machine-readable step code the client routes on."
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt",
+            "description": "Plain-language text to show the user."
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Option"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action",
+          "prompt"
+        ],
+        "title": "NextStep",
+        "description": "The single next thing to ask or do. Clients render one question at a time."
+      },
+      "Note": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "acknowledgment",
+              "info",
+              "legal"
+            ],
+            "title": "Kind"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "legal_review_required": {
+            "type": "boolean",
+            "title": "Legal Review Required",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "text"
+        ],
+        "title": "Note"
+      },
+      "Option": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available",
+            "default": true
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailable Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "Option"
+      },
+      "PauseRequest": {
+        "properties": {
+          "pause_days": {
+            "type": "integer",
+            "maximum": 90.0,
+            "minimum": 1.0,
+            "title": "Pause Days",
+            "default": 30
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PauseRequest",
+        "description": "No reason field, on purpose. Cairn does not store why someone stepped back."
+      },
+      "PlaceType": {
+        "type": "string",
+        "enum": [
+          "hospital",
+          "hospice",
+          "home",
+          "facility",
+          "other"
+        ],
+        "title": "PlaceType"
+      },
+      "PolicyVersions": {
+        "properties": {
+          "terms_version": {
+            "type": "string",
+            "title": "Terms Version"
+          },
+          "privacy_version": {
+            "type": "string",
+            "title": "Privacy Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "terms_version",
+          "privacy_version"
+        ],
+        "title": "PolicyVersions"
+      },
+      "RegistrationRequest": {
+        "properties": {
+          "first_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "First Name"
+          },
+          "last_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Last Name"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32,
+                "minLength": 7,
+                "pattern": "^\\+?[0-9 ().-]{7,32}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "accepted_terms_version": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Accepted Terms Version"
+          },
+          "accepted_privacy_version": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Accepted Privacy Version"
+          },
+          "relationship_to_deceased": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Relationship"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional. Shapes the welcome and first question. Not stored on the account. It is stored per case, on case_members, when a case is created."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "first_name",
+          "last_name",
+          "accepted_terms_version",
+          "accepted_privacy_version"
+        ],
+        "title": "RegistrationRequest"
+      },
+      "RegistrationResponse": {
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/UserOut"
+          },
+          "consents": {
+            "items": {
+              "$ref": "#/components/schemas/ConsentOut"
+            },
+            "type": "array",
+            "title": "Consents"
+          },
+          "language_profile": {
+            "type": "string",
+            "enum": [
+              "family",
+              "professional"
+            ],
+            "title": "Language Profile"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/Note"
+            },
+            "type": "array",
+            "title": "Notes"
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user",
+          "consents",
+          "language_profile",
+          "notes",
+          "next_step"
+        ],
+        "title": "RegistrationResponse"
+      },
+      "Relationship": {
+        "type": "string",
+        "enum": [
+          "spouse",
+          "child",
+          "sibling",
+          "other_family",
+          "power_of_attorney",
+          "fiduciary"
+        ],
+        "title": "Relationship"
+      },
+      "StatusCounts": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "done": {
+            "type": "integer",
+            "title": "Done"
+          },
+          "in_progress": {
+            "type": "integer",
+            "title": "In Progress"
+          },
+          "not_started": {
+            "type": "integer",
+            "title": "Not Started"
+          },
+          "set_aside": {
+            "type": "integer",
+            "title": "Set Aside"
+          },
+          "overdue": {
+            "type": "integer",
+            "title": "Overdue"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "done",
+          "in_progress",
+          "not_started",
+          "set_aside",
+          "overdue"
+        ],
+        "title": "StatusCounts"
+      },
+      "TaskCategory": {
+        "type": "string",
+        "enum": [
+          "certificates",
+          "funeral",
+          "agencies",
+          "financial_institutions",
+          "home_and_personal",
+          "other"
+        ],
+        "title": "TaskCategory"
+      },
+      "TaskDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "task_key": {
+            "type": "string",
+            "title": "Task Key"
+          },
+          "template_version": {
+            "type": "integer",
+            "title": "Template Version"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "plain_summary": {
+            "type": "string",
+            "title": "Plain Summary"
+          },
+          "journey_week": {
+            "type": "integer",
+            "title": "Journey Week"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          },
+          "category": {
+            "$ref": "#/components/schemas/TaskCategory"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TaskKind"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus"
+          },
+          "due_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due On"
+          },
+          "snoozed_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snoozed Until"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "attorney_referral": {
+            "type": "boolean",
+            "title": "Attorney Referral"
+          },
+          "attorney_referral_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attorney Referral Note"
+          },
+          "content_reviewed_by_counsel": {
+            "type": "boolean",
+            "title": "Content Reviewed By Counsel",
+            "description": "False while the guidance is an unreviewed draft. Clients should label it as such."
+          },
+          "jurisdiction": {
+            "type": "string",
+            "title": "Jurisdiction"
+          },
+          "death_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Death State"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/CitationOut"
+            },
+            "type": "array",
+            "title": "Citations"
+          },
+          "certificate_order": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CertificateOrderRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "institution_notices": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/InstitutionNotice"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Institution Notices"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "task_key",
+          "template_version",
+          "title",
+          "plain_summary",
+          "journey_week",
+          "sort_order",
+          "category",
+          "kind",
+          "status",
+          "due_on",
+          "snoozed_until",
+          "completed_at",
+          "attorney_referral",
+          "attorney_referral_note",
+          "content_reviewed_by_counsel",
+          "jurisdiction",
+          "death_state",
+          "citations"
+        ],
+        "title": "TaskDetail"
+      },
+      "TaskKind": {
+        "type": "string",
+        "enum": [
+          "certificate_order",
+          "institution_notice",
+          "general"
+        ],
+        "title": "TaskKind",
+        "description": "Tasks with a structured completion record. Everything else is 'general'."
+      },
+      "TaskResponse": {
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/TaskDetail"
+          },
+          "next_action": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/Note"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task",
+          "next_action",
+          "notes"
+        ],
+        "title": "TaskResponse"
+      },
+      "TaskStatus": {
+        "type": "string",
+        "enum": [
+          "not_started",
+          "in_progress",
+          "done",
+          "skipped",
+          "not_applicable"
+        ],
+        "title": "TaskStatus"
+      },
+      "TaskSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "task_key": {
+            "type": "string",
+            "title": "Task Key"
+          },
+          "template_version": {
+            "type": "integer",
+            "title": "Template Version"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "plain_summary": {
+            "type": "string",
+            "title": "Plain Summary"
+          },
+          "journey_week": {
+            "type": "integer",
+            "title": "Journey Week"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          },
+          "category": {
+            "$ref": "#/components/schemas/TaskCategory"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TaskKind"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus"
+          },
+          "due_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due On"
+          },
+          "snoozed_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snoozed Until"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "attorney_referral": {
+            "type": "boolean",
+            "title": "Attorney Referral"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "task_key",
+          "template_version",
+          "title",
+          "plain_summary",
+          "journey_week",
+          "sort_order",
+          "category",
+          "kind",
+          "status",
+          "due_on",
+          "snoozed_until",
+          "completed_at",
+          "attorney_referral"
+        ],
+        "title": "TaskSummary"
+      },
+      "TaskUpdateRequest": {
+        "properties": {
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "snoozed_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snoozed Until"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TaskUpdateRequest"
+      },
+      "TriState": {
+        "type": "string",
+        "enum": [
+          "yes",
+          "no",
+          "unknown"
+        ],
+        "title": "TriState"
+      },
+      "TriStateAnswer": {
+        "type": "string",
+        "enum": [
+          "yes",
+          "no",
+          "unknown",
+          "skip"
+        ],
+        "title": "TriStateAnswer",
+        "description": "What the client may send. 'skip' is stored as 'unknown'."
+      },
+      "UserOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "first_name": {
+            "type": "string",
+            "title": "First Name"
+          },
+          "last_name": {
+            "type": "string",
+            "title": "Last Name"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "first_name",
+          "last_name"
+        ],
+        "title": "UserOut"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "WeekOut": {
+        "properties": {
+          "week": {
+            "type": "integer",
+            "title": "Week"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "done": {
+            "type": "integer",
+            "title": "Done"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/TaskSummary"
+            },
+            "type": "array",
+            "title": "Tasks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "week",
+          "total",
+          "done",
+          "tasks"
+        ],
+        "title": "WeekOut"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "description": "OIDC token from the Cairn identity provider.",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Registration",
+      "description": "UC-1 to UC-4. Account creation for each persona."
+    },
+    {
+      "name": "Cases",
+      "description": "UC-5 to UC-8. The case, the deceased, and the death."
+    },
+    {
+      "name": "Journey",
+      "description": "UC-9, UC-12, UC-13. The four-week journey, pausing, and status."
+    },
+    {
+      "name": "Tasks",
+      "description": "UC-10, UC-11. Working through individual tasks."
+    }
+  ]
+}

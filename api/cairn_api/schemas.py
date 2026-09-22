@@ -1,0 +1,461 @@
+"""Request and response contracts. These models are the OpenAPI (Swagger) schema.
+
+Every request model forbids unknown fields and trims whitespace, so the API
+accepts exactly what the contract describes and nothing else. Validation here
+mirrors the database constraints so users get a plain-language answer before a
+round trip. The database remains the enforced backstop.
+"""
+from __future__ import annotations
+
+import re
+from datetime import date, datetime
+from enum import Enum
+from typing import Annotated, Literal
+from uuid import UUID
+
+from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, model_validator
+
+# ------------------------------------------------------------------ shared types
+
+# USPS codes for the 50 states, DC, and the territories that run their own vital
+# records offices. The database domain only checks the shape (two capital letters).
+US_STATE_CODES = frozenset(
+    "AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ "
+    "NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY DC PR GU VI AS MP".split()
+)
+
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _state_code(value: object) -> object:
+    if isinstance(value, str):
+        value = value.strip().upper()
+        if value not in US_STATE_CODES:
+            raise ValueError("must be a two-letter US state or territory code")
+    return value
+
+
+def _no_control_chars(value: str) -> str:
+    if _CONTROL_CHARS.search(value):
+        raise ValueError("contains characters that aren't allowed")
+    return value
+
+
+def _not_future(value: date) -> date:
+    if value > date.today():
+        raise ValueError("can't be in the future")
+    return value
+
+
+StateCode = Annotated[str, BeforeValidator(_state_code), Field(examples=["NH"], pattern=r"^[A-Z]{2}$")]
+Name = Annotated[str, Field(min_length=1, max_length=100), AfterValidator(_no_control_chars)]
+OptionalText100 = Annotated[str, Field(min_length=1, max_length=100), AfterValidator(_no_control_chars)]
+OptionalText200 = Annotated[str, Field(min_length=1, max_length=200), AfterValidator(_no_control_chars)]
+PastDate = Annotated[date, AfterValidator(_not_future)]
+
+
+class RequestModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+
+class ResponseModel(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+
+class Relationship(str, Enum):
+    spouse = "spouse"
+    child = "child"
+    sibling = "sibling"
+    other_family = "other_family"
+    power_of_attorney = "power_of_attorney"
+    fiduciary = "fiduciary"
+
+
+class TriState(str, Enum):
+    yes = "yes"
+    no = "no"
+    unknown = "unknown"
+
+
+class TriStateAnswer(str, Enum):
+    """What the client may send. 'skip' is stored as 'unknown'."""
+    yes = "yes"
+    no = "no"
+    unknown = "unknown"
+    skip = "skip"
+
+
+class PlaceType(str, Enum):
+    hospital = "hospital"
+    hospice = "hospice"
+    home = "home"
+    facility = "facility"
+    other = "other"
+
+
+class TaskStatus(str, Enum):
+    not_started = "not_started"
+    in_progress = "in_progress"
+    done = "done"
+    skipped = "skipped"
+    not_applicable = "not_applicable"
+
+
+class TaskCategory(str, Enum):
+    certificates = "certificates"
+    funeral = "funeral"
+    agencies = "agencies"
+    financial_institutions = "financial_institutions"
+    home_and_personal = "home_and_personal"
+    other = "other"
+
+
+class TaskKind(str, Enum):
+    """Tasks with a structured completion record. Everything else is 'general'."""
+    certificate_order = "certificate_order"
+    institution_notice = "institution_notice"
+    general = "general"
+
+
+# ------------------------------------------------------------------ conversational envelope
+
+class Option(ResponseModel):
+    value: str
+    label: str
+    available: bool = True
+    unavailable_reason: str | None = None
+
+
+class NextStep(ResponseModel):
+    """The single next thing to ask or do. Clients render one question at a time."""
+    action: str = Field(description="Machine-readable step code the client routes on.")
+    prompt: str = Field(description="Plain-language text to show the user.")
+    options: list[Option] | None = None
+
+
+class Note(ResponseModel):
+    kind: Literal["acknowledgment", "info", "legal"]
+    text: str
+    legal_review_required: bool = False
+
+
+# ------------------------------------------------------------------ registration (UC-1 to UC-4)
+
+class RegistrationRequest(RequestModel):
+    first_name: Name
+    last_name: Name
+    phone: Annotated[str, Field(min_length=7, max_length=32, pattern=r"^\+?[0-9 ().-]{7,32}$")] | None = None
+    accepted_terms_version: Annotated[str, Field(min_length=1, max_length=50)]
+    accepted_privacy_version: Annotated[str, Field(min_length=1, max_length=50)]
+    relationship_to_deceased: Relationship | None = Field(
+        default=None,
+        description="Optional. Shapes the welcome and first question. Not stored on the account. "
+                    "It is stored per case, on case_members, when a case is created.",
+    )
+
+
+class UserOut(ResponseModel):
+    id: UUID
+    email: str
+    first_name: str
+    last_name: str
+    phone: str | None = None
+
+
+class ConsentOut(ResponseModel):
+    purpose: Literal["terms", "privacy", "ai_processing"]
+    policy_version: str
+    granted_at: datetime
+
+
+class RegistrationResponse(ResponseModel):
+    user: UserOut
+    consents: list[ConsentOut]
+    language_profile: Literal["family", "professional"]
+    notes: list[Note]
+    next_step: NextStep
+
+
+class PolicyVersions(ResponseModel):
+    terms_version: str
+    privacy_version: str
+
+
+# ------------------------------------------------------------------ case and deceased (UC-5 to UC-8)
+
+class DeceasedIdentityIn(RequestModel):
+    legal_first_name: Name
+    legal_middle_name: OptionalText100 | None = None
+    legal_last_name: Name
+    date_of_birth: PastDate | None = None
+    domicile_state: StateCode | None = Field(default=None, description="State of legal residence.")
+
+
+class DeceasedIdentityPatch(RequestModel):
+    """Edits after the first save. Omitted fields are left unchanged. Null clears an optional field."""
+    legal_first_name: Name | None = None
+    legal_middle_name: OptionalText100 | None = None
+    legal_last_name: Name | None = None
+    date_of_birth: PastDate | None = None
+    domicile_state: StateCode | None = None
+
+    @model_validator(mode="after")
+    def _check(self):
+        if not self.model_fields_set:
+            raise ValueError("send at least one field to change")
+        for required in ("legal_first_name", "legal_last_name"):
+            if required in self.model_fields_set and getattr(self, required) is None:
+                raise ValueError(f"{required} can't be cleared")
+        return self
+
+
+class DeathEventIn(RequestModel):
+    date_of_death: PastDate
+    death_state: StateCode = Field(description="State where the death occurred. This decides which vital "
+                                               "records office issues the certificate. It may differ from "
+                                               "the state of residence.")
+    place_type: PlaceType | None = None
+    county: OptionalText100 | None = None
+    city: OptionalText100 | None = None
+    facility_name: OptionalText200 | None = None
+
+
+class EstateFlagsIn(RequestModel):
+    """Answer one question at a time. Omitted fields are unchanged. 'skip' saves 'unknown'."""
+    veteran_status: TriStateAnswer | None = None
+    has_will: TriStateAnswer | None = None
+
+    @model_validator(mode="after")
+    def _at_least_one(self):
+        if self.veteran_status is None and self.has_will is None:
+            raise ValueError("send veteran_status, has_will, or both")
+        return self
+
+
+class CreateCaseRequest(RequestModel):
+    """Creates the case, the first owner membership, and the deceased record in one transaction.
+
+    death_event and estate_flags are optional so a fiduciary with complete
+    records can send everything in one session (UC-8). Each section is still
+    validated and audited on its own.
+    """
+    relationship: Relationship
+    deceased: DeceasedIdentityIn
+    death_event: DeathEventIn | None = None
+    estate_flags: EstateFlagsIn | None = None
+    start_journey: bool = Field(
+        default=False,
+        description="Generate the journey in the same request if the minimum fields are present.",
+    )
+
+    @model_validator(mode="after")
+    def _dates_in_order(self):
+        dob = self.deceased.date_of_birth
+        if dob and self.death_event and self.death_event.date_of_death < dob:
+            raise ValueError("the date of death is earlier than the date of birth")
+        return self
+
+
+class CaseOut(ResponseModel):
+    id: UUID
+    status: Literal["active", "paused", "closed"]
+    relationship: Relationship | None
+    journey_started_on: date
+    tasks_paused_until: datetime | None
+    created_at: datetime
+
+
+class DeceasedOut(ResponseModel):
+    id: UUID
+    legal_first_name: str
+    legal_middle_name: str | None
+    legal_last_name: str
+    date_of_birth: date | None
+    domicile_state: str | None
+    veteran_status: TriState
+    has_will: TriState
+    date_of_death: date | None
+    place_type: PlaceType | None
+    death_state: str | None
+    county: str | None
+    city: str | None
+    facility_name: str | None
+
+
+class IntakeStatus(ResponseModel):
+    ready_for_journey: bool = Field(description="True when the minimum fields for the journey are present.")
+    missing_required: list[str]
+    unanswered_optional: list[str]
+
+
+class CaseResponse(ResponseModel):
+    case: CaseOut
+    deceased: DeceasedOut
+    intake: IntakeStatus
+    journey_task_count: int
+    notes: list[Note]
+    next_step: NextStep
+
+
+# ------------------------------------------------------------------ journey and tasks (UC-9 to UC-13)
+
+class CitationOut(ResponseModel):
+    authority_name: str
+    url: str
+    jurisdiction: str
+    last_verified_on: date | None
+
+
+class TaskSummary(ResponseModel):
+    id: UUID
+    task_key: str
+    template_version: int
+    title: str
+    plain_summary: str
+    journey_week: int
+    sort_order: int
+    category: TaskCategory
+    kind: TaskKind
+    status: TaskStatus
+    due_on: date | None
+    snoozed_until: datetime | None
+    completed_at: datetime | None
+    attorney_referral: bool
+
+
+class CertificateOrderRecord(ResponseModel):
+    copies_requested: int
+    ordered_on: date
+    expected_by: date | None = None
+    issuing_office: str | None = None
+
+
+class InstitutionNotice(ResponseModel):
+    id: UUID
+    institution_name: str
+    institution_type: str
+    notified_on: date
+    method: str | None = None
+    status: Literal["notified"]
+
+
+class TaskDetail(TaskSummary):
+    attorney_referral_note: str | None
+    content_reviewed_by_counsel: bool = Field(
+        description="False while the guidance is an unreviewed draft. Clients should label it as such.")
+    jurisdiction: str
+    death_state: str | None
+    citations: list[CitationOut]
+    certificate_order: CertificateOrderRecord | None = None
+    institution_notices: list[InstitutionNotice] | None = None
+
+
+class WeekOut(ResponseModel):
+    week: int
+    total: int
+    done: int
+    tasks: list[TaskSummary]
+
+
+class CheckIn(ResponseModel):
+    message: str
+    options: list[Option]
+
+
+class JourneyResponse(ResponseModel):
+    case_id: UUID
+    mode: Literal["tasks", "paused", "not_started"]
+    journey_started_on: date
+    current_week: int
+    paused_until: datetime | None = None
+    check_in: CheckIn | None = None
+    next_action: TaskSummary | None = None
+    weeks: list[WeekOut]
+    notes: list[Note]
+    next_step: NextStep
+
+
+class TaskResponse(ResponseModel):
+    task: TaskDetail
+    next_action: TaskSummary | None
+    notes: list[Note]
+
+
+class TaskUpdateRequest(RequestModel):
+    status: TaskStatus | None = None
+    snoozed_until: datetime | None = None
+
+    @model_validator(mode="after")
+    def _at_least_one(self):
+        if not self.model_fields_set:
+            raise ValueError("send status, snoozed_until, or both")
+        if "status" in self.model_fields_set and self.status is None:
+            raise ValueError("status can't be null")
+        return self
+
+
+class CertificateOrderRequest(RequestModel):
+    copies_requested: Annotated[int, Field(ge=1, le=50)]
+    ordered_on: PastDate = Field(default_factory=date.today)
+    expected_by: date | None = None
+    issuing_office: OptionalText200 | None = None
+
+    @model_validator(mode="after")
+    def _order(self):
+        if self.expected_by and self.expected_by < self.ordered_on:
+            raise ValueError("expected_by can't be before ordered_on")
+        return self
+
+
+class InstitutionType(str, Enum):
+    bank = "bank"
+    credit_union = "credit_union"
+    brokerage = "brokerage"
+    insurer = "insurer"
+    credit_bureau = "credit_bureau"
+    other = "other"
+
+
+class InstitutionNoticeRequest(RequestModel):
+    """Record that an institution was told. Do not send account numbers. There is no field for them."""
+    institution_name: OptionalText200
+    institution_type: InstitutionType = InstitutionType.bank
+    notified_on: PastDate = Field(default_factory=date.today)
+    method: Literal["phone", "in_person", "mail", "online"] | None = None
+    complete_task: bool = Field(default=True, description="Mark the task done after recording this notice.")
+
+
+class PauseRequest(RequestModel):
+    """No reason field, on purpose. Cairn does not store why someone stepped back."""
+    pause_days: Annotated[int, Field(ge=1, le=90)] = 30
+
+
+class CategoryStatus(ResponseModel):
+    category: TaskCategory
+    label: str
+    done: list[TaskSummary]
+    in_progress: list[TaskSummary]
+    up_next: list[TaskSummary]
+    set_aside: list[TaskSummary] = Field(description="Skipped or not applicable.")
+
+
+class StatusCounts(ResponseModel):
+    total: int
+    done: int
+    in_progress: int
+    not_started: int
+    set_aside: int
+    overdue: int
+
+
+class CaseStatusResponse(ResponseModel):
+    case_id: UUID
+    as_of: datetime
+    deceased_name: str
+    journey_paused: bool
+    paused_until: datetime | None
+    counts: StatusCounts
+    next_action: TaskSummary | None
+    categories: list[CategoryStatus]
+    certificate_order: CertificateOrderRecord | None
+    institution_notices: list[InstitutionNotice]

@@ -1,0 +1,21 @@
+{
+  "task_key": "notify_banks",
+  "version": 1,
+  "title": "Let the banks know",
+  "plain_summary": "Call or visit each bank where they had an account. Say you are calling to report a death and ask what they need. Have a certified death certificate ready. Joint accounts and accounts with a named beneficiary are often handled differently.",
+  "journey_week": 2,
+  "sort_order": 20,
+  "due_offset_days": 12,
+  "jurisdiction": "US",
+  "applies_when": { "always": true },
+  "attorney_referral": false,
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "Consumer Financial Protection Bureau",
+      "url": "https://www.consumerfinance.gov/ask-cfpb/what-happens-if-i-have-a-joint-bank-account-with-someone-who-died-en-1101/",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}
