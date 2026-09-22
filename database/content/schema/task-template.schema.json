@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/cairn/task-template.schema.json",
+  "title": "Cairn journey task template",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task_key", "version", "title", "plain_summary", "journey_week", "due_offset_days",
+    "jurisdiction", "applies_when", "attorney_referral", "counsel_reviewed_at", "citations"
+  ],
+  "properties": {
+    "task_key": { "type": "string", "pattern": "^[a-z][a-z0-9_]{2,63}$" },
+    "version": { "type": "integer", "minimum": 1 },
+    "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "plain_summary": { "type": "string", "minLength": 1, "maxLength": 600 },
+    "journey_week": { "type": "integer", "minimum": 1, "maximum": 4 },
+    "sort_order": { "type": "integer", "default": 0 },
+    "due_offset_days": { "type": "integer", "minimum": 0, "maximum": 90 },
+    "jurisdiction": { "type": "string", "pattern": "^(US|[A-Z]{2})$" },
+    "applies_when": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "always": { "const": true },
+        "veteran_status": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": { "enum": ["yes", "no", "unknown"] }
+        },
+        "has_will": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": { "enum": ["yes", "no", "unknown"] }
+        },
+        "death_state": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[A-Z]{2}$" }
+        },
+        "domicile_state": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[A-Z]{2}$" }
+        }
+      },
+      "if": { "required": ["always"] },
+      "then": { "maxProperties": 1 }
+    },
+    "attorney_referral": { "type": "boolean" },
+    "attorney_referral_note": { "type": "string", "minLength": 1, "maxLength": 600 },
+    "counsel_reviewed_at": {
+      "type": ["string", "null"],
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}(T[0-9:.+\\-Z]+)?$"
+    },
+    "citations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["authority_name", "url", "jurisdiction", "last_verified_on"],
+        "properties": {
+          "authority_name": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "url": { "type": "string", "pattern": "^https://" },
+          "jurisdiction": { "type": "string", "pattern": "^(US|[A-Z]{2})$" },
+          "last_verified_on": {
+            "type": ["string", "null"],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          }
+        }
+      }
+    }
+  },
+  "if": { "properties": { "attorney_referral": { "const": true } }, "required": ["attorney_referral"] },
+  "then": { "required": ["attorney_referral_note"] }
+}

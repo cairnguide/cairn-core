@@ -1,0 +1,21 @@
+{
+  "task_key": "notify_social_security",
+  "version": 1,
+  "title": "Let Social Security know",
+  "plain_summary": "Ask the funeral home whether they will report the death for you, then confirm it was done.",
+  "journey_week": 2,
+  "sort_order": 10,
+  "due_offset_days": 10,
+  "jurisdiction": "US",
+  "applies_when": { "always": true },
+  "attorney_referral": false,
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "Social Security Administration",
+      "url": "https://www.ssa.gov/benefits/survivors/",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

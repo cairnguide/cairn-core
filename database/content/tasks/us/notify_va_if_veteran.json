@@ -1,0 +1,21 @@
+{
+  "task_key": "notify_va_if_veteran",
+  "version": 1,
+  "title": "Check for veteran benefits",
+  "plain_summary": "Find out whether burial honors or survivor benefits from the VA may apply, and gather service records if you can.",
+  "journey_week": 3,
+  "sort_order": 20,
+  "due_offset_days": 17,
+  "jurisdiction": "US",
+  "applies_when": { "veteran_status": ["yes", "unknown"] },
+  "attorney_referral": false,
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "U.S. Department of Veterans Affairs",
+      "url": "https://www.va.gov/burials-memorials/",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}
