@@ -47,6 +47,8 @@ GRANT SELECT ON cairn.case_members TO cairn_app;
 GRANT INSERT (case_id, user_id, relationship, role, status) ON cairn.case_members TO cairn_app;
 
 -- ---------------------------------------------------------------- deceased
+-- One table and one policy set now cover both identity fields (UC-5) and death
+-- event fields (UC-6), since the two were merged into a single one-to-one row.
 ALTER TABLE cairn.deceased ENABLE ROW LEVEL SECURITY;
 CREATE POLICY deceased_select ON cairn.deceased FOR SELECT TO cairn_app
   USING (cairn.is_case_member(case_id));
@@ -57,24 +59,13 @@ CREATE POLICY deceased_update ON cairn.deceased FOR UPDATE TO cairn_app
   WITH CHECK (cairn.is_case_member(case_id, ARRAY['owner', 'co_executor']));
 GRANT SELECT ON cairn.deceased TO cairn_app;
 GRANT INSERT (case_id, legal_first_name, legal_middle_name, legal_last_name, date_of_birth,
-              ssn_last4, domicile_state, veteran_status, has_will) ON cairn.deceased TO cairn_app;
+              ssn_last4, domicile_state, veteran_status, has_will,
+              date_of_death, place_type, facility_name, city, county, death_state)
+  ON cairn.deceased TO cairn_app;
 GRANT UPDATE (legal_first_name, legal_middle_name, legal_last_name, date_of_birth,
-              ssn_last4, domicile_state, veteran_status, has_will) ON cairn.deceased TO cairn_app;
-
--- ---------------------------------------------------------------- death_events
-ALTER TABLE cairn.death_events ENABLE ROW LEVEL SECURITY;
-CREATE POLICY death_events_select ON cairn.death_events FOR SELECT TO cairn_app
-  USING (cairn.is_case_member(cairn.case_of_deceased(deceased_id)));
-CREATE POLICY death_events_insert ON cairn.death_events FOR INSERT TO cairn_app
-  WITH CHECK (cairn.is_case_member(cairn.case_of_deceased(deceased_id), ARRAY['owner', 'co_executor']));
-CREATE POLICY death_events_update ON cairn.death_events FOR UPDATE TO cairn_app
-  USING (cairn.is_case_member(cairn.case_of_deceased(deceased_id), ARRAY['owner', 'co_executor']))
-  WITH CHECK (cairn.is_case_member(cairn.case_of_deceased(deceased_id), ARRAY['owner', 'co_executor']));
-GRANT SELECT ON cairn.death_events TO cairn_app;
-GRANT INSERT (deceased_id, date_of_death, place_type, facility_name, city, county, death_state)
-  ON cairn.death_events TO cairn_app;
-GRANT UPDATE (date_of_death, place_type, facility_name, city, county, death_state)
-  ON cairn.death_events TO cairn_app;
+              ssn_last4, domicile_state, veteran_status, has_will,
+              date_of_death, place_type, facility_name, city, county, death_state)
+  ON cairn.deceased TO cairn_app;
 
 -- ---------------------------------------------------------------- case_tasks
 ALTER TABLE cairn.case_tasks ENABLE ROW LEVEL SECURITY;

@@ -57,6 +57,13 @@ CREATE TABLE cairn.case_members (
 );
 CREATE INDEX case_members_user_idx ON cairn.case_members (user_id);
 
+-- deceased and death_events were originally separate tables. They were merged
+-- because the relationship is one-to-one and always accessed together, and the
+-- merge lets the database enforce date_of_death against date_of_birth directly.
+-- The application still collects these fields in two steps (identity first, then
+-- the death event), which now means an INSERT followed by an UPDATE on the same
+-- row rather than an insert into a second table. See UC-5 and UC-6 in
+-- docs/cairn-mvp-use-cases.md.
 CREATE TABLE cairn.deceased (
   id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   case_id          uuid NOT NULL UNIQUE REFERENCES cairn.cases (id) ON DELETE CASCADE,
@@ -68,21 +75,22 @@ CREATE TABLE cairn.deceased (
   ssn_last4        text CHECK (ssn_last4 IS NULL OR ssn_last4 ~ '^[0-9]{4}$'),
   domicile_state   cairn.state_code,
   veteran_status   cairn.tri_state NOT NULL DEFAULT 'unknown',
-  has_will         cairn.tri_state NOT NULL DEFAULT 'unknown'
-);
-
-CREATE TABLE cairn.death_events (
-  deceased_id   uuid PRIMARY KEY REFERENCES cairn.deceased (id) ON DELETE CASCADE,
-  date_of_death date NOT NULL CHECK (date_of_death <= current_date),
-  place_type    text NOT NULL
-                  CHECK (place_type IN ('hospital', 'hospice', 'home', 'facility', 'other')),
-  facility_name text CHECK (facility_name IS NULL OR length(facility_name) <= 200),
-  city          text CHECK (city IS NULL OR length(city) <= 100),
-  county        text CHECK (county IS NULL OR length(county) <= 100),
-  death_state   cairn.state_code NOT NULL
+  has_will         cairn.tri_state NOT NULL DEFAULT 'unknown',
+  -- Death event fields. Null until the UC-6 step is completed.
+  date_of_death    date CHECK (date_of_death IS NULL OR date_of_death <= current_date),
+  place_type       text CHECK (place_type IS NULL
+                               OR place_type IN ('hospital', 'hospice', 'home', 'facility', 'other')),
+  facility_name    text CHECK (facility_name IS NULL OR length(facility_name) <= 200),
+  city             text CHECK (city IS NULL OR length(city) <= 100),
+  county           text CHECK (county IS NULL OR length(county) <= 100),
+  -- Determines the issuing vital records office. Required before the journey can
+  -- generate jurisdiction-matched tasks (see cairn.generate_case_tasks).
+  death_state      cairn.state_code,
+  CONSTRAINT death_not_before_birth
+    CHECK (date_of_birth IS NULL OR date_of_death IS NULL OR date_of_death >= date_of_birth)
 );
 
 COMMENT ON COLUMN cairn.deceased.ssn_last4 IS 'Last four digits only. Sensitive. Never log.';
-COMMENT ON COLUMN cairn.death_events.death_state IS 'Determines the issuing vital records office.';
+COMMENT ON COLUMN cairn.deceased.death_state IS 'Determines the issuing vital records office.';
 COMMENT ON COLUMN cairn.cases.tasks_paused_until IS
   'Lets the product step back from task mode. Do not store distress inferences.';

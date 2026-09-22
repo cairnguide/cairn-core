@@ -4,14 +4,13 @@ Scope: sign up, create a case, collect information about the user and the deceas
 
 This is a cloud-agnostic conceptual model. It is a reduced version of the full conceptual model in this folder.
 
-Last revised 2026-09-21 to adopt the content-as-code approach for journey templates (see the decision log below) and to add `attorney_referral_note` while writing the database scripts.
+Last revised 2026-09-22 to merge DECEASED and DEATH_EVENT into a single table (see Design notes) after 2026-09-21 changes that adopted the content-as-code approach for journey templates (see the decision log below) and added `attorney_referral_note`.
 
 ```mermaid
 erDiagram
     USER ||--o{ CASE_MEMBER : "holds"
     CASE ||--o{ CASE_MEMBER : "has"
     CASE ||--|| DECEASED : "is about"
-    DECEASED ||--|| DEATH_EVENT : "has"
     CASE ||--o{ CASE_TASK : "journey"
     CONTENT_FILE ||--o{ TASK_TEMPLATE : "loaded at deploy as"
     TASK_TEMPLATE ||--o{ CASE_TASK : "instantiated as"
@@ -61,16 +60,12 @@ erDiagram
         string domicile_state "drives probate content"
         string veteran_status "yes, no, unknown"
         string has_will "yes, no, unknown"
-    }
-
-    DEATH_EVENT {
-        uuid deceased_id PK, FK "relational"
-        date date_of_death
+        date date_of_death "null until the death-event step (UC-6)"
         string place_type "hospital, hospice, home, facility, other"
         string facility_name
         string city
         string county
-        string death_state "drives vital records office"
+        string death_state "drives vital records office, required for the journey to generate"
     }
 
     CONTENT_FILE {
@@ -262,6 +257,7 @@ WHERE t.task_key = 'notify_social_security'
 - `tasks_paused_until` lets the product step back from task mode without storing any inference about the user's emotional state.
 - Do not persist distress classifications at MVP. Health and mental health details are sensitive under the project's privacy policy draft.
 - `TEMPLATE_CITATION` and `counsel_reviewed_at` enforce the rule that jurisdiction-specific guidance needs a citation to the issuing authority and legal review.
+- **DECEASED and DEATH_EVENT are one table.** The two entities were originally split, but the relationship is one-to-one and the death-event fields (`date_of_death`, `place_type`, `facility_name`, `city`, `county`, `death_state`) are always read together with the identity fields. Merging them removes a join from every query and, most usefully, lets the database enforce `date_of_death >= date_of_birth` directly with a single check constraint. The two-step UX from UC-5 (identity) and UC-6 (death event) is unchanged. It is now an `INSERT` followed by an `UPDATE` on the same row rather than an insert into a second table. `death_state` stays required before the journey can generate jurisdiction-matched tasks, even though the column itself is nullable to support the two-step entry.
 
 ## Sources
 

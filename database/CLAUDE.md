@@ -72,6 +72,7 @@ Install loader dependencies with `pip install -r tools/requirements.txt`.
 - `consents` is keyed to the user only (no `case_id`).
 - The loader also enforces that `due_offset_days` falls within the template's `journey_week`.
 - `context_items` ships as an optional migration because the MVP has not yet decided where that store lives.
+- `deceased` and `death_events` were merged into a single `deceased` table on 2026-09-22, since they are a one-to-one, always-together relationship. This also let a `date_of_death >= date_of_birth` check constraint be added directly, closing the gap noted below. If any environment already ran the pre-merge migrations, see the note under Migrations below before re-running `apply.sh`.
 
 ## Open questions for the product owner (do not guess)
 
@@ -82,6 +83,12 @@ Install loader dependencies with `pip install -r tools/requirements.txt`.
 5. Is application-layer encryption of `ssn_last4` wanted on top of encryption at rest?
 6. Identity provider choice (`users.idp_subject` is provider-neutral). Multi-factor and passkey requirements live there.
 7. Templates with `domicile_state` rules do not match when `domicile_state` is null. Is that the intended behavior?
+
+Resolved: `date_of_death` before `date_of_birth` is now rejected by the database directly (`death_not_before_birth` check constraint on `deceased`), now that the two dates live on one row.
+
+## Migrations and the deceased/death_events merge
+
+Migration `0002_core_tables.sql` was edited in place to merge `deceased` and `death_events` rather than layered as a new migration, since nothing indicates this schema has been applied anywhere beyond this repository's own test runs. `apply.sh` tracks each file by checksum, so if you have already run these migrations against a real database (including a personal dev database), running `apply.sh` again will fail on the checksum for `0002_core_tables.sql`, `0005_functions.sql`, and `0006_rls_and_grants.sql`. Drop and recreate that database, or write the merge as a new migration (`0007`) instead, which is the correct approach for any environment that has already shipped this schema.
 
 ## Suggested next tasks
 

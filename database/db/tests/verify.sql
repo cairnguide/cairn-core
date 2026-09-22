@@ -79,12 +79,14 @@ SELECT set_config('app.user_id', :'alice', true);
 INSERT INTO cairn.cases (created_by) VALUES (:'alice'::uuid) RETURNING id AS case_a \gset
 INSERT INTO cairn.case_members (case_id, user_id, relationship, role)
   VALUES (:'case_a'::uuid, :'alice'::uuid, 'spouse', 'owner');
+-- Identity fields (UC-5) then death event fields (UC-6) as two statements on
+-- the same row, matching the two-step UX now that the tables are merged.
 INSERT INTO cairn.deceased (case_id, legal_first_name, legal_last_name, date_of_birth, ssn_last4,
                             domicile_state, veteran_status, has_will)
   VALUES (:'case_a'::uuid, 'Dan', 'Anders', '1950-01-01', '1234', 'NH', 'yes', 'no')
   RETURNING id AS dec_a \gset
-INSERT INTO cairn.death_events (deceased_id, date_of_death, place_type, death_state)
-  VALUES (:'dec_a'::uuid, current_date - 2, 'hospital', 'NH');
+UPDATE cairn.deceased SET date_of_death = current_date - 2, place_type = 'hospital', death_state = 'NH'
+  WHERE id = :'dec_a'::uuid;
 INSERT INTO cairn.consents (user_id, purpose, policy_version) VALUES (:'alice'::uuid, 'privacy', 'v0');
 INSERT INTO cairn.audit_events (actor_id, case_id, action) VALUES (:'alice'::uuid, :'case_a'::uuid, 'case_created');
 
@@ -104,6 +106,9 @@ SELECT pg_temp.expect_fail(format($q$INSERT INTO cairn.case_members (case_id,use
 SELECT pg_temp.expect_fail(format($q$UPDATE cairn.deceased SET ssn_last4 = '12345' WHERE case_id = %L$q$, :'case_a'));
 SELECT pg_temp.expect_fail(format($q$UPDATE cairn.case_tasks SET status = 'done' WHERE case_id = %L$q$, :'case_a'));
 SELECT pg_temp.expect_fail($q$UPDATE cairn.users SET email = 'changed@example.test'$q$);
+-- date_of_death cannot precede date_of_birth. Dan's date_of_birth is 1950-01-01
+-- and date_of_death is current_date - 2, so moving birth to today violates it.
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.deceased SET date_of_birth = current_date WHERE id = %L$q$, :'dec_a'));
 
 -- Alice can complete a task properly.
 UPDATE cairn.case_tasks SET status = 'done', completed_at = now()
@@ -114,7 +119,6 @@ UPDATE cairn.case_tasks SET status = 'done', completed_at = now()
 SELECT set_config('app.user_id', :'bob', true);
 SELECT pg_temp.expect_count('SELECT 1 FROM cairn.cases', 0);
 SELECT pg_temp.expect_count('SELECT 1 FROM cairn.deceased', 0);
-SELECT pg_temp.expect_count('SELECT 1 FROM cairn.death_events', 0);
 SELECT pg_temp.expect_count('SELECT 1 FROM cairn.case_members', 0);
 SELECT pg_temp.expect_count('SELECT 1 FROM cairn.case_tasks', 0);
 SELECT pg_temp.expect_count('SELECT 1 FROM cairn.consents', 0);
@@ -130,6 +134,9 @@ DECLARE n bigint;
 BEGIN
   UPDATE cairn.deceased SET legal_first_name = 'Hacked';  GET DIAGNOSTICS n = ROW_COUNT;
   IF n <> 0 THEN RAISE EXCEPTION 'Bob updated % deceased rows', n; END IF;
+  -- Same table, same policy: death-event columns are covered by the identical check.
+  UPDATE cairn.deceased SET death_state = 'CA';           GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 0 THEN RAISE EXCEPTION 'Bob updated % death_state rows', n; END IF;
   UPDATE cairn.case_tasks SET status = 'skipped';         GET DIAGNOSTICS n = ROW_COUNT;
   IF n <> 0 THEN RAISE EXCEPTION 'Bob updated % task rows', n; END IF;
   DELETE FROM cairn.cases;                                 GET DIAGNOSTICS n = ROW_COUNT;

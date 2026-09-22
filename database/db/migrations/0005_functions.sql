@@ -89,11 +89,13 @@ LANGUAGE plpgsql SECURITY INVOKER SET search_path = cairn, pg_temp AS $$
 DECLARE
   n integer;
 BEGIN
+  -- death_state is required for jurisdiction matching, so a deceased row that
+  -- has not completed the UC-6 death-event step yields zero tasks rather than
+  -- an error. Call this again once death_state is set.
   INSERT INTO cairn.case_tasks (case_id, template_id, status, due_on)
   SELECT c.id, t.id, 'not_started', c.journey_started_on + t.due_offset_days
   FROM cairn.cases c
   JOIN cairn.deceased d ON d.case_id = c.id
-  JOIN cairn.death_events de ON de.deceased_id = d.id
   JOIN LATERAL (
     SELECT DISTINCT ON (tt.task_key) tt.*
     FROM cairn.task_templates tt
@@ -101,9 +103,10 @@ BEGIN
     ORDER BY tt.task_key, tt.version DESC
   ) t ON true
   WHERE c.id = p_case
-    AND (t.jurisdiction = 'US' OR t.jurisdiction IN (de.death_state, d.domicile_state))
+    AND d.death_state IS NOT NULL
+    AND (t.jurisdiction = 'US' OR t.jurisdiction IN (d.death_state, d.domicile_state))
     AND cairn.template_applies(t.applies_when, d.veteran_status, d.has_will,
-                               de.death_state, d.domicile_state)
+                               d.death_state, d.domicile_state)
   ON CONFLICT (case_id, template_id) DO NOTHING;
   GET DIAGNOSTICS n = ROW_COUNT;
   RETURN n;
