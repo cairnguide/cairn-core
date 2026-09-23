@@ -1,0 +1,15 @@
+# Lint configuration for all Python in the repository (api/ and database/tools/).
+# CI runs: ruff check .
+target-version = "py311"
+line-length = 120
+extend-exclude = [".venv"]
+
+[lint]
+# pycodestyle errors and warnings, pyflakes, import order, and bugbear.
+select = ["E", "W", "F", "I", "B"]
+ignore = [
+  "B008",  # FastAPI uses Depends() and Header() in argument defaults by design
+]
+
+[lint.isort]
+known-first-party = ["cairn_api"]

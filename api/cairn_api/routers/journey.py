@@ -7,8 +7,17 @@ from fastapi import APIRouter, Depends, Request
 from .. import intake, journey, messages
 from ..auth import Identity, get_identity
 from ..db import Session
-from ..schemas import (CaseStatusResponse, CategoryStatus, CheckIn, JourneyResponse, NextStep, PauseRequest,
-                       StatusCounts, TaskCategory, WeekOut)
+from ..schemas import (
+    CaseStatusResponse,
+    CategoryStatus,
+    CheckIn,
+    JourneyResponse,
+    NextStep,
+    PauseRequest,
+    StatusCounts,
+    TaskCategory,
+    WeekOut,
+)
 
 router = APIRouter(prefix="/v1/cases/{case_id}", tags=["Journey"])
 

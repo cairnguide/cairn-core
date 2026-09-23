@@ -14,9 +14,20 @@ from . import messages
 from .db import Session
 from .errors import ApiError, case_access_denied
 from .journey import load_tasks
-from .schemas import (CaseOut, CaseResponse, CreateCaseRequest, DeathEventIn, DeceasedIdentityIn,
-                      DeceasedIdentityPatch, DeceasedOut, EstateFlagsIn, IntakeStatus, NextStep, Note,
-                      Relationship)
+from .schemas import (
+    CaseOut,
+    CaseResponse,
+    CreateCaseRequest,
+    DeathEventIn,
+    DeceasedIdentityIn,
+    DeceasedIdentityPatch,
+    DeceasedOut,
+    EstateFlagsIn,
+    IntakeStatus,
+    NextStep,
+    Note,
+    Relationship,
+)
 
 # Minimum fields before cairn.generate_case_tasks can produce a meaningful journey.
 REQUIRED_FOR_JOURNEY = ("legal_first_name", "legal_last_name", "date_of_death", "death_state")

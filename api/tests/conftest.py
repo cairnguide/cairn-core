@@ -19,9 +19,9 @@ from fastapi import Header
 from fastapi.testclient import TestClient
 
 from cairn_api.auth import Identity, get_identity
-from cairn_api.schemas import SignInMethod
 from cairn_api.config import Settings
 from cairn_api.main import create_app
+from cairn_api.schemas import SignInMethod
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 DB_DIR = REPO / "database"
@@ -73,8 +73,9 @@ def scratch_db_url():
     admin_url = os.environ.get("CAIRN_TEST_ADMIN_URL")
     if not admin_url:
         pytest.skip("Set CAIRN_TEST_ADMIN_URL to run integration tests against a scratch Postgres server.")
-    import psycopg
     from urllib.parse import urlsplit
+
+    import psycopg
 
     name = f"cairn_api_test_{uuid.uuid4().hex[:8]}"
     u = urlsplit(admin_url)

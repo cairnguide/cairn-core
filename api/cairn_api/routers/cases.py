@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Request
 
 from .. import intake, messages
 from ..auth import Identity, get_identity
-from ..schemas import (CaseResponse, CreateCaseRequest, DeathEventIn, DeceasedIdentityPatch, EstateFlagsIn)
+from ..schemas import CaseResponse, CreateCaseRequest, DeathEventIn, DeceasedIdentityPatch, EstateFlagsIn
 
 router = APIRouter(prefix="/v1/cases", tags=["Cases"])
 

@@ -7,8 +7,16 @@ from .. import journey, messages
 from ..auth import Identity, get_identity
 from ..db import Session
 from ..errors import ApiError, case_access_denied
-from ..schemas import (CertificateOrderRequest, CitationOut, InstitutionNoticeRequest, TaskDetail, TaskKind,
-                       TaskResponse, TaskStatus, TaskUpdateRequest)
+from ..schemas import (
+    CertificateOrderRequest,
+    CitationOut,
+    InstitutionNoticeRequest,
+    TaskDetail,
+    TaskKind,
+    TaskResponse,
+    TaskStatus,
+    TaskUpdateRequest,
+)
 
 router = APIRouter(prefix="/v1/cases/{case_id}/tasks/{task_id}", tags=["Tasks"])
 

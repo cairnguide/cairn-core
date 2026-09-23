@@ -7,8 +7,7 @@ from uuid import UUID
 from psycopg.types.json import Jsonb
 
 from .db import Session
-from .schemas import (CertificateOrderRecord, InstitutionNotice, TaskCategory, TaskKind,
-                      TaskStatus, TaskSummary)
+from .schemas import CertificateOrderRecord, InstitutionNotice, TaskCategory, TaskKind, TaskStatus, TaskSummary
 
 # Task keys with a structured completion record (UC-10 and UC-11).
 TASK_KINDS: dict[str, TaskKind] = {
