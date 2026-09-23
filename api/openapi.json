@@ -2,10 +2,32 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Cairn API",
-    "description": "\nCairn walks a family through the logistics of a death, one step at a time.\n\nEvery response that moves a conversation forward carries a `next_step` with a\nsingle prompt, so clients can ask one question at a time. Errors use RFC 9457\nproblem details (`application/problem+json`) and never echo submitted values.\n\nAuthentication is an OIDC bearer token from the identity provider. The case is\nthe security boundary and is enforced in the database with row-level security.\n",
+    "description": "\nCairn walks a family through the logistics of a death, one step at a time.\n\nEvery response that moves a conversation forward carries a `next_step` with a\nsingle prompt, so clients can ask one question at a time. Errors use RFC 9457\nproblem details (`application/problem+json`) and never echo submitted values.\n\nAuthentication is an Auth0 access token. Accounts can be created with Google,\nApple, or an email address (see GET /v1/sign-in-methods). The case is the\nsecurity boundary and is enforced in the database with row-level security.\n",
     "version": "0.1.0"
   },
   "paths": {
+    "/v1/sign-in-methods": {
+      "get": {
+        "tags": [
+          "Registration"
+        ],
+        "summary": "Ways to create an account or sign in",
+        "description": "Google, Apple, or an email address. Each option names the Auth0 connection the client passes to Auth0's /authorize endpoint. No sign-in is needed to call this.",
+        "operationId": "sign_in_methods_v1_sign_in_methods_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInMethodsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/policies": {
       "get": {
         "tags": [
@@ -33,7 +55,7 @@
           "Registration"
         ],
         "summary": "Create the Cairn account for a signed-in identity",
-        "description": "Call after the identity provider has signed the user in (password or passkey) and confirmed their email. Email comes from the verified token, never from the body. Records acceptance of the current terms and privacy policy. Safe to repeat: a returning user gets 200 and their existing account.",
+        "description": "Call after Auth0 has signed the user in with Google, Apple, or an email address (password or passkey) and the email is confirmed. Email and sign-in method come from the verified token, never from the body. Records acceptance of the current terms and privacy policy. Safe to repeat: a returning user gets 200 and their existing account.",
         "operationId": "register_v1_registrations_post",
         "requestBody": {
           "content": {
@@ -60,7 +82,10 @@
             "description": "Account already existed. Returned unchanged apart from any name edits."
           },
           "403": {
-            "description": "Email not yet confirmed with the identity provider."
+            "description": "Email not yet confirmed, or an unsupported sign-in method."
+          },
+          "409": {
+            "description": "This email already has an account created with a different sign-in. The body's sign_in_method says which one to use."
           },
           "422": {
             "description": "Terms or privacy version is not the current one."
@@ -2270,6 +2295,54 @@
         ],
         "title": "Relationship"
       },
+      "SignInMethod": {
+        "type": "string",
+        "enum": [
+          "google",
+          "apple",
+          "email"
+        ],
+        "title": "SignInMethod"
+      },
+      "SignInMethodsResponse": {
+        "properties": {
+          "methods": {
+            "items": {
+              "$ref": "#/components/schemas/SignInOption"
+            },
+            "type": "array",
+            "title": "Methods"
+          }
+        },
+        "type": "object",
+        "required": [
+          "methods"
+        ],
+        "title": "SignInMethodsResponse"
+      },
+      "SignInOption": {
+        "properties": {
+          "method": {
+            "$ref": "#/components/schemas/SignInMethod"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "auth0_connection": {
+            "type": "string",
+            "title": "Auth0 Connection",
+            "description": "Pass as the connection parameter to Auth0's /authorize to skip the chooser and go straight to this method."
+          }
+        },
+        "type": "object",
+        "required": [
+          "method",
+          "label",
+          "auth0_connection"
+        ],
+        "title": "SignInOption"
+      },
       "StatusCounts": {
         "properties": {
           "total": {
@@ -2717,6 +2790,17 @@
               }
             ],
             "title": "Phone"
+          },
+          "sign_in_method": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SignInMethod"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How the account was created. Null only for accounts created before this was recorded."
           }
         },
         "type": "object",
@@ -2803,7 +2887,7 @@
     "securitySchemes": {
       "HTTPBearer": {
         "type": "http",
-        "description": "OIDC token from the Cairn identity provider.",
+        "description": "Auth0 access token for the Cairn API audience.",
         "scheme": "bearer"
       }
     }

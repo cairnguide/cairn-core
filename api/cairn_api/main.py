@@ -20,8 +20,9 @@ Every response that moves a conversation forward carries a `next_step` with a
 single prompt, so clients can ask one question at a time. Errors use RFC 9457
 problem details (`application/problem+json`) and never echo submitted values.
 
-Authentication is an OIDC bearer token from the identity provider. The case is
-the security boundary and is enforced in the database with row-level security.
+Authentication is an Auth0 access token. Accounts can be created with Google,
+Apple, or an email address (see GET /v1/sign-in-methods). The case is the
+security boundary and is enforced in the database with row-level security.
 """
 
 OPENAPI_TAGS = [
@@ -40,7 +41,8 @@ def create_app(settings: Settings | None = None, database: Database | None = Non
         app.state.settings = cfg
         app.state.db = database or Database(cfg.database_url, cfg.db_session_role,
                                             cfg.pool_min_size, cfg.pool_max_size)
-        app.state.token_verifier = verifier or TokenVerifier(cfg.oidc_issuer, cfg.oidc_audience, cfg.oidc_jwks_url)
+        app.state.token_verifier = verifier or TokenVerifier(cfg.auth0_issuer, cfg.auth0_audience,
+                                                             cfg.auth0_jwks_url, cfg.claim_namespace)
         app.state.db.open()
         try:
             yield

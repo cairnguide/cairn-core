@@ -27,6 +27,7 @@ erDiagram
         string first_name
         string last_name
         string phone "optional"
+        string sign_in_method "google, apple, email (via Auth0)"
         timestamp created_at
     }
 

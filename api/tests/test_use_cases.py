@@ -297,3 +297,37 @@ def test_journey_endpoints_deny_non_members(api, path, method, body):
     r = getattr(api, method)(f"/v1/cases/{cid}{path}", headers=as_user("deny-other"),
                              **({"json": body} if body is not None else {}))
     assert r.status_code == 403
+
+
+# ------------------------------------------------------------------ sign-in methods
+
+@pytest.mark.parametrize("method,subject", [
+    ("google", "google-oauth2|uc1-g"), ("apple", "apple|001.uc1a"), ("email", "auth0|uc1-e")])
+def test_account_created_with_each_method(api, method, subject):
+    r = api.post("/v1/registrations", json=REG, headers=as_user(subject, method=method))
+    assert r.status_code == 201, r.text
+    assert r.json()["user"]["sign_in_method"] == method
+    me = api.get("/v1/me", headers=as_user(subject, method=method)).json()
+    assert me["sign_in_method"] == method
+
+
+def test_same_email_other_method_is_told_which_to_use(api):
+    email = "shared-address@example.test"
+    r = api.post("/v1/registrations", json=REG, headers=as_user("google-oauth2|dup", email, method="google"))
+    assert r.status_code == 201
+    for subject, method in (("apple|dup", "apple"), ("auth0|dup", "email")):
+        r = api.post("/v1/registrations", json=REG, headers=as_user(subject, email.upper(), method=method))
+        assert r.status_code == 409, r.text
+        assert r.json()["code"] == "account_exists"
+        assert r.json()["sign_in_method"] == "google"
+        assert "sign in with Google" in r.json()["detail"]
+    # The original method still signs in normally.
+    r = api.post("/v1/registrations", json=REG, headers=as_user("google-oauth2|dup", email, method="google"))
+    assert r.status_code == 200
+
+
+def test_email_signup_waits_for_confirmation(api):
+    r = api.post("/v1/registrations", json=REG, headers=as_user("auth0|unconfirmed", verified=False))
+    assert r.status_code == 403 and r.json()["code"] == "email_not_verified"
+    r = api.post("/v1/registrations", json=REG, headers=as_user("auth0|unconfirmed"))
+    assert r.status_code == 201

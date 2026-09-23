@@ -81,7 +81,7 @@ Install loader dependencies with `pip install -r tools/requirements.txt`.
 3. Post-death authority: a power of attorney generally does not survive the principal's death. The relationship is self-declared today and only owners exist. Needs legal review before invitations ship. [LEGAL REVIEW REQUIRED]
 4. Retention periods for `cases.purge_after` and `audit_events` are not set. They come from the privacy policy after counsel review. [LEGAL REVIEW REQUIRED]
 5. Is application-layer encryption of `ssn_last4` wanted on top of encryption at rest?
-6. Identity provider choice (`users.idp_subject` is provider-neutral). Multi-factor and passkey requirements live there.
+6. Resolved: Auth0 is the identity provider. Accounts are created with Google, Apple, or an email address (password or passkey). Migration `0007_sign_in_methods.sql` records the method on `users.sign_in_method`. Tenant setup is in `auth0/README.md`. Multi-factor and passkey requirements live in Auth0.
 7. Templates with `domicile_state` rules do not match when `domicile_state` is null. Is that the intended behavior?
 
 Resolved: `date_of_death` before `date_of_birth` is now rejected by the database directly (`death_not_before_birth` check constraint on `deceased`), now that the two dates live on one row.

@@ -8,6 +8,22 @@ from .schemas import NextStep, Note, Option, Relationship
 
 # ------------------------------------------------------------------ registration
 
+SIGN_IN_LABELS = {
+    "google": "Continue with Google",
+    "apple": "Continue with Apple",
+    "email": "Continue with email",
+}
+
+_METHOD_NAMES = {"google": "Google", "apple": "Apple", "email": "your email address and password"}
+
+
+def account_exists(method: str) -> str:
+    name = _METHOD_NAMES.get(method)
+    if name is None:
+        return "You already have a Cairn account with this email. Please sign in the way you did before."
+    return f"You already have a Cairn account with this email. Please sign in with {name}."
+
+
 WELCOME_FAMILY = Note(
     kind="acknowledgment",
     text="We're so sorry for your loss. There's no rush here. We'll take this one small step at a time, "
