@@ -19,6 +19,7 @@ from fastapi import Header
 from fastapi.testclient import TestClient
 
 from cairn_api.auth import Identity, get_identity
+from cairn_api.schemas import SignInMethod
 from cairn_api.config import Settings
 from cairn_api.main import create_app
 
@@ -27,20 +28,23 @@ DB_DIR = REPO / "database"
 
 SETTINGS = Settings(
     database_url="postgresql://unused", db_session_role="cairn_app", pool_min_size=1, pool_max_size=4,
-    oidc_issuer="https://idp.example.test/", oidc_audience="cairn-test",
-    oidc_jwks_url="https://idp.example.test/jwks", terms_version="terms-v1", privacy_version="privacy-v1",
+    auth0_domain="cairn-test.example.test", auth0_audience="https://api.cairn.example.test",
+    claim_namespace="https://cairn.invalid/", email_connection="Username-Password-Authentication",
+    terms_version="terms-v1", privacy_version="privacy-v1",
 )
 
 
 def fake_identity(x_test_subject: str | None = Header(default=None),
                   x_test_email: str | None = Header(default=None),
-                  x_test_email_verified: str = Header(default="true")) -> Identity:
-    """Stands in for OIDC token verification in tests only."""
+                  x_test_email_verified: str = Header(default="true"),
+                  x_test_method: str = Header(default="email")) -> Identity:
+    """Stands in for Auth0 token verification in tests only. test_auth.py covers the real path."""
     from cairn_api.errors import ApiError
     if not x_test_subject:
         raise ApiError(401, "not_signed_in", "Please sign in to continue.")
     return Identity(subject=x_test_subject, email=x_test_email,
-                    email_verified=x_test_email_verified == "true")
+                    email_verified=x_test_email_verified == "true",
+                    sign_in_method=SignInMethod(x_test_method))
 
 
 class NoDatabase:
@@ -103,6 +107,6 @@ def api(scratch_db_url):
         yield client
 
 
-def as_user(subject: str, email: str | None = None, verified: bool = True) -> dict:
+def as_user(subject: str, email: str | None = None, verified: bool = True, method: str = "email") -> dict:
     return {"X-Test-Subject": subject, "X-Test-Email": email or f"{subject}@example.test",
-            "X-Test-Email-Verified": "true" if verified else "false"}
+            "X-Test-Email-Verified": "true" if verified else "false", "X-Test-Method": method}

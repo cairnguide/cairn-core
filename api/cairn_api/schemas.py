@@ -154,12 +154,32 @@ class RegistrationRequest(RequestModel):
     )
 
 
+class SignInMethod(str, Enum):
+    google = "google"
+    apple = "apple"
+    email = "email"
+
+
+class SignInOption(ResponseModel):
+    method: SignInMethod
+    label: str
+    auth0_connection: str = Field(description="Pass as the connection parameter to Auth0's /authorize "
+                                              "to skip the chooser and go straight to this method.")
+
+
+class SignInMethodsResponse(ResponseModel):
+    methods: list[SignInOption]
+
+
 class UserOut(ResponseModel):
     id: UUID
     email: str
     first_name: str
     last_name: str
     phone: str | None = None
+    sign_in_method: SignInMethod | None = Field(
+        default=None,
+        description="How the account was created. Null only for accounts created before this was recorded.")
 
 
 class ConsentOut(ResponseModel):
