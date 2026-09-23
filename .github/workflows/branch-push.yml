@@ -1,0 +1,76 @@
+# Runs on every push to a branch other than main.
+# Lints everything and runs the test files the push added or changed.
+# If no test files changed, it runs the fast test suite, which needs no database.
+name: Branch push
+
+on:
+  push:
+    branches-ignore:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: branch-push-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    uses: ./.github/workflows/lint.yml
+
+  new-tests:
+    name: New and changed tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres  # throwaway CI container, not a real credential
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history, to compare against the previous push
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: api/pyproject.toml
+
+      - name: Install
+        run: pip install -e 'api[test]'
+
+      - name: Find new and changed tests
+        id: find
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          files="$(.github/scripts/changed-tests.sh "$BEFORE" "$GITHUB_SHA" | tr '\n' ' ')"
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+          if [[ -n "$files" ]]; then
+            echo "Running new or changed tests: $files" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No test files changed. Running the fast suite (no database)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Run new and changed tests
+        if: steps.find.outputs.files != ''
+        working-directory: api
+        env:
+          CAIRN_TEST_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/postgres
+          FILES: ${{ steps.find.outputs.files }}
+        run: |
+          # FILES is intentionally unquoted so each path becomes its own argument.
+          # shellcheck disable=SC2086
+          pytest -ra $FILES
+
+      - name: Run fast suite
+        if: steps.find.outputs.files == ''
+        working-directory: api
+        run: pytest -ra

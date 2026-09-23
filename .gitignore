@@ -2,3 +2,5 @@
 .venv/
 __pycache__/
 .pytest_cache/
+api/results.xml
+*.egg-info/

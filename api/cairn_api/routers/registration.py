@@ -4,8 +4,17 @@ from fastapi import APIRouter, Depends, Request, Response
 from .. import messages
 from ..auth import Identity, get_identity
 from ..errors import ApiError
-from ..schemas import (ConsentOut, PolicyVersions, Relationship, RegistrationRequest, RegistrationResponse,
-                       SignInMethod, SignInMethodsResponse, SignInOption, UserOut)
+from ..schemas import (
+    ConsentOut,
+    PolicyVersions,
+    RegistrationRequest,
+    RegistrationResponse,
+    Relationship,
+    SignInMethod,
+    SignInMethodsResponse,
+    SignInOption,
+    UserOut,
+)
 
 router = APIRouter(prefix="/v1", tags=["Registration"])
 
