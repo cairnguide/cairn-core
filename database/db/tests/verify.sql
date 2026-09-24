@@ -93,6 +93,7 @@ SELECT pg_temp.expect_count('SELECT 1 FROM cairn.users', 0);
 SELECT set_config('app.user_id', :'alice', true);
 SELECT pg_temp.expect_true('new account is pending onboarding',
   (SELECT status = 'pending_onboarding' AND onboarding_step = 'account_created' AND trial_started_at IS NULL
+          AND voice = 'steady_direct'
    FROM cairn.users WHERE id = :'alice'::uuid));
 -- No case until onboarding is finished.
 SELECT pg_temp.expect_fail(format($q$INSERT INTO cairn.cases (created_by) VALUES (%L)$q$, :'alice'));
@@ -111,6 +112,14 @@ SELECT pg_temp.expect_fail($q$SELECT cairn.advance_onboarding('ai_notice_accepte
 SELECT pg_temp.expect_fail($q$UPDATE cairn.users SET onboarding_step = 'complete'$q$);
 SELECT pg_temp.expect_fail($q$UPDATE cairn.users SET status = 'subscribed'$q$);
 SELECT pg_temp.expect_fail($q$UPDATE cairn.users SET trial_started_at = NULL$q$);
+-- Voice (0009). The app sets its own voice, only to a voice in voices/manifest.yaml.
+UPDATE cairn.users SET voice = 'brisk_businesslike' WHERE id = :'alice'::uuid;
+SELECT pg_temp.expect_true('app can set its own voice',
+  (SELECT voice = 'brisk_businesslike' FROM cairn.users WHERE id = :'alice'::uuid));
+SELECT pg_temp.expect_fail($q$UPDATE cairn.users SET voice = 'gentle'$q$);
+SELECT pg_temp.expect_fail($q$UPDATE cairn.users SET voice = NULL$q$);
+SELECT pg_temp.expect_fail($q$SELECT personality FROM cairn.users$q$);
+UPDATE cairn.users SET voice = 'steady_direct' WHERE id = :'alice'::uuid;
 -- Owner-only jobs are not callable by the app.
 SELECT pg_temp.expect_fail($q$SELECT cairn.expire_trials()$q$);
 SELECT pg_temp.expect_fail($q$SELECT * FROM cairn.claim_due_trial_reminders(10)$q$);
@@ -268,7 +277,7 @@ BEGIN
   IF n <> 0 THEN RAISE EXCEPTION 'read-only account updated % cases', n; END IF;
 END $$;
 -- Settings stay editable and a case can still be deleted.
-UPDATE cairn.users SET personality = 'gentle' WHERE id = :'alice'::uuid;
+UPDATE cairn.users SET voice = 'warm_patient' WHERE id = :'alice'::uuid;
 DELETE FROM cairn.cases WHERE id = :'case_a2'::uuid;
 SELECT pg_temp.expect_count('SELECT 1 FROM cairn.cases', 1);
 RESET ROLE;

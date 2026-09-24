@@ -17,6 +17,8 @@ from cairn_api.copy_store import consent_versions, load_copy
 
 from .conftest import REPO, SETTINGS, as_user, onboard
 
+VOICES = ("steady_direct", "warm_patient", "brisk_businesslike", "plain_practical")
+
 SPEC = json.loads((REPO / "database" / "docs" / "cairn-registration-use-cases.json").read_text())
 COPY = SPEC["copy"]
 CASE_BODY = {"relationship": "spouse", "deceased": {"legal_first_name": "Dan", "legal_last_name": "Fakerson"}}
@@ -66,10 +68,11 @@ def test_acknowledgment_versions_follow_the_text():
     assert consent_versions(copy, "p2", "t1")["privacy_terms"] != before["privacy_terms"]
 
 
-def test_personality_labels_are_not_human_first_names():
+def test_every_voice_has_a_confirmation_that_uses_the_preferred_name():
     copy = load_copy()
-    assert [copy[f"personality_{p}_label"] for p in ("gentle", "steady", "straightforward")] == \
-        ["Gentle", "Steady", "Straightforward"]
+    for voice in VOICES:
+        assert "{preferred_name}" in copy[f"voice_{voice}_confirm"]
+    assert not [k for k in copy.draft if k.startswith("personality_")]
 
 
 # ------------------------------------------------------------------ UC-REG-01 (no database)
@@ -211,12 +214,15 @@ def test_full_onboarding_sequence(api):
     assert body["account"]["preferred_name"] == "Trish"
     assert body["screen"]["id"] == "personality"
     assert body["next_step"]["prompt"] == COPY["personality_question"]
-    assert [c["value"] for c in body["screen"]["choices"]] == ["gentle", "steady", "straightforward"]
-    assert all(c["sample"] for c in body["screen"]["choices"])
+    assert [c["value"] for c in body["screen"]["choices"]] == list(VOICES)
+    assert all(c["label"] and c["tagline"] and c["sample"] for c in body["screen"]["choices"])
+    assert body["screen"]["sample_situation"]
+    assert [o["value"] for o in body["next_step"]["options"]] == [*VOICES, "choose_for_me"]
     assert body["next_step"]["options"][-1]["label"] == COPY["personality_default_button"]
+    assert body["account"]["voice"] == "steady_direct"  # the column default, before a choice
 
     body = api.put("/v1/onboarding/personality", headers=h, json={"choice": "choose_for_me"}).json()
-    assert body["account"]["personality"] == "steady"
+    assert body["account"]["voice"] == "steady_direct"
     assert body["account"]["status"] == "active_no_case"
     assert body["screen"]["id"] == "case_handoff"
     assert "Trish" in body["screen"]["acknowledgment"]
@@ -233,7 +239,7 @@ def test_full_onboarding_sequence(api):
 def test_steps_must_go_in_order_and_repeats_are_harmless(api):
     subject = "email|order"
     version = start(api, subject).json()["screen"]["checkbox"]["document_version"]
-    r = api.put("/v1/onboarding/personality", json={"choice": "gentle"}, headers=as_user(subject))
+    r = api.put("/v1/onboarding/personality", json={"choice": "warm_patient"}, headers=as_user(subject))
     assert r.status_code == 409 and r.json()["next_step"]["action"] == "acknowledge_privacy_terms"
     ack = {"agreed": True, "document_version": version, "client": "web/1"}
     api.post("/v1/onboarding/acknowledgments/privacy_terms", json=ack, headers=as_user(subject))
@@ -300,26 +306,26 @@ def test_distress_in_free_text_pauses_and_saves_nothing(api):
     assert api.get("/v1/onboarding", headers=h).json()["screen"]["id"] == "preferred_name"
 
 
-def test_crisis_response_is_identical_for_every_personality(api):
+def test_crisis_response_is_identical_for_every_voice(api):
     screens = []
-    for p in ("gentle", "steady", "straightforward"):
-        subject = f"email|crisis-{p}"
+    for v in VOICES:
+        subject = f"email|crisis-{v}"
         start(api, subject)
-        onboard(api, subject, personality=p)
+        onboard(api, subject, voice=v)
         screens.append(api.get("/v1/onboarding/need-a-moment").json())
         me = api.get("/v1/me", headers=as_user(subject)).json()["account"]
-        assert me["personality"] == p and me["ai_label"] == COPY["ai_persistent_label"]
-    assert screens[0] == screens[1] == screens[2]
+        assert me["voice"] == v and me["ai_label"] == COPY["ai_persistent_label"]
+    assert all(s == screens[0] for s in screens)
 
 
-def test_personality_can_change_anytime_in_settings(api):
+def test_voice_can_change_anytime_in_settings(api):
     subject = "email|settings"
     start(api, subject)
     onboard(api, subject)
-    r = api.patch("/v1/me", json={"personality": "straightforward", "time_zone": "Pacific/Honolulu"},
+    r = api.patch("/v1/me", json={"voice": "plain_practical", "time_zone": "Pacific/Honolulu"},
                   headers=as_user(subject))
     assert r.status_code == 200
-    assert r.json()["account"]["personality"] == "straightforward"
+    assert r.json()["account"]["voice"] == "plain_practical"
     assert api.patch("/v1/me", json={"time_zone": "Mars/Base"}, headers=as_user(subject)).status_code == 422
 
 
@@ -437,7 +443,7 @@ def test_after_the_trial_the_account_is_read_only_and_nothing_is_lost(api):
     r = api.patch(f"/v1/cases/{cid}/deceased", json={"legal_first_name": "Changed"}, headers=h)
     assert r.status_code == 403
     # Settings and deletion stay available.
-    assert api.patch("/v1/me", json={"personality": "gentle"}, headers=h).status_code == 200
+    assert api.patch("/v1/me", json={"voice": "warm_patient"}, headers=h).status_code == 200
     assert api.post("/v1/me/deletion", json={"confirm": True}, headers=h).status_code == 200
 
 

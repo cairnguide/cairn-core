@@ -1,4 +1,4 @@
-"""The signed-in account: Settings (name, personality, time zone) and deletion (UC-ACCT-01).
+"""The signed-in account: Settings (name, voice, time zone) and deletion (UC-ACCT-01).
 
 Everything here stays available when the account is read-only (D-05).
 """
@@ -38,14 +38,14 @@ def me(request: Request, identity: Identity = Depends(get_identity)) -> AccountR
 
 
 @router.patch("", response_model=AccountResponse, summary="Change Settings",
-              description="Preferred name, pronunciation, personality, and time zone. Personality changes tone "
-                          "only. It never changes the crisis protocol, AI disclosure, referrals, or citations.")
+              description="Preferred name, pronunciation, voice, and time zone. The voice changes tone only. "
+                          "It never changes the crisis protocol, AI disclosure, referrals, or citations.")
 def update_me(req: AccountPatch, request: Request, identity: Identity = Depends(get_identity)) -> AccountResponse:
     with request.app.state.db.session(identity.subject) as s:
         uid = s.require_user()
         fields = {f: getattr(req, f) for f in req.model_fields_set}
-        if "personality" in fields:
-            fields["personality"] = fields["personality"].value
+        if "voice" in fields:
+            fields["voice"] = fields["voice"].value
         assignments = sql.SQL(", ").join(
             sql.SQL("{} = {}").format(sql.Identifier(f), sql.Placeholder(f)) for f in sorted(fields))
         s.conn.execute(sql.SQL("UPDATE cairn.users SET {} WHERE id = {}").format(assignments, sql.Placeholder("id")),

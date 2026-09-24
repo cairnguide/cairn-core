@@ -16,7 +16,7 @@ HTTP API for the MVP use cases in `database/docs/cairn-mvp-use-cases.md` and the
 | UC-REG-06, age | Not built, by product decision. No age is asked or stored |
 | UC-REG-07 to UC-REG-10, acknowledgments and declining | `POST /v1/onboarding/acknowledgments/{privacy_terms,trial_terms,ai_notice}` (plus `GET /v1/policies`) |
 | UC-REG-11, preferred name | `PUT /v1/onboarding/preferred-name` |
-| UC-REG-12, personality | `PUT /v1/onboarding/personality`, then `POST /v1/onboarding/case-handoff` |
+| UC-REG-12, personality (the user's voice) | `PUT /v1/onboarding/personality`, then `POST /v1/onboarding/case-handoff`. Saves `users.voice` |
 | UC-REG-13, resume | `GET /v1/onboarding` (and the 200 from `POST /v1/registrations`) |
 | UC-REG-14, I need a moment | `GET /v1/onboarding/need-a-moment`. Every onboarding response carries `support` |
 | Settings | `GET` and `PATCH /v1/me` |
@@ -42,10 +42,11 @@ export CAIRN_TERMS_VERSION=... CAIRN_PRIVACY_VERSION=...
 export CAIRN_PRIVACY_POLICY_URL=... CAIRN_TERMS_URL=... CAIRN_JOURNEY_MAP_URL=... CAIRN_SUPPORT_URL=...
 export CAIRN_AI_PROVIDER_NAME=...          # named on the privacy step (UC-REG-07)
 export CAIRN_REGISTRATION_COPY=...         # optional: a replacement copy file after legal review
+export CAIRN_VOICES_DIR=...                # optional: the voices folder. Defaults to the repository's voices/
 .venv/bin/uvicorn cairn_api.main:app --app-dir api
 ```
 
-The database needs migrations 0001 to 0008 **and** the optional `context_items_jsonb` and `context_items_read_only` migrations, in that order (`db/apply.sh context_items_jsonb context_items_read_only`). UC-10 and UC-11 store their records in `context_items` (`CERT_ORDER` and `BANK_NOTICES`).
+The database needs migrations 0001 to 0009 **and** the optional `context_items_jsonb` and `context_items_read_only` migrations, in that order (`db/apply.sh context_items_jsonb context_items_read_only`). UC-10 and UC-11 store their records in `context_items` (`CERT_ORDER` and `BANK_NOTICES`).
 
 ## Tests
 
@@ -60,6 +61,14 @@ The use case suite creates a scratch database, applies the migrations, loads the
 ## Registration copy
 
 Sign-up and onboarding copy lives in [`cairn_api/content/registration-copy.json`](cairn_api/content/registration-copy.json). `spec_copy` is the spec's copy, verbatim, and a test fails if it drifts. `draft_copy` holds strings the spec doesn't supply (personality samples, deletion wording, link labels). Those need product and legal review. To replace copy after legal review, point `CAIRN_REGISTRATION_COPY` at a new file. Acknowledgment versions come from a hash of the exact text, so changed wording is acknowledged again on next sign-in.
+
+## Voices
+
+The personality step (UC-REG-12) offers the voices in [`voices/manifest.yaml`](../voices/manifest.yaml). The label, tagline, and sample reply on that screen come from the manifest and each voice's reference response. The choice is stored as `users.voice` and can be changed with `PATCH /v1/me`. "Choose for me" saves the manifest's `default_voice`.
+
+The app loads and checks the folder at startup and refuses to start if it can't: every file must exist inside the folder, each voice file's `id` and onboarding label must match the manifest, every reference response must answer the same user message, and the manifest must list exactly the ids in `schemas.Voice`. The database accepts only those ids too (`users_voice_known`, migration 0009), so every stored voice can be loaded. `VoiceCatalog.system_blocks` builds the prompt for a user's stored voice in the same cache order as `voices/assemble_prompt.py`. Nothing calls the model yet.
+
+Adding a voice means a new voice file and manifest entry, a new value in `schemas.Voice`, a migration that replaces `users_voice_known`, and a confirmation string `voice_<id>_confirm` in the copy file. `tests/test_voices.py` fails until all four agree.
 
 ## Scheduled jobs (owner role, not the app)
 

@@ -109,6 +109,10 @@ Migration `0002_core_tables.sql` was edited in place to merge `deceased` and `de
 
 Adds the account fields from the registration spec to `users`, makes `consents` append-only with `auth_provider` and `client`, and adds `trial_reminders` and `identity_deletion_requests`. It also adds the onboarding, trial, deletion, and cleanup functions, plus the restrictive read-only policies. `context_items` is optional and created after the numbered migrations on a fresh database, so its read-only policies also ship as `db/optional/context_items_read_only.sql`, applied after `context_items_jsonb`. Accounts that existed before 0008 are marked as having finished onboarding, and their trial counts from their first case.
 
+## Migration 0009 (voices)
+
+Replaces `users.personality` (gentle, steady, straightforward) with `users.voice`, one of the four voices in `voices/manifest.yaml`: `steady_direct` (the default), `warm_patient`, `brisk_businesslike`, and `plain_practical`. The `users_voice_known` check constraint lists the ids. Existing rows keep the closest voice: gentle becomes `warm_patient`, steady becomes `steady_direct`, and straightforward becomes `plain_practical`. The app keeps its column-level UPDATE grant, now on `voice`. Adding a voice needs a new migration that replaces the constraint. Spec 1.2.0 records the change to UC-REG-12.
+
 ## Conventions
 
 - Write documentation and comments in plain prose. No em dashes. No semicolons within a sentence.

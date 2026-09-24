@@ -13,6 +13,7 @@ from .copy_store import load_copy
 from .db import Database
 from .errors import ApiError, api_error_handler, unhandled_error_handler, validation_error_handler
 from .routers import account, cases, journey, onboarding, registration, tasks
+from .voices import load_voices
 
 API_DESCRIPTION = """
 Cairn walks a family through the logistics of a death, one step at a time.
@@ -31,7 +32,7 @@ row-level security.
 
 OPENAPI_TAGS = [
     {"name": "Registration", "description": "UC-REG-01 to UC-REG-05. Welcome, sign-in, and account creation."},
-    {"name": "Onboarding", "description": "UC-REG-07 to UC-REG-14. Acknowledgments, name, personality."},
+    {"name": "Onboarding", "description": "UC-REG-07 to UC-REG-14. Acknowledgments, name, voice."},
     {"name": "Account", "description": "Settings and account deletion (UC-ACCT-01)."},
     {"name": "Cases", "description": "UC-5 to UC-8. The case, the deceased, and the death."},
     {"name": "Journey", "description": "UC-9, UC-12, UC-13. The four-week journey, pausing, and status."},
@@ -46,6 +47,7 @@ def create_app(settings: Settings | None = None, database: Database | None = Non
         cfg = settings or load_settings()
         app.state.settings = cfg
         app.state.copy = load_copy(cfg.registration_copy_path)
+        app.state.voices = load_voices(cfg.voices_dir)  # fails fast if a stored voice can't be loaded
         app.state.db = database or Database(cfg.database_url, cfg.db_session_role,
                                             cfg.pool_min_size, cfg.pool_max_size)
         app.state.token_verifier = verifier or TokenVerifier(cfg.auth0_issuer, cfg.auth0_audience,

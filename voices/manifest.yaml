@@ -1,0 +1,24 @@
+# Cairn voice manifest. Loaded read-only at deploy, same pattern as journey templates.
+# Paths are relative to this folder. The ids must match the users.voice check
+# constraint (migration 0009) and cairn_api.schemas.Voice. A test enforces it.
+version: 0.1.1
+core: core.md
+default_voice: steady_direct
+voices:
+  - id: steady_direct
+    label: "Steady and Direct"
+    tagline: "Just the next step, clearly stated"
+    file: steady-direct.md
+  - id: warm_patient
+    label: "Warm & Patient"
+    tagline: "Room to process before moving on"
+    file: warm-patient.md
+  - id: brisk_businesslike
+    label: "Brisk and Businesslike"
+    tagline: "Treat it like a project to close out"
+    file: brisk-businesslike.md
+  - id: plain_practical
+    label: "Plain and Practical"
+    tagline: "No euphemisms, just what's true and what's next"
+    file: plain-practical.md
+safety_modes: [normal, overwhelm, acute_distress, risk_of_harm]
