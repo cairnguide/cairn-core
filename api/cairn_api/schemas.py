@@ -166,10 +166,12 @@ class SignInMethod(str, Enum):
     email = "email"
 
 
-class Personality(str, Enum):
-    gentle = "gentle"
-    steady = "steady"
-    straightforward = "straightforward"
+class Voice(str, Enum):
+    """How Cairn talks with the user (UC-REG-12). Tone only. Defined in voices/manifest.yaml."""
+    steady_direct = "steady_direct"
+    warm_patient = "warm_patient"
+    brisk_businesslike = "brisk_businesslike"
+    plain_practical = "plain_practical"
 
 
 class AccountStatus(str, Enum):
@@ -231,6 +233,7 @@ class TextInput(ResponseModel):
 class Choice(ResponseModel):
     value: str
     label: str
+    tagline: str | None = None
     sample: str | None = Field(default=None, description="How Cairn would reply in this voice.")
 
 
@@ -290,7 +293,7 @@ class AccountOut(ResponseModel):
     sign_in_method: SignInMethod | None
     preferred_name: str | None
     name_pronunciation: str | None
-    personality: Personality
+    voice: Voice = Field(description="The voice chosen in onboarding or Settings. Tone only.")
     status: AccountStatus = Field(description="Effective status. read_only once the trial has ended.")
     onboarding_step: OnboardingStep
     trial_started_at: datetime | None
@@ -337,23 +340,23 @@ class PreferredNameIn(RequestModel):
     name_pronunciation: Pronunciation | None = None
 
 
-class PersonalityIn(RequestModel):
-    choice: Literal["gentle", "steady", "straightforward", "choose_for_me"] = Field(
-        description="choose_for_me selects steady.")
+class VoiceChoiceIn(RequestModel):
+    choice: Voice | Literal["choose_for_me"] = Field(
+        description="A voice from the personality screen. choose_for_me selects the default voice, steady_direct.")
 
 
 class AccountPatch(RequestModel):
-    """Settings. Personality can be changed at any time. Omitted fields are unchanged."""
+    """Settings. The voice can be changed at any time. Omitted fields are unchanged."""
     preferred_name: Name | None = None
     name_pronunciation: Pronunciation | None = None
-    personality: Personality | None = None
+    voice: Voice | None = None
     time_zone: TimeZone | None = None
 
     @model_validator(mode="after")
     def _check(self):
         if not self.model_fields_set:
             raise ValueError("send at least one field to change")
-        for required in ("preferred_name", "personality"):
+        for required in ("preferred_name", "voice"):
             if required in self.model_fields_set and getattr(self, required) is None:
                 raise ValueError(f"{required} can't be cleared")
         return self

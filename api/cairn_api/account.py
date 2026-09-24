@@ -17,7 +17,7 @@ from .db import Session
 from .errors import ApiError
 from .schemas import AccountOut, ConsentType, NextStep, Note, OnboardingStep, Option
 
-ACCOUNT_COLUMNS = """id, email, sign_in_method, preferred_name, name_pronunciation, name_prefill, personality,
+ACCOUNT_COLUMNS = """id, email, sign_in_method, preferred_name, name_pronunciation, name_prefill, voice,
   time_zone, onboarding_step, trial_started_at, trial_ends_at, created_at,
   cairn.effective_account_status(status, trial_ends_at) AS status"""
 
@@ -85,7 +85,7 @@ def account_out(account: dict, copy: Copy) -> AccountOut:
     ai_ack = step_reached(account, OnboardingStep.ai_notice_accepted)
     return AccountOut(
         **{k: account[k] for k in ("id", "email", "sign_in_method", "preferred_name", "name_pronunciation",
-                                   "personality", "status", "onboarding_step", "trial_started_at",
+                                   "voice", "status", "onboarding_step", "trial_started_at",
                                    "trial_ends_at", "time_zone")},
         trial_end_date=local_trial_end(account),
         ai_label=copy["ai_persistent_label"] if ai_ack else None,

@@ -2,7 +2,7 @@
   "spec": {
     "id": "cairn-registration-onboarding",
     "title": "Cairn account registration and onboarding use cases",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "date": "2026-09-24",
     "source_of_truth": "https://trello.com/c/nCJTOytG",
     "replaces": "Registration portion of UC-1 to UC-13",
@@ -147,7 +147,7 @@
         "provider_subject_id": "string, unique per provider",
         "preferred_name": "string, nullable until UC-REG-11",
         "name_pronunciation": "string, nullable",
-        "personality": "enum: gentle | steady | straightforward, default steady",
+        "voice": "enum: steady_direct | warm_patient | brisk_businesslike | plain_practical, default steady_direct. The voices are defined in voices/manifest.yaml. Replaces personality (1.2.0).",
         "age_confirmed_at": "timestamp, nullable",
         "onboarding_step": "enum tracking the last completed step, used by UC-REG-13",
         "status": "enum: pending_onboarding | active_no_case | trial_active | read_only | subscribed | pending_deletion",
@@ -440,17 +440,17 @@
       "trigger": "UC-REG-11 completes.",
       "main_flow": [
         "Ask copy.personality_question.",
-        "Show options gentle, steady, and straightforward, each with a sample reply to the same situation.",
-        "Offer copy.personality_default_button, which selects steady.",
-        "Save personality.",
+        "Show every voice in voices/manifest.yaml (Steady and Direct, Warm & Patient, Brisk and Businesslike, Plain and Practical) with its tagline and its reference response to the same situation.",
+        "Offer copy.personality_default_button, which selects the manifest's default_voice (steady_direct).",
+        "Save the voice on the account.",
         "Confirm in the chosen voice using the preferred name, then hand off to case creation."
       ],
       "alternate_flows": [],
-      "postconditions": ["personality saved. status becomes active_no_case."],
+      "postconditions": ["voice saved. status becomes active_no_case."],
       "acceptance_criteria": [
-        "Personality can be changed anytime in Settings.",
-        "Personality changes tone only. It never alters the crisis protocol, AI disclosure, attorney referrals, or citations.",
-        "Personalities do not use human first names."
+        "The voice can be changed anytime in Settings.",
+        "The voice changes tone only. It never alters the crisis protocol, AI disclosure, attorney referrals, or citations. Those live in voices/core.md, which applies to every voice.",
+        "Voices do not use human first names."
       ],
       "legal_review": ["Review personality design against SB 243 human-likeness concerns."]
     },

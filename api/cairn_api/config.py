@@ -42,6 +42,8 @@ class Settings:
     ai_provider_name: str
     # Path to a replacement copy file after legal review. None uses the bundled one.
     registration_copy_path: str | None = None
+    # The voices folder (manifest.yaml, core.md, one file per voice). None uses the repository's voices/.
+    voices_dir: str | None = None
 
     @property
     def auth0_issuer(self) -> str:
@@ -70,4 +72,5 @@ def load_settings() -> Settings:
         support_url=_require("CAIRN_SUPPORT_URL"),
         ai_provider_name=_require("CAIRN_AI_PROVIDER_NAME"),
         registration_copy_path=os.environ.get("CAIRN_REGISTRATION_COPY") or None,
+        voices_dir=os.environ.get("CAIRN_VOICES_DIR") or None,
     )

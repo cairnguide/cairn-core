@@ -114,7 +114,7 @@ def api(scratch_db_url):
 
 
 def onboard(api, subject: str, method: str = "email", preferred_name: str = "Pat",
-            personality: str = "choose_for_me") -> dict:
+            voice: str = "choose_for_me") -> dict:
     """Walks an account through UC-REG-07 to UC-REG-12 with the real endpoints."""
     h = as_user(subject, method=method)
     r = api.get("/v1/onboarding", headers=h)
@@ -127,7 +127,7 @@ def onboard(api, subject: str, method: str = "email", preferred_name: str = "Pat
         assert r.status_code == 200, r.text
     r = api.put("/v1/onboarding/preferred-name", json={"preferred_name": preferred_name}, headers=h)
     assert r.status_code == 200, r.text
-    r = api.put("/v1/onboarding/personality", json={"choice": personality}, headers=h)
+    r = api.put("/v1/onboarding/personality", json={"choice": voice}, headers=h)
     assert r.status_code == 200, r.text
     return r.json()
 

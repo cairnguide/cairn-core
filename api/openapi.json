@@ -285,13 +285,13 @@
           "Onboarding"
         ],
         "summary": "Choose how Cairn talks with the user",
-        "description": "UC-REG-12. choose_for_me selects steady. Personality changes tone only, never the crisis protocol, AI disclosure, attorney referrals, or citations. Finishes onboarding (status active_no_case) and hands off to case creation with a confirmation in the chosen voice.",
-        "operationId": "choose_personality_v1_onboarding_personality_put",
+        "description": "UC-REG-12. Saves the chosen voice on the account. choose_for_me selects the default voice. The voice changes tone only, never the crisis protocol, AI disclosure, attorney referrals, or citations. Finishes onboarding (status active_no_case) and hands off to case creation with a confirmation in the chosen voice.",
+        "operationId": "choose_voice_v1_onboarding_personality_put",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PersonalityIn"
+                "$ref": "#/components/schemas/VoiceChoiceIn"
               }
             }
           },
@@ -335,7 +335,7 @@
           "Onboarding"
         ],
         "summary": "I need a moment",
-        "description": "UC-REG-14. Stops the task flow. Returns an acknowledgment and the 988 resource, and nothing else. Nothing is stored, no timers or reminders are set, and progress already saved stays saved. No sign-in needed, so it works from the welcome screen too. The same for every personality.",
+        "description": "UC-REG-14. Stops the task flow. Returns an acknowledgment and the 988 resource, and nothing else. Nothing is stored, no timers or reminders are set, and progress already saved stays saved. No sign-in needed, so it works from the welcome screen too. The same for every voice.",
         "operationId": "need_a_moment_v1_onboarding_need_a_moment_get",
         "responses": {
           "200": {
@@ -432,7 +432,7 @@
           "Account"
         ],
         "summary": "Change Settings",
-        "description": "Preferred name, pronunciation, personality, and time zone. Personality changes tone only. It never changes the crisis protocol, AI disclosure, referrals, or citations.",
+        "description": "Preferred name, pronunciation, voice, and time zone. The voice changes tone only. It never changes the crisis protocol, AI disclosure, referrals, or citations.",
         "operationId": "update_me_v1_me_patch",
         "requestBody": {
           "content": {
@@ -1501,8 +1501,9 @@
             ],
             "title": "Name Pronunciation"
           },
-          "personality": {
-            "$ref": "#/components/schemas/Personality"
+          "voice": {
+            "$ref": "#/components/schemas/Voice",
+            "description": "The voice chosen in onboarding or Settings. Tone only."
           },
           "status": {
             "$ref": "#/components/schemas/AccountStatus",
@@ -1579,7 +1580,7 @@
           "sign_in_method",
           "preferred_name",
           "name_pronunciation",
-          "personality",
+          "voice",
           "status",
           "onboarding_step",
           "trial_started_at",
@@ -1618,10 +1619,10 @@
             ],
             "title": "Name Pronunciation"
           },
-          "personality": {
+          "voice": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/Personality"
+                "$ref": "#/components/schemas/Voice"
               },
               {
                 "type": "null"
@@ -1648,7 +1649,7 @@
         "additionalProperties": false,
         "type": "object",
         "title": "AccountPatch",
-        "description": "Settings. Personality can be changed at any time. Omitted fields are unchanged."
+        "description": "Settings. The voice can be changed at any time. Omitted fields are unchanged."
       },
       "AccountResponse": {
         "properties": {
@@ -2141,6 +2142,17 @@
           "label": {
             "type": "string",
             "title": "Label"
+          },
+          "tagline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagline"
           },
           "sample": {
             "anyOf": [
@@ -3065,36 +3077,6 @@
         ],
         "title": "PauseResponse"
       },
-      "Personality": {
-        "type": "string",
-        "enum": [
-          "gentle",
-          "steady",
-          "straightforward"
-        ],
-        "title": "Personality"
-      },
-      "PersonalityIn": {
-        "properties": {
-          "choice": {
-            "type": "string",
-            "enum": [
-              "gentle",
-              "steady",
-              "straightforward",
-              "choose_for_me"
-            ],
-            "title": "Choice",
-            "description": "choose_for_me selects steady."
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "choice"
-        ],
-        "title": "PersonalityIn"
-      },
       "PlaceType": {
         "type": "string",
         "enum": [
@@ -3900,6 +3882,40 @@
         ],
         "title": "ValidationError"
       },
+      "Voice": {
+        "type": "string",
+        "enum": [
+          "steady_direct",
+          "warm_patient",
+          "brisk_businesslike",
+          "plain_practical"
+        ],
+        "title": "Voice",
+        "description": "How Cairn talks with the user (UC-REG-12). Tone only. Defined in voices/manifest.yaml."
+      },
+      "VoiceChoiceIn": {
+        "properties": {
+          "choice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Voice"
+              },
+              {
+                "type": "string",
+                "const": "choose_for_me"
+              }
+            ],
+            "title": "Choice",
+            "description": "A voice from the personality screen. choose_for_me selects the default voice, steady_direct."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "choice"
+        ],
+        "title": "VoiceChoiceIn"
+      },
       "WeekOut": {
         "properties": {
           "week": {
@@ -3990,7 +4006,7 @@
     },
     {
       "name": "Onboarding",
-      "description": "UC-REG-07 to UC-REG-14. Acknowledgments, name, personality."
+      "description": "UC-REG-07 to UC-REG-14. Acknowledgments, name, voice."
     },
     {
       "name": "Account",

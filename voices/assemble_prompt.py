@@ -6,15 +6,13 @@ user and voice), then the voice (cached across everyone on that voice),
 then per-case context (changes every turn, not cached).
 """
 from pathlib import Path
-import anthropic
+
 import yaml
 
 ROOT = Path(__file__).parent
 MANIFEST = yaml.safe_load((ROOT / "manifest.yaml").read_text())
 CORE = (ROOT / MANIFEST["core"]).read_text()
 VOICES = {v["id"]: (ROOT / v["file"]).read_text() for v in MANIFEST["voices"]}
-
-client = anthropic.Anthropic()
 
 
 def build_system(voice_id, safety_mode, case_context, citations):
@@ -33,7 +31,9 @@ def build_system(voice_id, safety_mode, case_context, citations):
 
 def cairn_reply(voice_id, safety_mode, case_context, citations, history):
     # case_context must already be redacted: no SSNs, account numbers, or PINs.
-    response = client.messages.create(
+    import anthropic  # imported here so build_system can be used and tested without the SDK or a key
+
+    response = anthropic.Anthropic().messages.create(
         model="claude-sonnet-5",  # set from config, not hard-coded, in production
         max_tokens=600,
         system=build_system(voice_id, safety_mode, case_context, citations),

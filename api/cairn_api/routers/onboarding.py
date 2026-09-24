@@ -25,12 +25,13 @@ from ..schemas import (
     OnboardingResponse,
     Option,
     PauseResponse,
-    PersonalityIn,
     PreferredNameIn,
     Relationship,
     Screen,
     ScreenId,
+    VoiceChoiceIn,
 )
+from ..voices import VoiceCatalog
 
 router = APIRouter(prefix="/v1/onboarding", tags=["Onboarding"])
 
@@ -143,25 +144,27 @@ def save_preferred_name(req: PreferredNameIn, request: Request,
     response_model=OnboardingResponse,
     summary="Choose how Cairn talks with the user",
     description=(
-        "UC-REG-12. choose_for_me selects steady. Personality changes tone only, never the crisis protocol, "
-        "AI disclosure, attorney referrals, or citations. Finishes onboarding (status active_no_case) and "
-        "hands off to case creation with a confirmation in the chosen voice."
+        "UC-REG-12. Saves the chosen voice on the account. choose_for_me selects the default voice. The voice "
+        "changes tone only, never the crisis protocol, AI disclosure, attorney referrals, or citations. "
+        "Finishes onboarding (status active_no_case) and hands off to case creation with a confirmation in "
+        "the chosen voice."
     ),
     responses=_ORDER,
 )
-def choose_personality(req: PersonalityIn, request: Request,
-                       identity: Identity = Depends(get_identity)) -> OnboardingResponse:
+def choose_voice(req: VoiceChoiceIn, request: Request,
+                 identity: Identity = Depends(get_identity)) -> OnboardingResponse:
     copy: Copy = request.app.state.copy
-    personality = "steady" if req.choice == "choose_for_me" else req.choice
+    voices: VoiceCatalog = request.app.state.voices
+    voice = voices.default if req.choice == "choose_for_me" else voices[req.choice].id
     with request.app.state.db.session(identity.subject) as s:
         uid = s.require_user()
         if (done := _at_screen(s, request, ScreenId.personality)) is not None:
             return done
-        s.conn.execute("UPDATE cairn.users SET personality = %s WHERE id = %s", (personality, uid))
+        s.conn.execute("UPDATE cairn.users SET voice = %s WHERE id = %s", (voice.value, uid))
         s.one("SELECT cairn.advance_onboarding('complete')")
         s.audit("onboarding_completed", object_type="user", object_id=uid)
         account = acct.load_account(s)
-        confirm = copy[f"personality_{personality}_confirm"].format(preferred_name=account["preferred_name"])
+        confirm = copy[f"voice_{voice.value}_confirm"].format(preferred_name=account["preferred_name"])
         screen, step = onboarding.screen_for(ScreenId.case_handoff, request, account)
         screen.acknowledgment = confirm
         return onboarding.response(s, request, screen=screen, next_step=step)
@@ -174,7 +177,7 @@ def choose_personality(req: PersonalityIn, request: Request,
     description=(
         "UC-REG-14. Stops the task flow. Returns an acknowledgment and the 988 resource, and nothing else. "
         "Nothing is stored, no timers or reminders are set, and progress already saved stays saved. "
-        "No sign-in needed, so it works from the welcome screen too. The same for every personality."
+        "No sign-in needed, so it works from the welcome screen too. The same for every voice."
     ),
 )
 def need_a_moment(request: Request) -> PauseResponse:

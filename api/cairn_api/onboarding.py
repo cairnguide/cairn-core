@@ -3,7 +3,7 @@
 Every screen acknowledges first where the spec says so, asks one thing
 (next_step.prompt), offers rather than demands, and always leaves a next
 action. The "I need a moment" control and the 988 resource ride along on
-every response and never depend on personality.
+every response and never depend on the voice.
 """
 from __future__ import annotations
 
@@ -25,7 +25,6 @@ from .schemas import (
     OnboardingResponse,
     OnboardingStep,
     Option,
-    Personality,
     Screen,
     ScreenId,
     SignInMethod,
@@ -33,6 +32,7 @@ from .schemas import (
     Support,
     TextInput,
 )
+from .voices import VoiceCatalog
 
 # The screen shown after each completed step, in the spec's onboarding_sequence.
 NEXT_SCREEN = {
@@ -86,7 +86,7 @@ def shows_distress(*texts: str | None) -> bool:
 
 
 def paused_screen(copy: Copy, distress: bool) -> Screen:
-    """Stops the task flow. No timers, nudges, or reminders. Identical for every personality."""
+    """Stops the task flow. No timers, nudges, or reminders. Identical for every voice."""
     return Screen(
         id=ScreenId.paused,
         acknowledgment=copy["distress_acknowledgment" if distress else "need_a_moment_acknowledgment"],
@@ -138,9 +138,11 @@ def screen_for(screen_id: ScreenId, request: Request, account: dict) -> tuple[Sc
                 NextStep(action="provide_preferred_name", prompt=copy["preferred_name_question"]))
 
     if screen_id == ScreenId.personality:
-        choices = [Choice(value=p.value, label=copy[f"personality_{p.value}_label"],
-                          sample=copy[f"personality_{p.value}_sample"]) for p in Personality]
-        return (Screen(id=screen_id, sample_situation=copy["personality_sample_situation"], choices=choices,
+        # Every voice in the manifest, each with its reply to the same situation.
+        voices: VoiceCatalog = request.app.state.voices
+        choices = [Choice(value=v.id.value, label=v.label, tagline=v.tagline, sample=v.sample)
+                   for v in voices.voices.values()]
+        return (Screen(id=screen_id, sample_situation=voices.sample_situation, choices=choices,
                        legal_review_required=True),
                 NextStep(action="choose_personality", prompt=copy["personality_question"],
                          options=[Option(value=c.value, label=c.label) for c in choices]
