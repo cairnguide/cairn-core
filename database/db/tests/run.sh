@@ -20,9 +20,9 @@ trap cleanup EXIT
 
 psql "$ADMIN_URL" -X -q -v ON_ERROR_STOP=1 -c "CREATE DATABASE $DB"
 echo "== migrations"
-DATABASE_URL="$SCRATCH_URL" "$ROOT/db/apply.sh" context_items_jsonb
+DATABASE_URL="$SCRATCH_URL" "$ROOT/db/apply.sh" context_items_jsonb context_items_read_only
 echo "== migrations are idempotent"
-DATABASE_URL="$SCRATCH_URL" "$ROOT/db/apply.sh" context_items_jsonb | grep -c '^skip' | xargs -I{} echo "{} skipped"
+DATABASE_URL="$SCRATCH_URL" "$ROOT/db/apply.sh" context_items_jsonb context_items_read_only | grep -c '^skip' | xargs -I{} echo "{} skipped"
 echo "== loader"
 DATABASE_URL="$SCRATCH_URL" python3 "$ROOT/tools/load_templates.py" --allow-unreviewed --git-release loader-test
 DATABASE_URL="$SCRATCH_URL" python3 "$ROOT/tools/load_templates.py" --allow-unreviewed --git-release loader-test

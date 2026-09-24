@@ -3,6 +3,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Request
 
+from .. import account as acct
 from .. import journey, messages
 from ..auth import Identity, get_identity
 from ..db import Session
@@ -80,7 +81,8 @@ def get_task(case_id: UUID, task_id: UUID, request: Request,
              identity: Identity = Depends(get_identity)) -> TaskResponse:
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
-        return _task_response(s, case_id, task_id)
+        ready = acct.require_ready(s, request, write=False)
+        return _task_response(s, case_id, task_id, ready.notes)
 
 
 @router.patch("", response_model=TaskResponse, summary="Change a task's status or snooze it",
@@ -90,6 +92,7 @@ def update_task(case_id: UUID, task_id: UUID, req: TaskUpdateRequest, request: R
                 identity: Identity = Depends(get_identity)) -> TaskResponse:
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
+        acct.require_ready(s, request, write=True)
         if req.status is not None:
             _set_status(s, case_id, task_id, req.status)
         if "snoozed_until" in req.model_fields_set:
@@ -112,6 +115,7 @@ def record_certificate_order(case_id: UUID, task_id: UUID, req: CertificateOrder
                              identity: Identity = Depends(get_identity)) -> TaskResponse:
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
+        acct.require_ready(s, request, write=True)
         _require_kind(_load(s, case_id, task_id), TaskKind.certificate_order)
         journey.write_context(s, case_id, journey.CERT_ORDER, req.model_dump(mode="json"))
         s.audit("certificate_order_recorded", case_id, "case_task", task_id)
@@ -133,6 +137,7 @@ def record_institution_notice(case_id: UUID, task_id: UUID, req: InstitutionNoti
                               identity: Identity = Depends(get_identity)) -> TaskResponse:
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
+        acct.require_ready(s, request, write=True)
         _require_kind(_load(s, case_id, task_id), TaskKind.institution_notice)
         payload = journey.lock_context(s, case_id, journey.BANK_NOTICES, {"institutions": []})
         notices = [n for n in payload.get("institutions", [])

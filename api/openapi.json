@@ -2,17 +2,61 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Cairn API",
-    "description": "\nCairn walks a family through the logistics of a death, one step at a time.\n\nEvery response that moves a conversation forward carries a `next_step` with a\nsingle prompt, so clients can ask one question at a time. Errors use RFC 9457\nproblem details (`application/problem+json`) and never echo submitted values.\n\nAuthentication is an Auth0 access token. Accounts can be created with Google,\nApple, or an email address (see GET /v1/sign-in-methods). The case is the\nsecurity boundary and is enforced in the database with row-level security.\n",
+    "description": "\nCairn walks a family through the logistics of a death, one step at a time.\n\nEvery response that moves a conversation forward carries a `next_step` with a\nsingle prompt, so clients can ask one question at a time. Errors use RFC 9457\nproblem details (`application/problem+json`) and never echo submitted values.\n\nAuthentication is an Auth0 access token. Accounts can be created with Google,\nApple, or an email magic link (see GET /v1/welcome). Onboarding follows\nUC-REG-01 to UC-REG-14, one question per screen. The free trial is 28 days from\nthe first case, after which the account is read-only until subscribed. The\ncase is the security boundary and is enforced in the database with\nrow-level security.\n",
     "version": "0.1.0"
   },
   "paths": {
+    "/v1/welcome": {
+      "get": {
+        "tags": [
+          "Registration"
+        ],
+        "summary": "The welcome screen",
+        "description": "UC-REG-01. Acknowledgment first, then three equally weighted ways to continue, a sign-in link, and a link to the public journey map. Asks for nothing. After a cancelled Google or Apple sign-in, call with oauth_cancelled=true to add the reassurance note (UC-REG-02, UC-REG-03).",
+        "operationId": "welcome_v1_welcome_get",
+        "parameters": [
+          {
+            "name": "oauth_cancelled",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Oauth Cancelled"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WelcomeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/sign-in-methods": {
       "get": {
         "tags": [
           "Registration"
         ],
         "summary": "Ways to create an account or sign in",
-        "description": "Google, Apple, or an email address. Each option names the Auth0 connection the client passes to Auth0's /authorize endpoint. No sign-in is needed to call this.",
+        "description": "Google, Apple, or email (a passwordless magic link by default). Each option names the Auth0 connection the client passes to Auth0's /authorize endpoint. No sign-in is needed to call this.",
         "operationId": "sign_in_methods_v1_sign_in_methods_get",
         "responses": {
           "200": {
@@ -33,7 +77,7 @@
         "tags": [
           "Registration"
         ],
-        "summary": "Current terms and privacy policy versions",
+        "summary": "Current policy and acknowledgment versions",
         "operationId": "current_policies_v1_policies_get",
         "responses": {
           "200": {
@@ -54,8 +98,8 @@
         "tags": [
           "Registration"
         ],
-        "summary": "Create the Cairn account for a signed-in identity",
-        "description": "Call after Auth0 has signed the user in with Google, Apple, or an email address (password or passkey) and the email is confirmed. Email and sign-in method come from the verified token, never from the body. Records acceptance of the current terms and privacy policy. Safe to repeat: a returning user gets 200 and their existing account.",
+        "summary": "Create the account, or sign in and resume onboarding",
+        "description": "UC-REG-02 to UC-REG-05 and UC-REG-13. Call after every Auth0 sign-in. Auth0 has already verified the Google or Apple identity token, or the email magic link, and this API verifies Auth0's signed token. Email and sign-in method come from the token, never from the body. A new account starts in pending_onboarding and the response is the Privacy Policy and Terms acknowledgment. There is no age question. A returning user gets 200 and the first incomplete step, with a welcome-back note.",
         "operationId": "register_v1_registrations_post",
         "requestBody": {
           "content": {
@@ -73,22 +117,281 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RegistrationResponse"
+                  "$ref": "#/components/schemas/OnboardingResponse"
                 }
               }
             }
           },
           "200": {
-            "description": "Account already existed. Returned unchanged apart from any name edits."
+            "description": "Account already existed. Resumes at the first incomplete step."
           },
           "403": {
             "description": "Email not yet confirmed, or an unsupported sign-in method."
           },
           "409": {
-            "description": "This email already has an account created with a different sign-in. The body's sign_in_method says which one to use."
+            "description": "This email already has an account created another way (UC-REG-05). sign_in_method names it and next_step offers it as the primary button."
           },
           "422": {
-            "description": "Terms or privacy version is not the current one."
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/onboarding": {
+      "get": {
+        "tags": [
+          "Onboarding"
+        ],
+        "summary": "Where the user is in onboarding",
+        "description": "UC-REG-13. Returns the first incomplete step, or a changed acknowledgment to re-read.",
+        "operationId": "get_onboarding_v1_onboarding_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/onboarding/acknowledgments/{consent_type}": {
+      "post": {
+        "tags": [
+          "Onboarding"
+        ],
+        "summary": "Agree to, or say \"I'm not sure\" about, an acknowledgment",
+        "description": "UC-REG-07 (privacy_terms), UC-REG-08 (trial_terms), UC-REG-09 (ai_notice), and UC-REG-10. Agreeing requires the document_version shown with the checkbox and appends a consent record with the version, time, sign-in method, and client. agreed=false records nothing and offers ways forward. Also used to re-acknowledge a changed version (UC-REG-13). The trial clock does not start here.",
+        "operationId": "acknowledge_v1_onboarding_acknowledgments__consent_type__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "consent_type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ConsentType"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcknowledgmentIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An earlier step isn't finished yet. next_step says which one."
+          },
+          "422": {
+            "description": "document_version isn't the current one. Show the screen again."
+          }
+        }
+      }
+    },
+    "/v1/onboarding/preferred-name": {
+      "put": {
+        "tags": [
+          "Onboarding"
+        ],
+        "summary": "Save what Cairn should call the user",
+        "description": "UC-REG-11. A name pre-filled from Google or Apple is only saved when the user sends it here. Legal names are not collected. If the text shows signs of distress, nothing is saved and sign-up pauses (UC-REG-14).",
+        "operationId": "save_preferred_name_v1_onboarding_preferred_name_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreferredNameIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An earlier step isn't finished yet. next_step says which one."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/onboarding/personality": {
+      "put": {
+        "tags": [
+          "Onboarding"
+        ],
+        "summary": "Choose how Cairn talks with the user",
+        "description": "UC-REG-12. choose_for_me selects steady. Personality changes tone only, never the crisis protocol, AI disclosure, attorney referrals, or citations. Finishes onboarding (status active_no_case) and hands off to case creation with a confirmation in the chosen voice.",
+        "operationId": "choose_personality_v1_onboarding_personality_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonalityIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An earlier step isn't finished yet. next_step says which one."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/onboarding/need-a-moment": {
+      "get": {
+        "tags": [
+          "Onboarding"
+        ],
+        "summary": "I need a moment",
+        "description": "UC-REG-14. Stops the task flow. Returns an acknowledgment and the 988 resource, and nothing else. Nothing is stored, no timers or reminders are set, and progress already saved stays saved. No sign-in needed, so it works from the welcome screen too. The same for every personality.",
+        "operationId": "need_a_moment_v1_onboarding_need_a_moment_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PauseResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/onboarding/case-handoff": {
+      "post": {
+        "tags": [
+          "Onboarding"
+        ],
+        "summary": "Start toward case creation",
+        "description": "After UC-REG-12. The relationship shapes the wording of case creation. A power of attorney is told that authority generally ends at death. Not stored here. It's saved on the case when the case is created.",
+        "operationId": "case_handoff_v1_onboarding_case_handoff_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseHandoffRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseHandoffResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Onboarding isn't finished, or an acknowledgment changed."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -101,9 +404,10 @@
     "/v1/me": {
       "get": {
         "tags": [
-          "Registration"
+          "Account"
         ],
-        "summary": "The signed-in user's account",
+        "summary": "The signed-in account",
+        "description": "Includes the effective status (read_only after the trial), the trial end date in the account's time zone, the AI guide label, and any banner or reminder to show.",
         "operationId": "me_v1_me_get",
         "responses": {
           "200": {
@@ -111,7 +415,124 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserOut"
+                  "$ref": "#/components/schemas/AccountResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Change Settings",
+        "description": "Preferred name, pronunciation, personality, and time zone. Personality changes tone only. It never changes the crisis protocol, AI disclosure, referrals, or citations.",
+        "operationId": "update_me_v1_me_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/me/deletion": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "What deleting the account removes",
+        "description": "UC-ACCT-01 steps 1 and 2. Explain plainly, then ask for confirmation.",
+        "operationId": "deletion_info_v1_me_deletion_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDeletionInfo"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Delete the account and personal data",
+        "description": "UC-ACCT-01. Deletes the account, its consents and reminders, and every case it created, now, in one transaction. This is deletion, not deactivation. The Auth0 user is deleted, and Apple tokens are revoked through the Sign in with Apple REST API, by a job that works through the queue this adds to. Works in every status, including read-only.",
+        "operationId": "delete_me_v1_me_deletion_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountDeletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDeletionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -130,7 +551,7 @@
           "Cases"
         ],
         "summary": "Start a case and record who died",
-        "description": "UC-5. Creates the case, the caller's owner membership, and the deceased record in one transaction. UC-8: a fiduciary can include death_event and estate_flags in the same request, and set start_journey to build the journey once the minimum fields are present.",
+        "description": "UC-5. Creates the case, the caller's owner membership, and the deceased record in one transaction. The account's first case also starts the 28-day free trial in that transaction (UC-REG-08), and the response carries a note with the local end date. Needs finished onboarding and a writable account. UC-8: a fiduciary can include death_event and estate_flags in the same request, and set start_journey to build the journey once the minimum fields are present.",
         "operationId": "create_case_v1_cases_post",
         "requestBody": {
           "content": {
@@ -154,7 +575,10 @@
             }
           },
           "403": {
-            "description": "Not a member of this case, not an owner, or the case does not exist."
+            "description": "Not a member of this case, not an owner, the case does not exist, or the account is read-only (code account_read_only)."
+          },
+          "409": {
+            "description": "Onboarding isn't finished, or a changed acknowledgment needs to be agreed to."
           },
           "422": {
             "description": "Validation Error",
@@ -210,7 +634,10 @@
             }
           },
           "403": {
-            "description": "Not a member of this case, not an owner, or the case does not exist."
+            "description": "Not a member of this case, not an owner, the case does not exist, or the account is read-only (code account_read_only)."
+          },
+          "409": {
+            "description": "Onboarding isn't finished, or a changed acknowledgment needs to be agreed to."
           },
           "422": {
             "description": "Validation Error",
@@ -271,7 +698,10 @@
             }
           },
           "403": {
-            "description": "Not a member of this case, not an owner, or the case does not exist."
+            "description": "Not a member of this case, not an owner, the case does not exist, or the account is read-only (code account_read_only)."
+          },
+          "409": {
+            "description": "Onboarding isn't finished, or a changed acknowledgment needs to be agreed to."
           },
           "422": {
             "description": "Validation Error",
@@ -333,7 +763,10 @@
             }
           },
           "403": {
-            "description": "Not a member of this case, not an owner, or the case does not exist."
+            "description": "Not a member of this case, not an owner, the case does not exist, or the account is read-only (code account_read_only)."
+          },
+          "409": {
+            "description": "Onboarding isn't finished, or a changed acknowledgment needs to be agreed to."
           },
           "422": {
             "description": "Validation Error",
@@ -395,7 +828,10 @@
             }
           },
           "403": {
-            "description": "Not a member of this case, not an owner, or the case does not exist."
+            "description": "Not a member of this case, not an owner, the case does not exist, or the account is read-only (code account_read_only)."
+          },
+          "409": {
+            "description": "Onboarding isn't finished, or a changed acknowledgment needs to be agreed to."
           },
           "422": {
             "description": "Validation Error",
@@ -973,6 +1409,362 @@
   },
   "components": {
     "schemas": {
+      "AccountDeletionInfo": {
+        "properties": {
+          "explanation": {
+            "type": "string",
+            "title": "Explanation"
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
+          }
+        },
+        "type": "object",
+        "required": [
+          "explanation",
+          "next_step"
+        ],
+        "title": "AccountDeletionInfo"
+      },
+      "AccountDeletionRequest": {
+        "properties": {
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "title": "Confirm",
+            "description": "Must be true. Sent only after the user confirms."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "confirm"
+        ],
+        "title": "AccountDeletionRequest"
+      },
+      "AccountDeletionResponse": {
+        "properties": {
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/Note"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "notes"
+        ],
+        "title": "AccountDeletionResponse"
+      },
+      "AccountOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "sign_in_method": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SignInMethod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "preferred_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferred Name"
+          },
+          "name_pronunciation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name Pronunciation"
+          },
+          "personality": {
+            "$ref": "#/components/schemas/Personality"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AccountStatus",
+            "description": "Effective status. read_only once the trial has ended."
+          },
+          "onboarding_step": {
+            "$ref": "#/components/schemas/OnboardingStep"
+          },
+          "trial_started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trial Started At"
+          },
+          "trial_ends_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trial Ends At"
+          },
+          "trial_end_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trial End Date",
+            "description": "trial_ends_at as a date in the account's time zone."
+          },
+          "time_zone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Zone"
+          },
+          "ai_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Label",
+            "description": "Show in every chat view once set."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "sign_in_method",
+          "preferred_name",
+          "name_pronunciation",
+          "personality",
+          "status",
+          "onboarding_step",
+          "trial_started_at",
+          "trial_ends_at",
+          "trial_end_date",
+          "time_zone",
+          "ai_label"
+        ],
+        "title": "AccountOut"
+      },
+      "AccountPatch": {
+        "properties": {
+          "preferred_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferred Name"
+          },
+          "name_pronunciation": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name Pronunciation"
+          },
+          "personality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Personality"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "time_zone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1,
+                "examples": [
+                  "America/New_York"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Zone"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AccountPatch",
+        "description": "Settings. Personality can be changed at any time. Omitted fields are unchanged."
+      },
+      "AccountResponse": {
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/AccountOut"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/Note"
+            },
+            "type": "array",
+            "title": "Notes",
+            "description": "The read-only banner or a due trial reminder, when there is one."
+          }
+        },
+        "type": "object",
+        "required": [
+          "account",
+          "notes"
+        ],
+        "title": "AccountResponse"
+      },
+      "AccountStatus": {
+        "type": "string",
+        "enum": [
+          "pending_onboarding",
+          "active_no_case",
+          "trial_active",
+          "read_only",
+          "subscribed",
+          "pending_deletion"
+        ],
+        "title": "AccountStatus"
+      },
+      "AcknowledgmentIn": {
+        "properties": {
+          "agreed": {
+            "type": "boolean",
+            "title": "Agreed"
+          },
+          "document_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Version"
+          },
+          "client": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9 ._/()+-]+$",
+            "title": "Client",
+            "description": "App platform and version, stored on the consent record.",
+            "examples": [
+              "ios/1.0.0"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "agreed",
+          "client"
+        ],
+        "title": "AcknowledgmentIn",
+        "description": "agreed=false is the \"I'm not sure\" path (UC-REG-10). Nothing is recorded for it."
+      },
+      "CaseHandoffRequest": {
+        "properties": {
+          "relationship": {
+            "$ref": "#/components/schemas/Relationship"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "relationship"
+        ],
+        "title": "CaseHandoffRequest"
+      },
+      "CaseHandoffResponse": {
+        "properties": {
+          "language_profile": {
+            "type": "string",
+            "enum": [
+              "family",
+              "professional"
+            ],
+            "title": "Language Profile"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/Note"
+            },
+            "type": "array",
+            "title": "Notes"
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
+          }
+        },
+        "type": "object",
+        "required": [
+          "language_profile",
+          "notes",
+          "next_step"
+        ],
+        "title": "CaseHandoffResponse"
+      },
       "CaseOut": {
         "properties": {
           "id": {
@@ -1314,6 +2106,62 @@
         ],
         "title": "CheckIn"
       },
+      "Checkbox": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "checked": {
+            "type": "boolean",
+            "const": false,
+            "title": "Checked",
+            "description": "Never pre-checked.",
+            "default": false
+          },
+          "document_version": {
+            "type": "string",
+            "title": "Document Version",
+            "description": "Send back when agreeing, to show which text was agreed to."
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "document_version"
+        ],
+        "title": "Checkbox"
+      },
+      "Choice": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "sample": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample",
+            "description": "How Cairn would reply in this voice."
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "Choice"
+      },
       "CitationOut": {
         "properties": {
           "authority_name": {
@@ -1350,34 +2198,14 @@
         ],
         "title": "CitationOut"
       },
-      "ConsentOut": {
-        "properties": {
-          "purpose": {
-            "type": "string",
-            "enum": [
-              "terms",
-              "privacy",
-              "ai_processing"
-            ],
-            "title": "Purpose"
-          },
-          "policy_version": {
-            "type": "string",
-            "title": "Policy Version"
-          },
-          "granted_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Granted At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "purpose",
-          "policy_version",
-          "granted_at"
+      "ConsentType": {
+        "type": "string",
+        "enum": [
+          "privacy_terms",
+          "trial_terms",
+          "ai_notice"
         ],
-        "title": "ConsentOut"
+        "title": "ConsentType"
       },
       "CreateCaseRequest": {
         "properties": {
@@ -2039,6 +2867,24 @@
         ],
         "title": "JourneyResponse"
       },
+      "Link": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "url"
+        ],
+        "title": "Link"
+      },
       "NextStep": {
         "properties": {
           "action": {
@@ -2081,7 +2927,10 @@
             "enum": [
               "acknowledgment",
               "info",
-              "legal"
+              "legal",
+              "crisis",
+              "reminder",
+              "account"
             ],
             "title": "Kind"
           },
@@ -2101,6 +2950,51 @@
           "text"
         ],
         "title": "Note"
+      },
+      "OnboardingResponse": {
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/AccountOut"
+          },
+          "screen": {
+            "$ref": "#/components/schemas/Screen"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/Note"
+            },
+            "type": "array",
+            "title": "Notes"
+          },
+          "support": {
+            "$ref": "#/components/schemas/Support"
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
+          }
+        },
+        "type": "object",
+        "required": [
+          "account",
+          "screen",
+          "notes",
+          "support",
+          "next_step"
+        ],
+        "title": "OnboardingResponse"
+      },
+      "OnboardingStep": {
+        "type": "string",
+        "enum": [
+          "account_created",
+          "privacy_terms_accepted",
+          "trial_terms_accepted",
+          "ai_notice_accepted",
+          "preferred_name_saved",
+          "complete"
+        ],
+        "title": "OnboardingStep",
+        "description": "The last completed step."
       },
       "Option": {
         "properties": {
@@ -2151,6 +3045,56 @@
         "title": "PauseRequest",
         "description": "No reason field, on purpose. Cairn does not store why someone stepped back."
       },
+      "PauseResponse": {
+        "properties": {
+          "screen": {
+            "$ref": "#/components/schemas/Screen"
+          },
+          "support": {
+            "$ref": "#/components/schemas/Support"
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
+          }
+        },
+        "type": "object",
+        "required": [
+          "screen",
+          "support",
+          "next_step"
+        ],
+        "title": "PauseResponse"
+      },
+      "Personality": {
+        "type": "string",
+        "enum": [
+          "gentle",
+          "steady",
+          "straightforward"
+        ],
+        "title": "Personality"
+      },
+      "PersonalityIn": {
+        "properties": {
+          "choice": {
+            "type": "string",
+            "enum": [
+              "gentle",
+              "steady",
+              "straightforward",
+              "choose_for_me"
+            ],
+            "title": "Choice",
+            "description": "choose_for_me selects steady."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "choice"
+        ],
+        "title": "PersonalityIn"
+      },
       "PlaceType": {
         "type": "string",
         "enum": [
@@ -2171,117 +3115,93 @@
           "privacy_version": {
             "type": "string",
             "title": "Privacy Version"
+          },
+          "acknowledgments": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/ConsentType"
+            },
+            "type": "object",
+            "title": "Acknowledgments",
+            "description": "Current document_version for each acknowledgment."
           }
         },
         "type": "object",
         "required": [
           "terms_version",
-          "privacy_version"
+          "privacy_version",
+          "acknowledgments"
         ],
         "title": "PolicyVersions"
       },
-      "RegistrationRequest": {
+      "PreferredNameIn": {
         "properties": {
-          "first_name": {
+          "preferred_name": {
             "type": "string",
             "maxLength": 100,
             "minLength": 1,
-            "title": "First Name"
+            "title": "Preferred Name"
           },
-          "last_name": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Last Name"
-          },
-          "phone": {
+          "name_pronunciation": {
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 32,
-                "minLength": 7,
-                "pattern": "^\\+?[0-9 ().-]{7,32}$"
+                "maxLength": 200,
+                "minLength": 1
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Phone"
-          },
-          "accepted_terms_version": {
-            "type": "string",
-            "maxLength": 50,
-            "minLength": 1,
-            "title": "Accepted Terms Version"
-          },
-          "accepted_privacy_version": {
-            "type": "string",
-            "maxLength": 50,
-            "minLength": 1,
-            "title": "Accepted Privacy Version"
-          },
-          "relationship_to_deceased": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Relationship"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Optional. Shapes the welcome and first question. Not stored on the account. It is stored per case, on case_members, when a case is created."
+            "title": "Name Pronunciation"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "first_name",
-          "last_name",
-          "accepted_terms_version",
-          "accepted_privacy_version"
+          "preferred_name"
         ],
-        "title": "RegistrationRequest"
+        "title": "PreferredNameIn"
       },
-      "RegistrationResponse": {
+      "RegistrationRequest": {
         "properties": {
-          "user": {
-            "$ref": "#/components/schemas/UserOut"
-          },
-          "consents": {
-            "items": {
-              "$ref": "#/components/schemas/ConsentOut"
-            },
-            "type": "array",
-            "title": "Consents"
-          },
-          "language_profile": {
-            "type": "string",
-            "enum": [
-              "family",
-              "professional"
+          "name_from_provider": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Language Profile"
+            "title": "Name From Provider",
+            "description": "A name Google or Apple shared at sign-in. Kept only to pre-fill the preferred name question. Apple sends it on the first sign-in only, so send it then."
           },
-          "notes": {
-            "items": {
-              "$ref": "#/components/schemas/Note"
-            },
-            "type": "array",
-            "title": "Notes"
-          },
-          "next_step": {
-            "$ref": "#/components/schemas/NextStep"
+          "time_zone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1,
+                "examples": [
+                  "America/New_York"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Zone",
+            "description": "Used to show trial dates in local time."
           }
         },
+        "additionalProperties": false,
         "type": "object",
-        "required": [
-          "user",
-          "consents",
-          "language_profile",
-          "notes",
-          "next_step"
-        ],
-        "title": "RegistrationResponse"
+        "title": "RegistrationRequest"
       },
       "Relationship": {
         "type": "string",
@@ -2294,6 +3214,126 @@
           "fiduciary"
         ],
         "title": "Relationship"
+      },
+      "Screen": {
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/ScreenId"
+          },
+          "acknowledgment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledgment"
+          },
+          "body": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Body",
+            "default": []
+          },
+          "legal_notice": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Legal Notice",
+            "default": []
+          },
+          "sample_situation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Situation"
+          },
+          "checkbox": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Checkbox"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "input": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TextInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "choices": {
+            "items": {
+              "$ref": "#/components/schemas/Choice"
+            },
+            "type": "array",
+            "title": "Choices",
+            "default": []
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            },
+            "type": "array",
+            "title": "Links",
+            "default": []
+          },
+          "ai_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Provider",
+            "description": "Third-party AI provider, named before any data is sent to it."
+          },
+          "legal_review_required": {
+            "type": "boolean",
+            "title": "Legal Review Required",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "Screen",
+        "description": "What to render. One question per screen. The question itself is next_step.prompt."
+      },
+      "ScreenId": {
+        "type": "string",
+        "enum": [
+          "welcome",
+          "privacy_terms",
+          "trial_terms",
+          "ai_notice",
+          "declined",
+          "preferred_name",
+          "personality",
+          "case_handoff",
+          "ready",
+          "paused"
+        ],
+        "title": "ScreenId"
       },
       "SignInMethod": {
         "type": "string",
@@ -2380,6 +3420,25 @@
           "overdue"
         ],
         "title": "StatusCounts"
+      },
+      "Support": {
+        "properties": {
+          "need_a_moment_label": {
+            "type": "string",
+            "title": "Need A Moment Label"
+          },
+          "crisis_resource": {
+            "type": "string",
+            "title": "Crisis Resource"
+          }
+        },
+        "type": "object",
+        "required": [
+          "need_a_moment_label",
+          "crisis_resource"
+        ],
+        "title": "Support",
+        "description": "Shown on every onboarding screen (UC-REG-14)."
       },
       "TaskCategory": {
         "type": "string",
@@ -2741,6 +3800,46 @@
         "type": "object",
         "title": "TaskUpdateRequest"
       },
+      "TextInput": {
+        "properties": {
+          "prefill": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefill",
+            "description": "Shared by Google or Apple. Show it for the user to confirm or change. Never save it without that."
+          },
+          "optional_link_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Optional Link Label"
+          },
+          "optional_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Optional Prompt"
+          }
+        },
+        "type": "object",
+        "title": "TextInput"
+      },
       "TriState": {
         "type": "string",
         "enum": [
@@ -2760,57 +3859,6 @@
         ],
         "title": "TriStateAnswer",
         "description": "What the client may send. 'skip' is stored as 'unknown'."
-      },
-      "UserOut": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "email": {
-            "type": "string",
-            "title": "Email"
-          },
-          "first_name": {
-            "type": "string",
-            "title": "First Name"
-          },
-          "last_name": {
-            "type": "string",
-            "title": "Last Name"
-          },
-          "phone": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Phone"
-          },
-          "sign_in_method": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SignInMethod"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "How the account was created. Null only for accounts created before this was recorded."
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "email",
-          "first_name",
-          "last_name"
-        ],
-        "title": "UserOut"
       },
       "ValidationError": {
         "properties": {
@@ -2882,6 +3930,49 @@
           "tasks"
         ],
         "title": "WeekOut"
+      },
+      "WelcomeResponse": {
+        "properties": {
+          "acknowledgment": {
+            "type": "string",
+            "title": "Acknowledgment"
+          },
+          "methods": {
+            "items": {
+              "$ref": "#/components/schemas/SignInOption"
+            },
+            "type": "array",
+            "title": "Methods",
+            "description": "Equally weighted. Show all three with the same emphasis."
+          },
+          "sign_in_label": {
+            "type": "string",
+            "title": "Sign In Label"
+          },
+          "not_ready": {
+            "$ref": "#/components/schemas/Link"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/Note"
+            },
+            "type": "array",
+            "title": "Notes"
+          },
+          "support": {
+            "$ref": "#/components/schemas/Support"
+          }
+        },
+        "type": "object",
+        "required": [
+          "acknowledgment",
+          "methods",
+          "sign_in_label",
+          "not_ready",
+          "notes",
+          "support"
+        ],
+        "title": "WelcomeResponse"
       }
     },
     "securitySchemes": {
@@ -2895,7 +3986,15 @@
   "tags": [
     {
       "name": "Registration",
-      "description": "UC-1 to UC-4. Account creation for each persona."
+      "description": "UC-REG-01 to UC-REG-05. Welcome, sign-in, and account creation."
+    },
+    {
+      "name": "Onboarding",
+      "description": "UC-REG-07 to UC-REG-14. Acknowledgments, name, personality."
+    },
+    {
+      "name": "Account",
+      "description": "Settings and account deletion (UC-ACCT-01)."
     },
     {
       "name": "Cases",

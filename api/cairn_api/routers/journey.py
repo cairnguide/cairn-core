@@ -4,6 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
 
+from .. import account as acct
 from .. import intake, journey, messages
 from ..auth import Identity, get_identity
 from ..db import Session
@@ -72,6 +73,7 @@ def _journey_view(s: Session, case_id: UUID, notes=None) -> JourneyResponse:
 def build_journey(case_id: UUID, request: Request, identity: Identity = Depends(get_identity)) -> JourneyResponse:
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
+        acct.require_ready(s, request, write=True)
         intake.generate_journey(s, case_id)
         view = _journey_view(s, case_id)
         if view.mode == "tasks" or view.mode == "paused":
@@ -89,7 +91,8 @@ def build_journey(case_id: UUID, request: Request, identity: Identity = Depends(
 def get_journey(case_id: UUID, request: Request, identity: Identity = Depends(get_identity)) -> JourneyResponse:
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
-        return _journey_view(s, case_id)
+        ready = acct.require_ready(s, request, write=False)
+        return _journey_view(s, case_id, notes=ready.notes)
 
 
 @router.post(
@@ -107,6 +110,7 @@ def pause_journey(case_id: UUID, request: Request, req: PauseRequest | None = No
     days = (req or PauseRequest()).pause_days
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
+        acct.require_ready(s, request, write=True)
         row = s.one("UPDATE cairn.cases SET tasks_paused_until = now() + make_interval(days => %s) "
                     "WHERE id = %s RETURNING id", (days, case_id))
         if row is None:
@@ -121,6 +125,7 @@ def pause_journey(case_id: UUID, request: Request, req: PauseRequest | None = No
 def resume_journey(case_id: UUID, request: Request, identity: Identity = Depends(get_identity)) -> JourneyResponse:
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
+        acct.require_ready(s, request, write=True)
         row = s.one("UPDATE cairn.cases SET tasks_paused_until = NULL WHERE id = %s RETURNING id", (case_id,))
         if row is None:
             raise intake.case_access_denied()
@@ -138,6 +143,7 @@ def resume_journey(case_id: UUID, request: Request, identity: Identity = Depends
 def case_status(case_id: UUID, request: Request, identity: Identity = Depends(get_identity)) -> CaseStatusResponse:
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
+        acct.require_ready(s, request, write=False)
         case = intake.load_case(s, case_id)
         deceased = intake.load_deceased(s, case_id)
         rows = journey.load_tasks(s, case_id)

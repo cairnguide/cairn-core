@@ -1,4 +1,7 @@
-"""End-to-end checks for UC-1 to UC-13 against a real database with row-level security.
+"""End-to-end checks for UC-5 to UC-13 against a real database with row-level security.
+
+Registration and onboarding (UC-REG-01 to UC-REG-14, UC-ACCT-01) are in
+test_registration_onboarding.py.
 
 Skipped unless CAIRN_TEST_ADMIN_URL points at a scratch PostgreSQL 15+ server.
 Fake data only (example.test addresses, obviously fake names).
@@ -7,17 +10,14 @@ from datetime import date, timedelta
 
 import pytest
 
-from .conftest import as_user
-
-REG = {"first_name": "Pat", "last_name": "Testperson",
-       "accepted_terms_version": "terms-v1", "accepted_privacy_version": "privacy-v1"}
+from .conftest import as_user, onboard
 
 
-def register(api, subject, relationship=None):
-    body = dict(REG, relationship_to_deceased=relationship) if relationship else REG
-    r = api.post("/v1/registrations", json=body, headers=as_user(subject))
+def register(api, subject):
+    """Create the account and finish onboarding, so the user can start a case."""
+    r = api.post("/v1/registrations", json={"time_zone": "America/New_York"}, headers=as_user(subject))
     assert r.status_code in (200, 201), r.text
-    return r.json()
+    return onboard(api, subject)
 
 
 def new_case(api, subject, relationship="spouse", **extra):
@@ -43,52 +43,6 @@ def ready_case(api, subject, relationship="child"):
 
 def find_task(journey, key):
     return next(t for w in journey["weeks"] for t in w["tasks"] if t["task_key"] == key)
-
-
-# ------------------------------------------------------------------ registration
-
-def test_uc1_spouse_registers_and_is_acknowledged_first(api):
-    body = register(api, "uc1-spouse", "spouse")
-    assert body["notes"][0]["kind"] == "acknowledgment"
-    assert "sorry for your loss" in body["notes"][0]["text"]
-    assert body["next_step"]["action"] == "start_case"
-    assert {c["purpose"] for c in body["consents"]} == {"terms", "privacy"}
-    assert body["language_profile"] == "family"
-
-
-def test_uc1_requires_confirmed_email_and_current_terms(api):
-    r = api.post("/v1/registrations", json=REG, headers=as_user("uc1-unverified", verified=False))
-    assert r.status_code == 403 and r.json()["code"] == "email_not_verified"
-    r = api.post("/v1/registrations", json=dict(REG, accepted_terms_version="old"), headers=as_user("uc1-old"))
-    assert r.status_code == 422 and r.json()["code"] == "consent_required"
-
-
-def test_registration_is_idempotent(api):
-    register(api, "uc1-repeat")
-    r = api.post("/v1/registrations", json=REG, headers=as_user("uc1-repeat"))
-    assert r.status_code == 200
-    assert len(r.json()["consents"]) == 2
-
-
-def test_uc2_child_is_asked_new_or_existing(api):
-    step = register(api, "uc2-child", "child")["next_step"]
-    assert step["action"] == "choose_case_start"
-    join = next(o for o in step["options"] if o["value"] == "join_existing_case")
-    assert join["available"] is False
-
-
-def test_uc3_poa_is_told_authority_ends_at_death(api):
-    body = register(api, "uc3-poa", "power_of_attorney")
-    legal = [n for n in body["notes"] if n["kind"] == "legal"]
-    assert legal and legal[0]["legal_review_required"]
-    assert body["next_step"]["action"] == "confirm_current_role"
-
-
-def test_uc4_fiduciary_gets_professional_language(api):
-    body = register(api, "uc4-fid", "fiduciary")
-    assert body["language_profile"] == "professional"
-    assert body["next_step"]["action"] == "confirm_fiduciary"
-    assert "sorry" not in body["notes"][0]["text"]
 
 
 # ------------------------------------------------------------------ case creation
@@ -166,7 +120,7 @@ def test_uc7_estate_flags_one_at_a_time_with_skip(api):
 
 
 def test_uc8_fiduciary_composed_session(api):
-    register(api, "uc8", "fiduciary")
+    register(api, "uc8")
     body = new_case(api, "uc8", "fiduciary",
                     death_event={"date_of_death": "2026-09-10", "death_state": "NH"},
                     estate_flags={"veteran_status": "yes", "has_will": "unknown"},
@@ -178,7 +132,7 @@ def test_uc8_fiduciary_composed_session(api):
 
 
 def test_uc8_partial_save_then_journey_refused_until_ready(api):
-    register(api, "uc8b", "fiduciary")
+    register(api, "uc8b")
     cid = new_case(api, "uc8b", "fiduciary", start_journey=True)["case"]["id"]
     r = api.post(f"/v1/cases/{cid}/journey", headers=as_user("uc8b"))
     assert r.status_code == 409
@@ -257,7 +211,7 @@ def test_uc12_pause_holds_progress_and_resume_restores_it(api):
 
 
 def test_uc13_status_across_the_case(api):
-    register(api, "uc13", "fiduciary")
+    register(api, "uc13")
     cid, journey = ready_case(api, "uc13", "fiduciary")
     certs = find_task(journey, "order_death_certificates")
     api.post(f"/v1/cases/{cid}/tasks/{certs['id']}/certificate-order", headers=as_user("uc13"),
@@ -297,37 +251,3 @@ def test_journey_endpoints_deny_non_members(api, path, method, body):
     r = getattr(api, method)(f"/v1/cases/{cid}{path}", headers=as_user("deny-other"),
                              **({"json": body} if body is not None else {}))
     assert r.status_code == 403
-
-
-# ------------------------------------------------------------------ sign-in methods
-
-@pytest.mark.parametrize("method,subject", [
-    ("google", "google-oauth2|uc1-g"), ("apple", "apple|001.uc1a"), ("email", "auth0|uc1-e")])
-def test_account_created_with_each_method(api, method, subject):
-    r = api.post("/v1/registrations", json=REG, headers=as_user(subject, method=method))
-    assert r.status_code == 201, r.text
-    assert r.json()["user"]["sign_in_method"] == method
-    me = api.get("/v1/me", headers=as_user(subject, method=method)).json()
-    assert me["sign_in_method"] == method
-
-
-def test_same_email_other_method_is_told_which_to_use(api):
-    email = "shared-address@example.test"
-    r = api.post("/v1/registrations", json=REG, headers=as_user("google-oauth2|dup", email, method="google"))
-    assert r.status_code == 201
-    for subject, method in (("apple|dup", "apple"), ("auth0|dup", "email")):
-        r = api.post("/v1/registrations", json=REG, headers=as_user(subject, email.upper(), method=method))
-        assert r.status_code == 409, r.text
-        assert r.json()["code"] == "account_exists"
-        assert r.json()["sign_in_method"] == "google"
-        assert "sign in with Google" in r.json()["detail"]
-    # The original method still signs in normally.
-    r = api.post("/v1/registrations", json=REG, headers=as_user("google-oauth2|dup", email, method="google"))
-    assert r.status_code == 200
-
-
-def test_email_signup_waits_for_confirmation(api):
-    r = api.post("/v1/registrations", json=REG, headers=as_user("auth0|unconfirmed", verified=False))
-    assert r.status_code == 403 and r.json()["code"] == "email_not_verified"
-    r = api.post("/v1/registrations", json=REG, headers=as_user("auth0|unconfirmed"))
-    assert r.status_code == 201

@@ -1,4 +1,4 @@
-"""User-facing copy, kept in one place for product, design, and counsel review.
+"""User-facing copy for cases, the journey, and tasks, kept in one place for review.
 
 House style from database/CLAUDE.md: plain prose, no em dashes, no semicolons
 within a sentence. Acknowledge first, then ask one thing.
@@ -6,34 +6,8 @@ Anything touching legal authority is marked legal_review_required.
 """
 from .schemas import NextStep, Note, Option, Relationship
 
-# ------------------------------------------------------------------ registration
-
-SIGN_IN_LABELS = {
-    "google": "Continue with Google",
-    "apple": "Continue with Apple",
-    "email": "Continue with email",
-}
-
-_METHOD_NAMES = {"google": "Google", "apple": "Apple", "email": "your email address and password"}
-
-
-def account_exists(method: str) -> str:
-    name = _METHOD_NAMES.get(method)
-    if name is None:
-        return "You already have a Cairn account with this email. Please sign in the way you did before."
-    return f"You already have a Cairn account with this email. Please sign in with {name}."
-
-
-WELCOME_FAMILY = Note(
-    kind="acknowledgment",
-    text="We're so sorry for your loss. There's no rush here. We'll take this one small step at a time, "
-         "and you can stop whenever you need to.",
-)
-
-WELCOME_PROFESSIONAL = Note(
-    kind="acknowledgment",
-    text="Welcome to Cairn. We'll help you keep this estate's first steps organized and in one place.",
-)
+# ------------------------------------------------------------------ case hand-off
+# Sign-up and onboarding copy lives in content/registration-copy.json (copy_store.py).
 
 POA_ENDS_AT_DEATH = Note(
     kind="legal",

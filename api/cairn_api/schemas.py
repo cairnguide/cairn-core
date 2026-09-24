@@ -134,30 +134,126 @@ class NextStep(ResponseModel):
 
 
 class Note(ResponseModel):
-    kind: Literal["acknowledgment", "info", "legal"]
+    kind: Literal["acknowledgment", "info", "legal", "crisis", "reminder", "account"]
     text: str
     legal_review_required: bool = False
 
 
-# ------------------------------------------------------------------ registration (UC-1 to UC-4)
+# ------------------------------------------------------------ registration and onboarding (UC-REG-01 to UC-REG-14)
 
-class RegistrationRequest(RequestModel):
-    first_name: Name
-    last_name: Name
-    phone: Annotated[str, Field(min_length=7, max_length=32, pattern=r"^\+?[0-9 ().-]{7,32}$")] | None = None
-    accepted_terms_version: Annotated[str, Field(min_length=1, max_length=50)]
-    accepted_privacy_version: Annotated[str, Field(min_length=1, max_length=50)]
-    relationship_to_deceased: Relationship | None = Field(
-        default=None,
-        description="Optional. Shapes the welcome and first question. Not stored on the account. "
-                    "It is stored per case, on case_members, when a case is created.",
-    )
+def _time_zone(value: str) -> str:
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    if not re.fullmatch(r"[A-Za-z_]+(/[A-Za-z0-9_+-]+){0,2}", value) or value == "localtime":
+        raise ValueError("must be an IANA time zone name, for example America/New_York")
+    try:
+        ZoneInfo(value)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ValueError("must be an IANA time zone name, for example America/New_York") from None
+    return value
+
+
+TimeZone = Annotated[str, Field(min_length=1, max_length=64, examples=["America/New_York"]),
+                     AfterValidator(_time_zone)]
+Pronunciation = Annotated[str, Field(min_length=1, max_length=200), AfterValidator(_no_control_chars)]
+ClientId = Annotated[str, Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9 ._/()+-]+$",
+                                examples=["ios/1.0.0"],
+                                description="App platform and version, stored on the consent record.")]
 
 
 class SignInMethod(str, Enum):
     google = "google"
     apple = "apple"
     email = "email"
+
+
+class Personality(str, Enum):
+    gentle = "gentle"
+    steady = "steady"
+    straightforward = "straightforward"
+
+
+class AccountStatus(str, Enum):
+    pending_onboarding = "pending_onboarding"
+    active_no_case = "active_no_case"
+    trial_active = "trial_active"
+    read_only = "read_only"
+    subscribed = "subscribed"
+    pending_deletion = "pending_deletion"
+
+
+class OnboardingStep(str, Enum):
+    """The last completed step."""
+    account_created = "account_created"
+    privacy_terms_accepted = "privacy_terms_accepted"
+    trial_terms_accepted = "trial_terms_accepted"
+    ai_notice_accepted = "ai_notice_accepted"
+    preferred_name_saved = "preferred_name_saved"
+    complete = "complete"
+
+
+class ConsentType(str, Enum):
+    privacy_terms = "privacy_terms"
+    trial_terms = "trial_terms"
+    ai_notice = "ai_notice"
+
+
+class ScreenId(str, Enum):
+    welcome = "welcome"
+    privacy_terms = "privacy_terms"
+    trial_terms = "trial_terms"
+    ai_notice = "ai_notice"
+    declined = "declined"
+    preferred_name = "preferred_name"
+    personality = "personality"
+    case_handoff = "case_handoff"
+    ready = "ready"
+    paused = "paused"
+
+
+class Link(ResponseModel):
+    label: str
+    url: str
+
+
+class Checkbox(ResponseModel):
+    label: str
+    checked: Literal[False] = Field(default=False, description="Never pre-checked.")
+    document_version: str = Field(description="Send back when agreeing, to show which text was agreed to.")
+
+
+class TextInput(ResponseModel):
+    prefill: str | None = Field(default=None, description="Shared by Google or Apple. Show it for the user "
+                                                          "to confirm or change. Never save it without that.")
+    optional_link_label: str | None = None
+    optional_prompt: str | None = None
+
+
+class Choice(ResponseModel):
+    value: str
+    label: str
+    sample: str | None = Field(default=None, description="How Cairn would reply in this voice.")
+
+
+class Screen(ResponseModel):
+    """What to render. One question per screen. The question itself is next_step.prompt."""
+    id: ScreenId
+    acknowledgment: str | None = None
+    body: list[str] = []
+    legal_notice: list[str] = []
+    sample_situation: str | None = None
+    checkbox: Checkbox | None = None
+    input: TextInput | None = None
+    choices: list[Choice] = []
+    links: list[Link] = []
+    ai_provider: str | None = Field(default=None, description="Third-party AI provider, named before any "
+                                                             "data is sent to it.")
+    legal_review_required: bool = False
+
+
+class Support(ResponseModel):
+    """Shown on every onboarding screen (UC-REG-14)."""
+    need_a_moment_label: str
+    crisis_resource: str
 
 
 class SignInOption(ResponseModel):
@@ -171,34 +267,125 @@ class SignInMethodsResponse(ResponseModel):
     methods: list[SignInOption]
 
 
-class UserOut(ResponseModel):
+class WelcomeResponse(ResponseModel):
+    acknowledgment: str
+    methods: list[SignInOption] = Field(description="Equally weighted. Show all three with the same emphasis.")
+    sign_in_label: str
+    not_ready: Link
+    notes: list[Note]
+    support: Support
+
+
+class RegistrationRequest(RequestModel):
+    name_from_provider: Name | None = Field(
+        default=None,
+        description="A name Google or Apple shared at sign-in. Kept only to pre-fill the preferred name "
+                    "question. Apple sends it on the first sign-in only, so send it then.")
+    time_zone: TimeZone | None = Field(default=None, description="Used to show trial dates in local time.")
+
+
+class AccountOut(ResponseModel):
     id: UUID
     email: str
-    first_name: str
-    last_name: str
-    phone: str | None = None
-    sign_in_method: SignInMethod | None = Field(
-        default=None,
-        description="How the account was created. Null only for accounts created before this was recorded.")
+    sign_in_method: SignInMethod | None
+    preferred_name: str | None
+    name_pronunciation: str | None
+    personality: Personality
+    status: AccountStatus = Field(description="Effective status. read_only once the trial has ended.")
+    onboarding_step: OnboardingStep
+    trial_started_at: datetime | None
+    trial_ends_at: datetime | None
+    trial_end_date: date | None = Field(description="trial_ends_at as a date in the account's time zone.")
+    time_zone: str | None
+    ai_label: str | None = Field(description="Show in every chat view once set.")
 
 
-class ConsentOut(ResponseModel):
-    purpose: Literal["terms", "privacy", "ai_processing"]
-    policy_version: str
-    granted_at: datetime
+class OnboardingResponse(ResponseModel):
+    account: AccountOut
+    screen: Screen
+    notes: list[Note]
+    support: Support
+    next_step: NextStep
 
 
-class RegistrationResponse(ResponseModel):
-    user: UserOut
-    consents: list[ConsentOut]
+class PauseResponse(ResponseModel):
+    screen: Screen
+    support: Support
+    next_step: NextStep
+
+
+class AccountResponse(ResponseModel):
+    account: AccountOut
+    notes: list[Note] = Field(description="The read-only banner or a due trial reminder, when there is one.")
+
+
+class AcknowledgmentIn(RequestModel):
+    """agreed=false is the "I'm not sure" path (UC-REG-10). Nothing is recorded for it."""
+    agreed: bool
+    document_version: Annotated[str, Field(min_length=1, max_length=200)] | None = None
+    client: ClientId
+
+    @model_validator(mode="after")
+    def _version_when_agreeing(self):
+        if self.agreed and not self.document_version:
+            raise ValueError("send the document_version shown with the checkbox")
+        return self
+
+
+class PreferredNameIn(RequestModel):
+    preferred_name: Name
+    name_pronunciation: Pronunciation | None = None
+
+
+class PersonalityIn(RequestModel):
+    choice: Literal["gentle", "steady", "straightforward", "choose_for_me"] = Field(
+        description="choose_for_me selects steady.")
+
+
+class AccountPatch(RequestModel):
+    """Settings. Personality can be changed at any time. Omitted fields are unchanged."""
+    preferred_name: Name | None = None
+    name_pronunciation: Pronunciation | None = None
+    personality: Personality | None = None
+    time_zone: TimeZone | None = None
+
+    @model_validator(mode="after")
+    def _check(self):
+        if not self.model_fields_set:
+            raise ValueError("send at least one field to change")
+        for required in ("preferred_name", "personality"):
+            if required in self.model_fields_set and getattr(self, required) is None:
+                raise ValueError(f"{required} can't be cleared")
+        return self
+
+
+class CaseHandoffRequest(RequestModel):
+    relationship: Relationship
+
+
+class CaseHandoffResponse(ResponseModel):
     language_profile: Literal["family", "professional"]
     notes: list[Note]
     next_step: NextStep
 
 
+class AccountDeletionInfo(ResponseModel):
+    explanation: str
+    next_step: NextStep
+
+
+class AccountDeletionRequest(RequestModel):
+    confirm: Literal[True] = Field(description="Must be true. Sent only after the user confirms.")
+
+
+class AccountDeletionResponse(ResponseModel):
+    notes: list[Note]
+
+
 class PolicyVersions(ResponseModel):
     terms_version: str
     privacy_version: str
+    acknowledgments: dict[ConsentType, str] = Field(description="Current document_version for each acknowledgment.")
 
 
 # ------------------------------------------------------------------ case and deceased (UC-5 to UC-8)

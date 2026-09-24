@@ -145,6 +145,16 @@ erDiagram
     }
 ```
 
+## Accounts, onboarding, and the trial (migration 0008)
+
+From `cairn-registration-use-cases.json`. Mapped onto existing tables rather than new ones.
+
+- **USERS** gains `preferred_name`, `name_pronunciation`, `name_prefill` (provider-shared, pre-fill only), `personality` (gentle, steady, straightforward), `time_zone`, `onboarding_step`, `status` (pending_onboarding, active_no_case, trial_active, read_only, subscribed, pending_deletion), `trial_started_at`, and `trial_ends_at`. Legal names become optional and are no longer collected at sign-up. Age is not collected (the spec's UC-REG-06 was dropped by product decision).
+- **CONSENTS** is the spec's consent record: purposes `privacy_terms`, `trial_terms`, and `ai_notice`, plus `auth_provider` and `client`. Append-only.
+- **TRIAL_REMINDERS** holds the day-21 and day-27 reminders, created when the trial starts.
+- **IDENTITY_DELETION_REQUESTS** queues Auth0 deletion and Apple token revocation after an account is deleted. It holds the IdP subject only and is emptied as the work is done.
+- The trial starts with the first case (a trigger on CASES) and lasts exactly 672 hours. After it ends, case data can be read and deleted but not created or changed, unless the account is subscribed.
+
 ## Decision log
 
 | # | Decision | Status |
