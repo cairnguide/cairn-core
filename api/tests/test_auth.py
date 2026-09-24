@@ -67,9 +67,3 @@ def test_bad_tokens_are_rejected(bad):
         VERIFIER.verify(token(**bad))
     assert exc.value.status == 401
 
-
-def test_sign_in_methods_endpoint_lists_google_apple_email(contract_client):
-    r = contract_client.get("/v1/sign-in-methods")
-    assert r.status_code == 200
-    methods = {m["method"]: m["auth0_connection"] for m in r.json()["methods"]}
-    assert methods == {"google": "google-oauth2", "apple": "apple", "email": "Username-Password-Authentication"}

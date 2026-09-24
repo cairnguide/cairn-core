@@ -29,6 +29,21 @@ BEGIN
   IF cond IS NOT TRUE THEN RAISE EXCEPTION 'ASSERTION FAILED: %', label; END IF;
 END $$;
 
+-- Walks the current user through onboarding with the real functions (0008).
+CREATE FUNCTION pg_temp.onboard() RETURNS void LANGUAGE plpgsql AS $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['privacy_terms', 'trial_terms', 'ai_notice'] LOOP
+    INSERT INTO cairn.consents (user_id, purpose, policy_version, auth_provider, client)
+      VALUES (cairn.current_user_id(), t, 'test', 'email', 'verify/1');
+    PERFORM cairn.advance_onboarding(CASE t WHEN 'privacy_terms' THEN 'privacy_terms_accepted'
+      WHEN 'trial_terms' THEN 'trial_terms_accepted' ELSE 'ai_notice_accepted' END);
+  END LOOP;
+  UPDATE cairn.users SET preferred_name = 'Tester' WHERE id = cairn.current_user_id();
+  PERFORM cairn.advance_onboarding('preferred_name_saved');
+  PERFORM cairn.advance_onboarding('complete');
+END $$;
+
 -- ------------------------------------------------------------ owner setup: templates
 INSERT INTO cairn.task_templates
   (task_key, version, title, plain_summary, journey_week, due_offset_days, jurisdiction,
@@ -74,6 +89,47 @@ SELECT pg_temp.expect_fail($q$SELECT cairn.purge_expired_cases()$q$);
 -- No user set: everything is invisible.
 SELECT pg_temp.expect_count('SELECT 1 FROM cairn.users', 0);
 
+-- ------------------------------------------------------------ onboarding (0008)
+SELECT set_config('app.user_id', :'alice', true);
+SELECT pg_temp.expect_true('new account is pending onboarding',
+  (SELECT status = 'pending_onboarding' AND onboarding_step = 'account_created' AND trial_started_at IS NULL
+   FROM cairn.users WHERE id = :'alice'::uuid));
+-- No case until onboarding is finished.
+SELECT pg_temp.expect_fail(format($q$INSERT INTO cairn.cases (created_by) VALUES (%L)$q$, :'alice'));
+-- Steps go in order, and acknowledgment steps need their consent row. There is no age step.
+SELECT pg_temp.expect_fail($q$SELECT cairn.advance_onboarding('age_confirmed')$q$);
+SELECT pg_temp.expect_fail($q$SELECT cairn.advance_onboarding('privacy_terms_accepted')$q$);
+SELECT pg_temp.expect_fail($q$SELECT cairn.advance_onboarding('trial_terms_accepted')$q$);
+SELECT pg_temp.expect_fail($q$SELECT cairn.advance_onboarding('bogus')$q$);
+INSERT INTO cairn.consents (user_id, purpose, policy_version) VALUES (:'alice'::uuid, 'privacy_terms', 'test');
+SELECT pg_temp.expect_true('first step after account creation is privacy_terms',
+  cairn.advance_onboarding('privacy_terms_accepted') = 'privacy_terms_accepted');
+SELECT pg_temp.expect_true('advance is idempotent',
+  cairn.advance_onboarding('privacy_terms_accepted') = 'privacy_terms_accepted');
+SELECT pg_temp.expect_fail($q$SELECT cairn.advance_onboarding('ai_notice_accepted')$q$);
+-- The app cannot set onboarding, status, or trial columns directly.
+SELECT pg_temp.expect_fail($q$UPDATE cairn.users SET onboarding_step = 'complete'$q$);
+SELECT pg_temp.expect_fail($q$UPDATE cairn.users SET status = 'subscribed'$q$);
+SELECT pg_temp.expect_fail($q$UPDATE cairn.users SET trial_started_at = NULL$q$);
+-- Owner-only jobs are not callable by the app.
+SELECT pg_temp.expect_fail($q$SELECT cairn.expire_trials()$q$);
+SELECT pg_temp.expect_fail($q$SELECT * FROM cairn.claim_due_trial_reminders(10)$q$);
+SELECT pg_temp.expect_fail($q$SELECT cairn.purge_stale_accounts('1 day', NULL)$q$);
+SELECT pg_temp.expect_fail($q$SELECT * FROM cairn.identity_deletion_requests$q$);
+-- Finish onboarding from the start. Reset first so the helper runs every step.
+RESET ROLE;
+UPDATE cairn.users SET onboarding_step = 'account_created' WHERE id = :'alice'::uuid;
+SET LOCAL ROLE cairn_app;
+SELECT pg_temp.onboard();
+SELECT pg_temp.expect_true('onboarding complete, no trial yet',
+  (SELECT status = 'active_no_case' AND onboarding_step = 'complete' AND trial_started_at IS NULL
+          AND name_prefill IS NULL FROM cairn.users WHERE id = :'alice'::uuid));
+-- Consents are append-only for the app.
+SELECT pg_temp.expect_fail($q$UPDATE cairn.consents SET policy_version = 'x'$q$);
+SELECT pg_temp.expect_fail($q$DELETE FROM cairn.consents$q$);
+SELECT set_config('app.user_id', :'bob', true);
+SELECT pg_temp.onboard();
+
 -- Alice creates a case, becomes owner, records the deceased and the death, gets tasks.
 SELECT set_config('app.user_id', :'alice', true);
 INSERT INTO cairn.cases (created_by) VALUES (:'alice'::uuid) RETURNING id AS case_a \gset
@@ -91,6 +147,15 @@ INSERT INTO cairn.consents (user_id, purpose, policy_version) VALUES (:'alice'::
 INSERT INTO cairn.audit_events (actor_id, case_id, action) VALUES (:'alice'::uuid, :'case_a'::uuid, 'case_created');
 
 -- always + vet + nh + nowill(has_will no, domicile NH) + t_old v2 = 5. CA excluded. Old version excluded.
+-- The first case starts the 28-day trial in the same transaction and schedules reminders.
+SELECT pg_temp.expect_true('trial started with the first case',
+  (SELECT status = 'trial_active' AND trial_started_at = now() AND trial_ends_at = now() + interval '672 hours'
+   FROM cairn.users WHERE id = :'alice'::uuid));
+SELECT pg_temp.expect_count('SELECT 1 FROM cairn.trial_reminders', 2);
+SELECT pg_temp.expect_true('reminders at day 21 and day 27',
+  (SELECT array_agg(due_at - now() ORDER BY kind) = ARRAY[interval '504 hours', interval '648 hours']
+   FROM cairn.trial_reminders));
+
 SELECT pg_temp.expect_true('generate_case_tasks creates 5', cairn.generate_case_tasks(:'case_a'::uuid) = 5);
 SELECT pg_temp.expect_true('generate_case_tasks is idempotent', cairn.generate_case_tasks(:'case_a'::uuid) = 0);
 SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.case_tasks ct JOIN cairn.task_templates t ON t.id = ct.template_id WHERE ct.case_id = %L AND t.task_key = ''t_ca''', :'case_a'), 0);
@@ -117,11 +182,12 @@ UPDATE cairn.case_tasks SET status = 'done', completed_at = now()
 
 -- ------------------------------------------------------------ isolation: Bob sees nothing of Alice's
 SELECT set_config('app.user_id', :'bob', true);
+SELECT pg_temp.expect_count('SELECT 1 FROM cairn.trial_reminders', 0);
 SELECT pg_temp.expect_count('SELECT 1 FROM cairn.cases', 0);
 SELECT pg_temp.expect_count('SELECT 1 FROM cairn.deceased', 0);
 SELECT pg_temp.expect_count('SELECT 1 FROM cairn.case_members', 0);
 SELECT pg_temp.expect_count('SELECT 1 FROM cairn.case_tasks', 0);
-SELECT pg_temp.expect_count('SELECT 1 FROM cairn.consents', 0);
+SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.consents WHERE user_id = %L', :'alice'), 0);
 SELECT pg_temp.expect_count('SELECT 1 FROM cairn.users', 1);  -- only himself
 -- Writes against Alice's case are rejected or affect nothing.
 SELECT pg_temp.expect_fail(format($q$INSERT INTO cairn.case_members (case_id,user_id,relationship,role) VALUES (%L,%L,'child','owner')$q$, :'case_a', :'bob'));
@@ -150,8 +216,69 @@ SELECT pg_temp.expect_count('SELECT 1 FROM cairn.deceased', 1);
 SELECT pg_temp.expect_count('SELECT 1 FROM cairn.case_tasks', 5);
 SELECT pg_temp.expect_fail($q$INSERT INTO cairn.task_templates (task_key,version,title,plain_summary,journey_week,due_offset_days,jurisdiction,content_hash,git_release) VALUES ('zzz',1,'x','x',1,1,'US',repeat('9',64),'t')$q$);
 
+-- A second case never moves the trial clock.
+SELECT trial_started_at AS alice_trial FROM cairn.users WHERE id = :'alice'::uuid \gset
+INSERT INTO cairn.cases (created_by) VALUES (:'alice'::uuid) RETURNING id AS case_a2 \gset
+INSERT INTO cairn.case_members (case_id, user_id, relationship, role)
+  VALUES (:'case_a2'::uuid, :'alice'::uuid, 'spouse', 'owner');
+SELECT pg_temp.expect_true('second case keeps trial_started_at',
+  (SELECT trial_started_at = :'alice_trial'::timestamptz FROM cairn.users WHERE id = :'alice'::uuid));
+SELECT pg_temp.expect_count('SELECT 1 FROM cairn.trial_reminders', 2);
+
 -- ------------------------------------------------------------ back to owner: immutability and retention
 RESET ROLE;
+-- The trial start is never reset, not even by the owner.
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.users SET trial_started_at = NULL, trial_ends_at = NULL WHERE id = %L$q$, :'alice'));
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.users SET trial_ends_at = now() WHERE id = %L$q$, :'alice'));
+-- Consents are append-only for the owner too, except the cascade from deleting the account.
+SELECT pg_temp.expect_fail($q$UPDATE cairn.consents SET policy_version = 'x'$q$);
+SELECT pg_temp.expect_fail($q$DELETE FROM cairn.consents$q$);
+SELECT pg_temp.expect_fail($q$TRUNCATE cairn.consents$q$);
+-- Reminders due now are claimed once for email.
+UPDATE cairn.trial_reminders SET due_at = now() - interval '1 minute'
+  WHERE user_id = :'alice'::uuid AND kind = 'trial_day_21';
+SELECT pg_temp.expect_count('SELECT * FROM cairn.claim_due_trial_reminders(10)', 1);
+SELECT pg_temp.expect_count('SELECT * FROM cairn.claim_due_trial_reminders(10)', 0);
+
+-- ------------------------------------------------------------ read-only after the trial (D-05)
+-- Move Alice's trial into the past. The guard trigger is lifted only inside this rolled-back test.
+ALTER TABLE cairn.users DISABLE TRIGGER users_trial_set_once;
+UPDATE cairn.users SET trial_started_at = now() - interval '29 days',
+                       trial_ends_at = now() - interval '29 days' + interval '672 hours'
+  WHERE id = :'alice'::uuid;
+ALTER TABLE cairn.users ENABLE TRIGGER users_trial_set_once;
+SET LOCAL ROLE cairn_app;
+SELECT set_config('app.user_id', :'alice', true);
+SELECT pg_temp.expect_true('account is read-only', NOT cairn.account_can_write());
+SELECT pg_temp.expect_true('effective status is read_only',
+  (SELECT cairn.effective_account_status(status, trial_ends_at) = 'read_only' FROM cairn.users WHERE id = :'alice'::uuid));
+SELECT pg_temp.expect_count('SELECT 1 FROM cairn.cases', 2);          -- still readable
+SELECT pg_temp.expect_count('SELECT 1 FROM cairn.case_tasks', 5);
+SELECT pg_temp.expect_fail(format($q$INSERT INTO cairn.cases (created_by) VALUES (%L)$q$, :'alice'));
+SELECT pg_temp.expect_fail(format($q$INSERT INTO cairn.deceased (case_id, legal_first_name, legal_last_name) VALUES (%L,'E','V')$q$, :'case_a2'));
+SELECT pg_temp.expect_fail(format($q$INSERT INTO cairn.context_items (case_id, item_key, payload) VALUES (%L,'CERT_ORDER','{}')$q$, :'case_a'));
+DO $$
+DECLARE n bigint;
+BEGIN
+  UPDATE cairn.deceased SET legal_first_name = 'Changed';  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 0 THEN RAISE EXCEPTION 'read-only account updated % deceased rows', n; END IF;
+  UPDATE cairn.case_tasks SET status = 'skipped';          GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 0 THEN RAISE EXCEPTION 'read-only account updated % task rows', n; END IF;
+  UPDATE cairn.cases SET tasks_paused_until = now();       GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 0 THEN RAISE EXCEPTION 'read-only account updated % cases', n; END IF;
+END $$;
+-- Settings stay editable and a case can still be deleted.
+UPDATE cairn.users SET personality = 'gentle' WHERE id = :'alice'::uuid;
+DELETE FROM cairn.cases WHERE id = :'case_a2'::uuid;
+SELECT pg_temp.expect_count('SELECT 1 FROM cairn.cases', 1);
+RESET ROLE;
+-- A subscribed account can write again.
+UPDATE cairn.users SET status = 'subscribed' WHERE id = :'alice'::uuid;
+SET LOCAL ROLE cairn_app;
+SELECT set_config('app.user_id', :'alice', true);
+SELECT pg_temp.expect_true('subscribed account can write', cairn.account_can_write());
+RESET ROLE;
+SELECT pg_temp.expect_true('expire_trials skips subscribed accounts', cairn.expire_trials() = 0);
 SELECT pg_temp.expect_fail($q$UPDATE cairn.task_templates SET title = 'changed' WHERE task_key = 't_always'$q$);
 SELECT pg_temp.expect_fail($q$DELETE FROM cairn.task_templates WHERE task_key = 't_always'$q$);
 SELECT pg_temp.expect_fail($q$UPDATE cairn.template_citations SET url = 'https://example.test/b'$q$);
@@ -178,7 +305,29 @@ INSERT INTO cairn.case_members (case_id, user_id, relationship, role) VALUES (:'
 INSERT INTO cairn.deceased (case_id, legal_first_name, legal_last_name) VALUES (:'case_b'::uuid, 'Eve', 'Baker');
 DELETE FROM cairn.cases WHERE id = :'case_b'::uuid;
 SELECT pg_temp.expect_count('SELECT 1 FROM cairn.deceased', 0);
+
+-- ------------------------------------------------------------ account deletion (UC-ACCT-01)
+INSERT INTO cairn.cases (created_by) VALUES (:'bob'::uuid) RETURNING id AS case_b2 \gset
+INSERT INTO cairn.case_members (case_id, user_id, relationship, role) VALUES (:'case_b2'::uuid, :'bob'::uuid, 'child', 'owner');
+INSERT INTO cairn.deceased (case_id, legal_first_name, legal_last_name) VALUES (:'case_b2'::uuid, 'Eve', 'Baker');
+SELECT cairn.delete_my_account();
 RESET ROLE;
+SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.users WHERE id = %L', :'bob'), 0);
+SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.consents WHERE user_id = %L', :'bob'), 0);
+SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.trial_reminders WHERE user_id = %L', :'bob'), 0);
+SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.cases WHERE id = %L', :'case_b2'), 0);
+SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.deceased WHERE case_id = %L', :'case_b2'), 0);
+SELECT pg_temp.expect_count($q$SELECT 1 FROM cairn.identity_deletion_requests WHERE idp_subject = 'sub-bob'$q$, 1);
+SELECT pg_temp.expect_count(format($q$SELECT 1 FROM cairn.audit_events WHERE actor_id = %L AND action = 'account_deleted'$q$, :'bob'), 1);
+
+-- ------------------------------------------------------------ stale account cleanup (UC-REG-10, UC-REG-13)
+SET LOCAL ROLE cairn_app;
+SELECT cairn.create_account('sub-carol', 'carol@example.test', 'apple', 'Carol', NULL) AS carol \gset
+RESET ROLE;
+SELECT pg_temp.expect_true('fresh pending account is kept', cairn.purge_stale_accounts('1 day') = 0);
+UPDATE cairn.users SET created_at = now() - interval '2 days' WHERE id = :'carol'::uuid;
+SELECT pg_temp.expect_true('stale pending account is purged', cairn.purge_stale_accounts('1 day') = 1);
+SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.users WHERE id = %L', :'carol'), 0);
 
 ROLLBACK;
 \echo All checks passed.

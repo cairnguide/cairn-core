@@ -6,6 +6,8 @@ Schema references point to `db/migrations/0002_core_tables.sql`, `0003_journey_t
 
 ## Registration
 
+> Superseded. Registration and onboarding now follow `cairn-registration-use-cases.json` (UC-REG-01 to UC-REG-14 and UC-ACCT-01). The persona-specific parts below (the POA note, fiduciary language, new or existing case) now happen at the hand-off to case creation. They are kept for history.
+
 **UC-1: Surviving spouse creates an account**
 As a surviving spouse, when I open Cairn for the first time after my husband's death, I will provide my name, email, and a password (or sign in with a passkey), confirm my email, and accept the terms of use and privacy policy, resulting in an authenticated account and a welcome message that acknowledges my loss before asking anything else.
 

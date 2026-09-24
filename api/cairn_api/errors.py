@@ -61,6 +61,8 @@ def map_db_error(exc: psycopg.Error) -> ApiError:
         return ApiError(409, "already_exists", "This record already exists.")
     if state == "23502":
         return ApiError(422, "missing_value", "A required answer is missing.")
+    if state == "55000":  # object_not_in_prerequisite_state, from cairn.advance_onboarding
+        return ApiError(409, "out_of_order", "There's an earlier step to finish first.")
     if state == "42501":  # insufficient_privilege, including row-level security rejections
         return case_access_denied()
     if state.startswith("22"):

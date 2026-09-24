@@ -28,11 +28,20 @@ class Settings:
     auth0_domain: str            # tenant or custom domain, for example cairn.us.auth0.com
     auth0_audience: str          # the Cairn API identifier configured in Auth0
     claim_namespace: str         # prefix for the custom claims set by auth0/actions/cairn-claims.js
-    email_connection: str        # Auth0 database connection name for email sign-up
+    email_connection: str        # Auth0 connection for email sign-up. Passwordless magic link by default (D-10).
     # Current policy versions. Registration is refused unless the client sends
     # back exactly these, which proves the user saw the current text.
     terms_version: str
     privacy_version: str
+    # Where the welcome, decline, and age screens send people (UC-REG-01, 06, 07, 10).
+    privacy_policy_url: str
+    terms_url: str
+    journey_map_url: str        # the public "what the first weeks look like" page
+    support_url: str
+    # The third-party AI provider, named on the privacy step (UC-REG-07). [LEGAL REVIEW REQUIRED]
+    ai_provider_name: str
+    # Path to a replacement copy file after legal review. None uses the bundled one.
+    registration_copy_path: str | None = None
 
     @property
     def auth0_issuer(self) -> str:
@@ -52,7 +61,13 @@ def load_settings() -> Settings:
         auth0_domain=_require("CAIRN_AUTH0_DOMAIN"),
         auth0_audience=_require("CAIRN_AUTH0_AUDIENCE"),
         claim_namespace=os.environ.get("CAIRN_CLAIM_NAMESPACE", "https://cairn.invalid/"),
-        email_connection=os.environ.get("CAIRN_AUTH0_EMAIL_CONNECTION", "Username-Password-Authentication"),
+        email_connection=os.environ.get("CAIRN_AUTH0_EMAIL_CONNECTION", "email"),
         terms_version=_require("CAIRN_TERMS_VERSION"),
         privacy_version=_require("CAIRN_PRIVACY_VERSION"),
+        privacy_policy_url=_require("CAIRN_PRIVACY_POLICY_URL"),
+        terms_url=_require("CAIRN_TERMS_URL"),
+        journey_map_url=_require("CAIRN_JOURNEY_MAP_URL"),
+        support_url=_require("CAIRN_SUPPORT_URL"),
+        ai_provider_name=_require("CAIRN_AI_PROVIDER_NAME"),
+        registration_copy_path=os.environ.get("CAIRN_REGISTRATION_COPY") or None,
     )

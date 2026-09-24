@@ -29,8 +29,11 @@ DB_DIR = REPO / "database"
 SETTINGS = Settings(
     database_url="postgresql://unused", db_session_role="cairn_app", pool_min_size=1, pool_max_size=4,
     auth0_domain="cairn-test.example.test", auth0_audience="https://api.cairn.example.test",
-    claim_namespace="https://cairn.invalid/", email_connection="Username-Password-Authentication",
+    claim_namespace="https://cairn.invalid/", email_connection="email",
     terms_version="terms-v1", privacy_version="privacy-v1",
+    privacy_policy_url="https://cairn.example.test/privacy", terms_url="https://cairn.example.test/terms",
+    journey_map_url="https://cairn.example.test/first-weeks", support_url="https://cairn.example.test/support",
+    ai_provider_name="Example AI Provider",
 )
 
 
@@ -87,6 +90,7 @@ def scratch_db_url():
             for f in sorted((DB_DIR / "db" / "migrations").glob("*.sql")):
                 _apply_sql(conn, f)
             _apply_sql(conn, DB_DIR / "db" / "optional" / "context_items_jsonb.sql")
+            _apply_sql(conn, DB_DIR / "db" / "optional" / "context_items_read_only.sql")
         sys.path.insert(0, str(DB_DIR / "tools"))
         import load_templates
         templates, errors = load_templates.load_and_validate(DB_DIR / "content", allow_unreviewed=True)
@@ -105,7 +109,27 @@ def api(scratch_db_url):
     app = create_app(settings=SETTINGS, database=db, verifier=object())
     app.dependency_overrides[get_identity] = fake_identity
     with TestClient(app) as client:
+        client.scratch_url = scratch_db_url  # owner connection, for test setup and assertions only
         yield client
+
+
+def onboard(api, subject: str, method: str = "email", preferred_name: str = "Pat",
+            personality: str = "choose_for_me") -> dict:
+    """Walks an account through UC-REG-07 to UC-REG-12 with the real endpoints."""
+    h = as_user(subject, method=method)
+    r = api.get("/v1/onboarding", headers=h)
+    if r.json()["account"]["onboarding_step"] == "complete":
+        return r.json()
+    for consent_type in ("privacy_terms", "trial_terms", "ai_notice"):
+        version = r.json()["screen"]["checkbox"]["document_version"]
+        r = api.post(f"/v1/onboarding/acknowledgments/{consent_type}", headers=h,
+                     json={"agreed": True, "document_version": version, "client": "test/1.0"})
+        assert r.status_code == 200, r.text
+    r = api.put("/v1/onboarding/preferred-name", json={"preferred_name": preferred_name}, headers=h)
+    assert r.status_code == 200, r.text
+    r = api.put("/v1/onboarding/personality", json={"choice": personality}, headers=h)
+    assert r.status_code == 200, r.text
+    return r.json()
 
 
 def as_user(subject: str, email: str | None = None, verified: bool = True, method: str = "email") -> dict:
