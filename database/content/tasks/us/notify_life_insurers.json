@@ -1,0 +1,23 @@
+{
+  "task_key": "notify_life_insurers",
+  "version": 1,
+  "title": "Find and claim life insurance",
+  "plain_summary": "If you are not sure whether they had life insurance, the free NAIC Life Insurance Policy Locator searches participating insurers. If a policy is found, the insurer contacts the beneficiary.",
+  "journey_week": 4,
+  "sort_order": 10,
+  "due_offset_days": 21,
+  "jurisdiction": "US",
+  "applies_when": {
+    "always": true
+  },
+  "attorney_referral": false,
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "Connecticut Insurance Department, Life Insurance Policy Locator (NAIC)",
+      "url": "https://portal.ct.gov/cid/consumer-information-center/life-insurance-locator",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

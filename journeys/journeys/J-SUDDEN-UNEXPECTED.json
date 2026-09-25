@@ -1,0 +1,149 @@
+{
+  "schema_version": "1.0.0",
+  "id": "J-SUDDEN-UNEXPECTED",
+  "version": 1,
+  "status": "draft_pending_legal_review",
+  "title": "A sudden or unexpected death",
+  "trailhead": "C_sudden",
+  "description": "For a sudden, accidental, or unexplained death. A medical examiner or coroner may be involved, which can change timing for release and the death certificate.",
+  "applies_when": {
+    "all": [
+      {
+        "fact": "death_country",
+        "op": "eq",
+        "value": "US"
+      },
+      {
+        "fact": "death_circumstance",
+        "op": "eq",
+        "value": "sudden_unexpected"
+      }
+    ]
+  },
+  "phases": [
+    {
+      "phase": "W0",
+      "steps": [
+        "S-W0-CALL-911",
+        "S-W0-ME-CORONER",
+        "S-W0-TELL-FAMILY",
+        "S-W0-SECURE-HOME",
+        "S-W0-FIND-WISHES"
+      ]
+    },
+    {
+      "phase": "W1",
+      "steps": [
+        "S-W1-HOW-DC-IS-MADE",
+        "S-W1-ORDER-DC",
+        "S-W1-CHECK-DC"
+      ]
+    },
+    {
+      "phase": "W2",
+      "steps": [
+        "S-W2-CHOOSE-DISPOSITION",
+        "S-W2-COMPARE-FUNERAL-HOMES",
+        "S-W2-PLAN-SERVICE",
+        "S-W2-OBITUARY"
+      ]
+    },
+    {
+      "phase": "W3",
+      "steps": [
+        "S-W3-SSA-REPORT",
+        "S-W3-SSA-SURVIVOR",
+        "S-W3-CREDIT-BUREAUS",
+        "S-W3-DMV-LICENSE"
+      ]
+    },
+    {
+      "phase": "W4",
+      "steps": [
+        "S-W4-BANKS",
+        "S-W4-DEBTS",
+        "S-W4-LIFE-INSURANCE",
+        "S-W4-OTHER-INSURANCE",
+        "S-W4-UTILITIES"
+      ]
+    },
+    {
+      "phase": "W5",
+      "steps": [
+        "S-W5-FIND-WILL",
+        "S-W5-PROBATE-NEEDED",
+        "S-W5-GET-AUTHORITY",
+        "S-W5-IRS-FORM-56"
+      ]
+    },
+    {
+      "phase": "W6",
+      "steps": [
+        "S-W6-INVENTORY",
+        "S-W6-UNCLAIMED",
+        "S-W6-RETIREMENT-INVEST",
+        "S-W6-BELONGINGS",
+        "S-W6-DIGITAL"
+      ]
+    },
+    {
+      "phase": "W7",
+      "steps": [
+        "S-W7-FINAL-1040",
+        "S-W7-ESTATE-1041",
+        "S-W7-STATE-TAX"
+      ]
+    },
+    {
+      "phase": "W8",
+      "steps": [
+        "S-W8-CLOSE-ESTATE",
+        "S-W8-KEEP-RECORDS",
+        "S-W8-GRIEF-SUPPORT"
+      ]
+    }
+  ],
+  "step_overrides": {
+    "S-W1-HOW-DC-IS-MADE": {
+      "note": "When a medical examiner or coroner is involved, the death certificate may first be issued with the cause of death listed as pending. Some institutions accept a pending certificate and some do not.",
+      "timing_shift_days": 7
+    },
+    "S-W1-ORDER-DC": {
+      "timing_shift_days": 7
+    },
+    "S-W1-CHECK-DC": {
+      "timing_shift_days": 7
+    },
+    "S-W2-CHOOSE-DISPOSITION": {
+      "note": "Arrangements can be planned now, but the date may depend on when your loved one is released."
+    }
+  },
+  "support_touchpoints": [
+    {
+      "after_phase": "W0",
+      "type": "gentle_check_in",
+      "resource_ids": [
+        "SRC-SAMHSA-988"
+      ],
+      "copy": "What happened is a shock. Before any paperwork, how are you holding up right now?"
+    },
+    {
+      "after_phase": "W1",
+      "type": "gentle_check_in",
+      "resource_ids": [
+        "SRC-SAMHSA-988"
+      ],
+      "copy": "Waiting on answers can be exhausting. Would you like to pause for today?"
+    },
+    {
+      "after_phase": "W6",
+      "type": "bereavement_support",
+      "resource_ids": [],
+      "copy": "Sudden loss often brings grief in waves. Would it help to talk about support options?"
+    }
+  ],
+  "citations": [
+    "SRC-CDC-MMWR-1987",
+    "SRC-CDC-DEATH-INVESTIGATION"
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "package": "cairn-journey-templates",
+  "version": "0.2.0",
+  "schema_version": "1.0.0",
+  "generated": "2026-09-25",
+  "status": "draft_pending_legal_review",
+  "files": {
+    "sources": "sources/sources.json",
+    "steps": "steps/step-library.json",
+    "journeys": [
+      "journeys/J-EXPECTED-HOME-HOSPICE.json",
+      "journeys/J-EXPECTED-FACILITY.json",
+      "journeys/J-SUDDEN-UNEXPECTED.json",
+      "journeys/J-DEATH-ABROAD.json",
+      "journeys/J-DEATH-ABROAD-NONCITIZEN.json"
+    ],
+    "modules": "modules/modules.json",
+    "jurisdictions": [
+      "jurisdictions/US-DEFAULT.json",
+      "jurisdictions/US-NH.json",
+      "jurisdictions/US-FL.json",
+      "jurisdictions/US-CA.json",
+      "jurisdictions/US-NY.json"
+    ],
+    "support_policy": "support/support-policy.json",
+    "case_facts_schema": "schema/case-facts.schema.json"
+  },
+  "jurisdiction_keys": {
+    "vital_records": {
+      "resolve_by": "death_state",
+      "why": "Certified copies come from the state where the death occurred."
+    },
+    "death_investigation": {
+      "resolve_by": "death_state"
+    },
+    "cremation_authorization": {
+      "resolve_by": "death_state"
+    },
+    "probate": {
+      "resolve_by": "residence_state",
+      "why": "Probate generally opens where the person lived. Out-of-state real estate may need a second proceeding (attorney)."
+    },
+    "intestacy": {
+      "resolve_by": "residence_state"
+    },
+    "trust_administration": {
+      "resolve_by": "residence_state"
+    },
+    "vehicle_transfer": {
+      "resolve_by": "residence_state",
+      "why": "Approximation. The titling state controls."
+    },
+    "dmv_notification": {
+      "resolve_by": "residence_state"
+    },
+    "real_estate_transfer": {
+      "resolve_by": "residence_state",
+      "why": "Approximation. The state where the property sits controls."
+    },
+    "state_tax": {
+      "resolve_by": "residence_state"
+    },
+    "grief_support": {
+      "resolve_by": "residence_state",
+      "why": "Support should be near the person using Cairn. Approximated by the deceased's residence until user location is collected."
+    }
+  },
+  "mvp_windows": [
+    "first_24_hours",
+    "first_week",
+    "first_2_weeks",
+    "first_month"
+  ],
+  "resolution_order": [
+    "select base journey by applies_when",
+    "apply modules whose applies_when is true, queue qualifying questions for unknown facts",
+    "apply journey then module step_overrides",
+    "attach jurisdiction content per step key, falling back to US-DEFAULT"
+  ],
+  "content_rules": [
+    "Every factual claim about an agency, form, fee, phone number, or deadline cites a source in sources.json.",
+    "State-specific content lives only in jurisdiction overlays, never in the step library.",
+    "copy.ask contains exactly one question.",
+    "No em dashes, and no semicolons inside sentences, in any user-facing string.",
+    "Steps that touch an SSN or account number set chat_capture to never.",
+    "Nothing ships to real users until legal review (Trello card 23) marks the overlay reviewed."
+  ]
+}

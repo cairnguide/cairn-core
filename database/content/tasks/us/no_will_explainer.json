@@ -1,0 +1,24 @@
+{
+  "task_key": "no_will_explainer",
+  "version": 1,
+  "title": "Learn what happens when there's no will",
+  "plain_summary": "Not having a will is very common. State law decides who inherits and who can be appointed to handle the estate. An estate attorney can tell you what applies in your state.",
+  "journey_week": 4,
+  "sort_order": 20,
+  "due_offset_days": 22,
+  "jurisdiction": "US",
+  "applies_when": {
+    "always": true
+  },
+  "attorney_referral": true,
+  "attorney_referral_note": "Cairn can't give legal advice and isn't a substitute for an attorney. An estate attorney can tell you what applies in your state.",
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "Internal Revenue Service, Publication 559, Survivors, Executors, and Administrators",
+      "url": "https://www.irs.gov/publications/p559",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

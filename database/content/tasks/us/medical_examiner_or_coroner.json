@@ -1,0 +1,30 @@
+{
+  "task_key": "medical_examiner_or_coroner",
+  "version": 1,
+  "title": "Understand the medical examiner or coroner's role",
+  "plain_summary": "Medical examiners and coroners look into deaths that are sudden, unexpected, or unattended by a doctor. Their review can affect when your loved one is released to a funeral home and when the death certificate is finished.",
+  "journey_week": 1,
+  "sort_order": 2,
+  "due_offset_days": 1,
+  "jurisdiction": "US",
+  "applies_when": {
+    "always": true
+  },
+  "attorney_referral": false,
+  "why_now": "Their review can decide when the funeral home can take the next step.",
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "CDC Public Health Law Program, Death Investigation Systems",
+      "url": "https://www.cdc.gov/phlp/publications/coroner/death.html",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    },
+    {
+      "authority_name": "CDC National Center for Health Statistics, Medical Examiners' and Coroners' Handbook on Death Registration",
+      "url": "https://www.cdc.gov/nchs/data/misc/hb_me.pdf",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "task_key": "ask_state_vital_records_office",
+  "version": 1,
+  "title": "Check with the state's vital records office",
+  "plain_summary": "Cairn doesn't have verified steps for this state yet. The vital records office in the state where the death happened is the right place to ask how to order certified copies.",
+  "journey_week": 1,
+  "sort_order": 12,
+  "due_offset_days": 3,
+  "jurisdiction": "US",
+  "applies_when": {
+    "always": true
+  },
+  "attorney_referral": false,
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "CDC National Center for Health Statistics, Where to Write for Vital Records",
+      "url": "https://www.cdc.gov/nchs/w2w/index.htm",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

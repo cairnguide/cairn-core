@@ -76,6 +76,7 @@
     "deletion_question": "Do you want to delete your account and your information?",
     "deletion_confirm_button": "Yes, delete everything",
     "deletion_cancel_button": "Keep my account",
-    "deletion_done": "Your account and your information have been deleted."
+    "deletion_done": "Your account and your information have been deleted.",
+    "trial_reminder_ends_soon": "Your free time with Cairn ends in {days} days, on {trial_end_date}. Nothing will be charged, and nothing will be deleted."
   }
 }

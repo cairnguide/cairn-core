@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cairn.guide/schemas/case-facts.schema.json",
+  "title": "Case facts used to resolve a journey",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "death_circumstance",
+    "death_country"
+  ],
+  "properties": {
+    "date_of_death": {
+      "type": "string",
+      "format": "date"
+    },
+    "death_circumstance": {
+      "enum": [
+        "expected_home_hospice",
+        "expected_facility",
+        "sudden_unexpected",
+        "abroad"
+      ]
+    },
+    "death_country": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}$"
+    },
+    "death_state": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[A-Z]{2}$"
+    },
+    "residence_state": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[A-Z]{2}$"
+    },
+    "user_role": {
+      "enum": [
+        "surviving_spouse",
+        "adult_child_executor",
+        "power_of_attorney",
+        "professional_fiduciary",
+        "other_family",
+        null
+      ]
+    },
+    "is_veteran": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "has_will": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "has_trust": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "received_ssa_benefits": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "was_employed": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "had_employer_plan": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "citizenship_status": {
+      "enum": [
+        "us_citizen",
+        "permanent_resident",
+        "other_noncitizen",
+        null
+      ]
+    },
+    "pending_immigration_case": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "faith_tradition": {
+      "enum": [
+        "none",
+        "christian",
+        "catholic",
+        "jewish",
+        "muslim",
+        "hindu",
+        "buddhist",
+        "sikh",
+        "other",
+        "prefer_not_to_say",
+        null
+      ]
+    },
+    "disposition": {
+      "enum": [
+        "burial",
+        "green_burial",
+        "cremation",
+        "body_donation",
+        "undecided",
+        null
+      ]
+    },
+    "owned_vehicle": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "owned_real_estate": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    }
+  },
+  "$comment": "null or missing means unknown. Faith tradition is optional, never required, and is used only to add or annotate arrangement steps."
+}

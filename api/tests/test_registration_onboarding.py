@@ -15,13 +15,13 @@ import pytest
 
 from cairn_api.copy_store import consent_versions, load_copy
 
-from .conftest import REPO, SETTINGS, as_user, onboard
+from .conftest import REPO, SETTINGS, answer, as_user, onboard, start_journey
 
 VOICES = ("steady_direct", "warm_patient", "brisk_businesslike", "plain_practical")
 
 SPEC = json.loads((REPO / "database" / "docs" / "cairn-registration-use-cases.json").read_text())
 COPY = SPEC["copy"]
-CASE_BODY = {"relationship": "spouse", "deceased": {"legal_first_name": "Dan", "legal_last_name": "Fakerson"}}
+CASE_BODY = {"user_role": "spouse_partner"}
 
 
 def start(api, subject, method="email", email=None, **body):
@@ -384,37 +384,42 @@ def test_case_needs_finished_onboarding(api):
     assert r.status_code == 409 and r.json()["code"] == "onboarding_incomplete"
 
 
-def test_first_case_starts_the_28_day_trial_and_the_second_does_not(api):
+def test_trial_starts_at_the_first_start_journey_not_at_case_creation(api):
+    """Case creation spec DEC-01 and DEC-04 replace registration D-03: the clock starts at Start journey."""
     subject = "email|trial"
     start(api, subject, time_zone="America/Los_Angeles")
     onboard(api, subject)
     h = as_user(subject)
-    first = api.post("/v1/cases", json=CASE_BODY, headers=h).json()
+    first = api.post("/v1/cases", json=CASE_BODY, headers=h).json()["case"]["id"]
+    answer(api, subject, first, "display_name", "Dan")
     me = api.get("/v1/me", headers=h).json()["account"]
-    assert me["status"] == "trial_active"
+    assert me["trial_started_at"] is None and me["status"] == "active_no_case"
+
+    started = start_journey(api, subject, first)
+    me = api.get("/v1/me", headers=h).json()["account"]
+    assert me["status"] == "trial_active" and started["trial_started_now"] is True
     ends = me["trial_ends_at"]
-    started = datetime.fromisoformat(me["trial_started_at"])
-    assert datetime.fromisoformat(ends) - started == timedelta(days=28)
+    assert datetime.fromisoformat(ends) - datetime.fromisoformat(me["trial_started_at"]) == timedelta(days=28)
     local_end = datetime.fromisoformat(ends).astimezone(ZoneInfo("America/Los_Angeles")).date()
     assert me["trial_end_date"] == local_end.isoformat()
-    expected = COPY["case_created_trial_start"].format(
-        trial_end_date=f"{local_end:%B} {local_end.day}, {local_end.year}")
-    assert first["notes"][0]["text"] == expected
 
-    second = api.post("/v1/cases", json=CASE_BODY, headers=h).json()
-    assert all(n["text"] != expected for n in second["notes"])
+    second = api.post("/v1/cases", json=CASE_BODY, headers=h).json()["case"]["id"]
+    again = start_journey(api, subject, second)
+    assert again["trial_started_now"] is False
     assert api.get("/v1/me", headers=h).json()["account"]["trial_started_at"] == me["trial_started_at"]
     kinds = owner_sql(api.scratch_url, "SELECT r.kind, r.due_at - u.trial_started_at FROM cairn.trial_reminders r "
                                        "JOIN cairn.users u ON u.id = r.user_id WHERE u.idp_subject = %s "
                                        "ORDER BY r.kind", (subject,))
-    assert kinds == [("trial_day_21", timedelta(days=21)), ("trial_day_27", timedelta(days=27))]
+    assert kinds == [("trial_day_21", timedelta(days=21)), ("trial_day_27", timedelta(days=27)),
+                     ("trial_ends_soon", timedelta(days=25))]
 
 
 def test_day_21_reminder_shows_in_the_app(api):
     subject = "email|reminder"
     start(api, subject, time_zone="America/New_York")
     onboard(api, subject)
-    api.post("/v1/cases", json=CASE_BODY, headers=as_user(subject))
+    cid = api.post("/v1/cases", json=CASE_BODY, headers=as_user(subject)).json()["case"]["id"]
+    start_journey(api, subject, cid)
     owner_sql(api.scratch_url, "UPDATE cairn.trial_reminders r SET due_at = now() - interval '1 minute' "
                                "FROM cairn.users u WHERE u.id = r.user_id AND u.idp_subject = %s "
                                "AND r.kind = 'trial_day_21'", (subject,))
@@ -429,19 +434,21 @@ def test_after_the_trial_the_account_is_read_only_and_nothing_is_lost(api):
     onboard(api, subject)
     h = as_user(subject)
     cid = api.post("/v1/cases", json=CASE_BODY, headers=h).json()["case"]["id"]
+    answer(api, subject, cid, "display_name", "Dan")
+    start_journey(api, subject, cid)
     expire_trial(api.scratch_url, subject)
 
     me = api.get("/v1/me", headers=h).json()
     assert me["account"]["status"] == "read_only"
     assert me["notes"][0]["text"] == COPY["read_only_banner"]
     view = api.get(f"/v1/cases/{cid}", headers=h)
-    assert view.status_code == 200 and view.json()["deceased"]["legal_first_name"] == "Dan"
+    assert view.status_code == 200 and view.json()["case"]["display_name"] == "Dan"
+    assert view.json()["case"]["status"] == "read_only"
     assert view.json()["notes"][0]["text"] == COPY["read_only_banner"]
-    r = api.post("/v1/cases", json=CASE_BODY, headers=h)
+    r = api.put(f"/v1/cases/{cid}/intake/answers/display_name", json={"state": "answered", "value": "Changed"},
+                headers=h)
     assert r.status_code == 403 and r.json()["code"] == "account_read_only"
     assert r.json()["next_step"]["action"] == "choose_subscription"
-    r = api.patch(f"/v1/cases/{cid}/deceased", json={"legal_first_name": "Changed"}, headers=h)
-    assert r.status_code == 403
     # Settings and deletion stay available.
     assert api.patch("/v1/me", json={"voice": "warm_patient"}, headers=h).status_code == 200
     assert api.post("/v1/me/deletion", json={"confirm": True}, headers=h).status_code == 200

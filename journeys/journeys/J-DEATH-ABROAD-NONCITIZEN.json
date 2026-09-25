@@ -1,0 +1,142 @@
+{
+  "schema_version": "1.0.0",
+  "id": "J-DEATH-ABROAD-NONCITIZEN",
+  "version": 1,
+  "status": "draft_pending_legal_review",
+  "title": "A non-citizen who died outside the United States",
+  "trailhead": "C_sudden",
+  "description": "For a lawful permanent resident or other non-citizen who died abroad. Local authorities and the consulate of their home country lead the first steps, and cross-border estate questions route to an attorney.",
+  "applies_when": {
+    "all": [
+      {
+        "fact": "death_country",
+        "op": "ne",
+        "value": "US"
+      },
+      {
+        "fact": "citizenship_status",
+        "op": "in",
+        "value": [
+          "permanent_resident",
+          "other_noncitizen"
+        ]
+      }
+    ]
+  },
+  "phases": [
+    {
+      "phase": "W0",
+      "steps": [
+        "S-W0-ABROAD-NONCITIZEN",
+        "S-W0-TELL-FAMILY",
+        "S-W0-SECURE-HOME",
+        "S-W0-FIND-WISHES"
+      ]
+    },
+    {
+      "phase": "W1",
+      "steps": [
+        "S-W1-FOREIGN-DC",
+        "S-W1-CHECK-DC"
+      ]
+    },
+    {
+      "phase": "W2",
+      "steps": [
+        "S-W2-CHOOSE-DISPOSITION",
+        "S-W2-COMPARE-FUNERAL-HOMES",
+        "S-W2-PLAN-SERVICE",
+        "S-W2-OBITUARY"
+      ]
+    },
+    {
+      "phase": "W3",
+      "steps": [
+        "S-W3-SSA-REPORT",
+        "S-W3-SSA-SURVIVOR",
+        "S-W3-CREDIT-BUREAUS",
+        "S-W3-DMV-LICENSE"
+      ]
+    },
+    {
+      "phase": "W4",
+      "steps": [
+        "S-W4-BANKS",
+        "S-W4-DEBTS",
+        "S-W4-LIFE-INSURANCE",
+        "S-W4-OTHER-INSURANCE",
+        "S-W4-UTILITIES"
+      ]
+    },
+    {
+      "phase": "W5",
+      "steps": [
+        "S-W5-FIND-WILL",
+        "S-W5-PROBATE-NEEDED",
+        "S-W5-GET-AUTHORITY",
+        "S-W5-IRS-FORM-56"
+      ]
+    },
+    {
+      "phase": "W6",
+      "steps": [
+        "S-W6-INVENTORY",
+        "S-W6-UNCLAIMED",
+        "S-W6-RETIREMENT-INVEST",
+        "S-W6-BELONGINGS",
+        "S-W6-DIGITAL"
+      ]
+    },
+    {
+      "phase": "W7",
+      "steps": [
+        "S-W7-FINAL-1040",
+        "S-W7-ESTATE-1041",
+        "S-W7-STATE-TAX"
+      ]
+    },
+    {
+      "phase": "W8",
+      "steps": [
+        "S-W8-CLOSE-ESTATE",
+        "S-W8-KEEP-RECORDS",
+        "S-W8-GRIEF-SUPPORT"
+      ]
+    }
+  ],
+  "dependency_substitutions": {
+    "S-W1-ORDER-DC": "S-W1-FOREIGN-DC",
+    "S-W1-HOW-DC-IS-MADE": "S-W1-FOREIGN-DC"
+  },
+  "step_overrides": {
+    "S-W1-CHECK-DC": {
+      "note": "Check the foreign certificate and any translation for spelling and dates that match their U.S. records."
+    },
+    "S-W2-COMPARE-FUNERAL-HOMES": {
+      "note": "If you want them brought to the United States, ask a funeral home experienced with international transfers what documents are needed."
+    },
+    "S-W5-PROBATE-NEEDED": {
+      "priority": "high",
+      "note": "When someone dies abroad with property in the United States, an estate attorney should confirm which country's process applies to each asset."
+    }
+  },
+  "support_touchpoints": [
+    {
+      "after_phase": "W0",
+      "type": "gentle_check_in",
+      "resource_ids": [
+        "SRC-SAMHSA-988"
+      ],
+      "copy": "That was a lot to take in. Before we go on, how are you doing right now?"
+    },
+    {
+      "after_phase": "W6",
+      "type": "bereavement_support",
+      "resource_ids": [],
+      "copy": "Going through their things can bring grief to the surface. Would it help to talk about support options?"
+    }
+  ],
+  "citations": [
+    "SRC-STATE-DEATH-ABROAD"
+  ]
+}

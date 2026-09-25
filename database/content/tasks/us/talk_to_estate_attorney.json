@@ -1,0 +1,24 @@
+{
+  "task_key": "talk_to_estate_attorney",
+  "version": 1,
+  "title": "Talk to an estate attorney",
+  "plain_summary": "Some situations need an attorney's advice, not a checklist. An estate attorney can explain what applies to your family. Cairn will keep showing you the other steps it can help with.",
+  "journey_week": 1,
+  "sort_order": 40,
+  "due_offset_days": 7,
+  "jurisdiction": "US",
+  "applies_when": {
+    "always": true
+  },
+  "attorney_referral": true,
+  "attorney_referral_note": "Cairn can't give legal advice and isn't a substitute for an attorney. An estate attorney can tell you what applies in your state.",
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "Internal Revenue Service, Publication 559, Survivors, Executors, and Administrators",
+      "url": "https://www.irs.gov/publications/p559",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

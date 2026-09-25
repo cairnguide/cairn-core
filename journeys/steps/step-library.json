@@ -1,0 +1,2992 @@
+{
+  "schema_version": "1.0.0",
+  "phases": [
+    {
+      "id": "W0",
+      "key": "first_hours",
+      "title": "The first hours"
+    },
+    {
+      "id": "W1",
+      "key": "death_certificate",
+      "title": "The death certificate"
+    },
+    {
+      "id": "W2",
+      "key": "arrangements",
+      "title": "Funeral, burial, or cremation"
+    },
+    {
+      "id": "W3",
+      "key": "government",
+      "title": "Telling government agencies"
+    },
+    {
+      "id": "W4",
+      "key": "financial_and_employer",
+      "title": "Banks, insurers, and employers"
+    },
+    {
+      "id": "W5",
+      "key": "documents_and_probate",
+      "title": "Papers, the will, and probate"
+    },
+    {
+      "id": "W6",
+      "key": "assets",
+      "title": "Property and belongings"
+    },
+    {
+      "id": "W7",
+      "key": "taxes",
+      "title": "Final taxes"
+    },
+    {
+      "id": "W8",
+      "key": "closing",
+      "title": "Closing the loop"
+    }
+  ],
+  "steps": [
+    {
+      "id": "S-W0-HOSPICE-CALL",
+      "version": 1,
+      "phase": "W0",
+      "category": "pronouncement",
+      "title": "Call the hospice team",
+      "copy": {
+        "summary": "When someone dies at home in hospice care, the hospice agency is usually the first call. They will explain who confirms the death and what happens next.",
+        "acknowledge": "You do not have to do anything quickly right now. Taking a few minutes to sit with them is okay.",
+        "ask": "Do you have the hospice agency's phone number nearby?",
+        "offer_next": "When you are ready, I can help you think about which funeral home to call."
+      },
+      "how_to": [
+        "Find the hospice agency's 24-hour number, often on paperwork in the home.",
+        "Tell them the time you noticed they had died.",
+        "Ask what they need from you and what they will handle."
+      ],
+      "who_usually_does_it": [
+        "you",
+        "hospice_staff"
+      ],
+      "timing": {
+        "window": "first_24_hours",
+        "target_days_after_death": 0
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "high",
+        "check_in_before": true
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W0-FACILITY-RELEASE",
+      "version": 1,
+      "phase": "W0",
+      "category": "pronouncement",
+      "title": "Talk with the hospital or care facility",
+      "copy": {
+        "summary": "When someone dies in a hospital or nursing home, staff confirm the death. They will ask which funeral home should come for your loved one.",
+        "acknowledge": "I am so sorry. Hospitals and care homes can feel rushed at a moment like this.",
+        "ask": "Has the staff asked you to name a funeral home yet?",
+        "offer_next": "If you have not chosen one, I can help you compare a few nearby so you are not deciding in a hallway."
+      },
+      "how_to": [
+        "Ask staff how long they can hold your loved one before a funeral home must come.",
+        "Ask for the name of the person who can answer questions later.",
+        "Collect personal belongings, or ask them to hold belongings for pickup."
+      ],
+      "who_usually_does_it": [
+        "you",
+        "facility_staff"
+      ],
+      "timing": {
+        "window": "first_24_hours",
+        "target_days_after_death": 0
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "high",
+        "check_in_before": true
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W0-CALL-911",
+      "version": 1,
+      "phase": "W0",
+      "category": "pronouncement",
+      "title": "Call 911 if the death was sudden",
+      "copy": {
+        "summary": "If the death was sudden or unexpected and no care team is involved, call 911. Emergency responders and the police often come to the home.",
+        "acknowledge": "This is a shock, and you do not have to hold it together for anyone right now.",
+        "ask": "Is someone with you, or can someone come be with you?",
+        "offer_next": "Once the responders have left, I can walk you through what the medical examiner or coroner does next."
+      },
+      "how_to": [
+        "Call 911 and tell them what you found.",
+        "Try not to move your loved one or change the room before responders arrive.",
+        "Ask a friend or relative to come be with you."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "first_24_hours",
+        "target_days_after_death": 0
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "high",
+        "check_in_before": true
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W0-ME-CORONER",
+      "version": 1,
+      "phase": "W0",
+      "category": "investigation",
+      "title": "Understand the medical examiner or coroner's role",
+      "copy": {
+        "summary": "Medical examiners and coroners look into deaths that are sudden, unexpected, unattended by a doctor, or suspicious. State law decides which deaths they review, so the process differs from place to place. Their review can affect when your loved one is released to a funeral home and when the death certificate is finished.",
+        "acknowledge": "Waiting on an investigation is hard, especially when you want to care for them yourself.",
+        "ask": "Did the responders give you a case number or a contact at the medical examiner's or coroner's office?",
+        "offer_next": "I can help you keep that contact and case number in one place, and remind you when to check in."
+      },
+      "how_to": [
+        "Ask the office for a case number and the best contact person.",
+        "Ask when your loved one is expected to be released and to which funeral home.",
+        "Ask whether the death certificate may first show a pending cause of death."
+      ],
+      "who_usually_does_it": [
+        "medical_examiner_or_coroner",
+        "you"
+      ],
+      "timing": {
+        "window": "first_week",
+        "target_days_after_death": 1
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [
+        "death_investigation"
+      ],
+      "citations": [
+        "SRC-CDC-MMWR-1987",
+        "SRC-CDC-DEATH-INVESTIGATION"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "high",
+        "check_in_before": true
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      },
+      "product_notes": "Do not state that an autopsy will or will not happen. That is decided by the office under state law."
+    },
+    {
+      "id": "S-W0-TELL-FAMILY",
+      "version": 1,
+      "phase": "W0",
+      "category": "people",
+      "title": "Tell close family and friends",
+      "copy": {
+        "summary": "You do not have to make every call yourself. Many families ask one or two people to help spread the news.",
+        "acknowledge": "Telling people can reopen the hurt each time. It is okay to share this job.",
+        "ask": "Is there one person you trust who could make some of these calls for you?",
+        "offer_next": "I can help you make a short list of who needs to hear from you personally."
+      },
+      "how_to": [
+        "Write down the few people who should hear from you directly.",
+        "Ask a helper to reach everyone else.",
+        "If they had an employer, a helper can note that for later. You do not need to call today."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "first_24_hours",
+        "target_days_after_death": 0
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "high",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W0-SECURE-HOME",
+      "version": 1,
+      "phase": "W0",
+      "category": "home",
+      "title": "Look after the home, pets, and car",
+      "copy": {
+        "summary": "If your loved one lived alone, someone should check on pets, lock the home, and collect mail.",
+        "acknowledge": "Small practical things can wait a day, but pets and an empty home cannot wait long.",
+        "ask": "Did they have any pets that need care right now?",
+        "offer_next": "I can add a reminder to check on the home and mail each week."
+      },
+      "how_to": [
+        "Arrange care for any pets.",
+        "Lock doors and windows and keep keys in one place.",
+        "Collect mail and packages.",
+        "Keep valuables and important papers somewhere safe."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "first_week",
+        "target_days_after_death": 1
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "low",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W0-FIND-WISHES",
+      "version": 1,
+      "phase": "W0",
+      "category": "planning",
+      "title": "Look for written wishes or a prepaid plan",
+      "copy": {
+        "summary": "Your loved one may have left written wishes about their funeral, or paid ahead for services. Finding these early can save money and hard decisions.",
+        "acknowledge": "It can be comforting to know what they wanted.",
+        "ask": "Do you know if they ever spoke about or wrote down their wishes?",
+        "offer_next": "If you find a prepaid plan, I can help you make sure the funeral home honors it."
+      },
+      "how_to": [
+        "Check a desk, file box, or safe for a letter of wishes or a funeral contract.",
+        "Ask close family if they know of any plans.",
+        "If there is a prepaid funeral contract, note the provider's name."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "first_24_hours",
+        "target_days_after_death": 0
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "medium",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W1-HOW-DC-IS-MADE",
+      "version": 1,
+      "phase": "W1",
+      "category": "death_certificate",
+      "title": "Know how the death certificate gets made",
+      "copy": {
+        "summary": "The funeral home usually prepares and files the death certificate with a doctor or medical examiner. Certified copies come from the vital records office in the state where the death happened, which may not be the state where your loved one lived.",
+        "acknowledge": "Paperwork is the last thing anyone wants to think about now.",
+        "ask": "Which state did the death happen in?",
+        "offer_next": "Once I know the state, I can show you exactly where to order copies."
+      },
+      "how_to": [
+        "Ask the funeral home when they expect the certificate to be filed.",
+        "Give the funeral home accurate details for the certificate, like full legal name and parents' names."
+      ],
+      "who_usually_does_it": [
+        "funeral_home",
+        "you"
+      ],
+      "timing": {
+        "window": "first_week",
+        "target_days_after_death": 2
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [
+        "vital_records"
+      ],
+      "citations": [
+        "SRC-CDC-W2W"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "medium",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W1-ORDER-DC",
+      "version": 1,
+      "phase": "W1",
+      "category": "death_certificate",
+      "title": "Order certified copies of the death certificate",
+      "copy": {
+        "summary": "Most banks, insurers, and government offices need to see a certified copy. Ordering enough at once usually costs less than ordering more later.",
+        "acknowledge": "This is one of the most useful things you can do this week, and I can do the counting for you.",
+        "ask": "Would you like me to estimate how many copies you need from the accounts you know about so far?",
+        "offer_next": "After you order, I will track when the copies arrive."
+      },
+      "how_to": [
+        "Decide how many copies you need. Cairn estimates this from your list of banks, insurers, and agencies.",
+        "Order through the funeral home, or directly from the state or local vital records office.",
+        "Bring or send photo ID. Many states require it."
+      ],
+      "who_usually_does_it": [
+        "funeral_home",
+        "you"
+      ],
+      "timing": {
+        "window": "first_2_weeks",
+        "target_days_after_death": 7
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [
+        "S-W1-HOW-DC-IS-MADE"
+      ],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [
+        "vital_records"
+      ],
+      "citations": [
+        "SRC-CDC-W2W"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "low",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      },
+      "product_notes": "Copy count estimate = institutions flagged certified_copy_needed + 2 spare. Show the jurisdiction fee and eligibility block from the overlay. Never state fees without the overlay citation."
+    },
+    {
+      "id": "S-W1-CHECK-DC",
+      "version": 1,
+      "phase": "W1",
+      "category": "death_certificate",
+      "title": "Check each copy for mistakes",
+      "copy": {
+        "summary": "A spelling error or wrong date can cause banks and agencies to reject a certificate. It is easier to fix early.",
+        "acknowledge": "It helps to read it slowly, maybe with someone beside you.",
+        "ask": "When your copies arrive, would you like a short checklist of what to look at?",
+        "offer_next": "If something is wrong, I can help you find out how to ask for a correction."
+      },
+      "how_to": [
+        "Check the full name, date of birth, date of death, and Social Security number field.",
+        "Check marital status and the name of any spouse.",
+        "Tell the funeral home right away if anything is wrong."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "first_month",
+        "target_days_after_death": 14
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [
+        "S-W1-ORDER-DC"
+      ],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [
+        "vital_records"
+      ],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "high",
+        "check_in_before": true
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W2-CHOOSE-DISPOSITION",
+      "version": 1,
+      "phase": "W2",
+      "category": "arrangements",
+      "title": "Decide on burial, cremation, or another choice",
+      "copy": {
+        "summary": "Families choose burial, cremation, or other options. If the body is cremated without a viewing, a casket is not required. Cremation providers must offer a lower-cost alternative container.",
+        "acknowledge": "There is no wrong choice here. What matters is what feels right for them and for you.",
+        "ask": "Do you already know whether they wanted burial or cremation?",
+        "offer_next": "If you are not sure yet, I can lay out the options side by side in plain words."
+      },
+      "how_to": [
+        "Check for written wishes first.",
+        "Talk with close family if they want a say.",
+        "If faith or culture guides this choice, contact your faith leader early."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "first_week",
+        "target_days_after_death": 1
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [
+        "SRC-FTC-FUNERAL-RULE",
+        "SRC-FTC-SHOPPING-FUNERAL"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "high",
+        "check_in_before": true
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W2-COMPARE-FUNERAL-HOMES",
+      "version": 1,
+      "phase": "W2",
+      "category": "arrangements",
+      "title": "Compare funeral homes and prices",
+      "copy": {
+        "summary": "Under the FTC Funeral Rule, funeral homes must give you an itemized price list when you ask in person, and must give prices over the phone if you ask. You can choose only the items you want, and a funeral home cannot refuse or charge a fee to use a casket you bought elsewhere.",
+        "acknowledge": "Choosing a funeral home while grieving is hard. You are allowed to ask about prices.",
+        "ask": "Would you like me to find a few funeral homes near you and compare their prices?",
+        "offer_next": "Once you pick one, I can keep their contact details and your appointment in one place."
+      },
+      "how_to": [
+        "Ask each funeral home for its general price list.",
+        "Compare the same items across homes.",
+        "Ask what is included in any package, and what you can remove."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "first_week",
+        "target_days_after_death": 1
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [
+        "SRC-FTC-FUNERAL-RULE",
+        "SRC-FTC-PHONE-PRICES",
+        "SRC-FTC-SHOPPING-FUNERAL"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "medium",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      },
+      "product_notes": "Cairn compares and facilitates booking only at the user's explicit direction. It does not arrange services on the family's behalf (NH RSA 325:43(I)(b) designated-agent boundary, pending legal review)."
+    },
+    {
+      "id": "S-W2-CONTACT-FAITH",
+      "version": 1,
+      "phase": "W2",
+      "category": "faith",
+      "title": "Contact your place of worship or faith leader",
+      "copy": {
+        "summary": "If your loved one belonged to a church, mosque, temple, synagogue, or other community, their leader can guide the service and any customs that affect timing.",
+        "acknowledge": "Your community may want to help carry some of this with you.",
+        "ask": "Would you like to reach out to their faith leader today, or wait until tomorrow?",
+        "offer_next": "I can note any timing needs they mention, so the funeral home hears them too."
+      },
+      "how_to": [
+        "Call the office or leader and share the news.",
+        "Ask about customs that affect timing or preparation.",
+        "Share what they tell you with the funeral home."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "first_24_hours",
+        "target_days_after_death": 0
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "medium",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W2-PLAN-SERVICE",
+      "version": 1,
+      "phase": "W2",
+      "category": "arrangements",
+      "title": "Plan a service or gathering",
+      "copy": {
+        "summary": "A funeral, memorial, or informal gathering can happen soon or weeks later. There is no single right way.",
+        "acknowledge": "You can make this as simple or as full as feels right.",
+        "ask": "Do you want a service soon, or would a later memorial give you more breathing room?",
+        "offer_next": "I can keep a short list of the decisions and who is helping with each."
+      },
+      "how_to": [
+        "Choose a date and place.",
+        "Ask someone to lead or speak.",
+        "Ask helpers to handle food, flowers, or music."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "first_month",
+        "target_days_after_death": 7
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "high",
+        "check_in_before": true
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W2-OBITUARY",
+      "version": 1,
+      "phase": "W2",
+      "category": "arrangements",
+      "title": "Write a death notice or obituary",
+      "copy": {
+        "summary": "An obituary tells your community about the death and the service. Some families keep it short to protect privacy.",
+        "acknowledge": "Writing about someone you love can be tender. You can keep it brief.",
+        "ask": "Would you like help drafting a short notice?",
+        "offer_next": "I can draft a few lines for you to change however you like."
+      },
+      "how_to": [
+        "Decide where it will run, such as the funeral home's site or a newspaper.",
+        "Consider leaving out full birth date, home address, and mother's maiden name to reduce identity theft risk."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "first_2_weeks",
+        "target_days_after_death": 5
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "high",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W2-CEMETERY",
+      "version": 1,
+      "phase": "W2",
+      "category": "burial",
+      "title": "Arrange a cemetery plot",
+      "copy": {
+        "summary": "If you choose burial, you will need a plot. Your loved one may already own one, or share a family plot.",
+        "acknowledge": "Choosing a resting place is a meaningful decision.",
+        "ask": "Do you know if they already had a plot or a family plot?",
+        "offer_next": "I can help you compare cemeteries and note each one's rules."
+      },
+      "how_to": [
+        "Look for a deed or receipt for an existing plot.",
+        "Ask the cemetery about fees for opening and closing the grave.",
+        "Ask about any rules for vaults, liners, or markers."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "first_week",
+        "target_days_after_death": 2
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "high",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W2-HEADSTONE",
+      "version": 1,
+      "phase": "W2",
+      "category": "burial",
+      "title": "Order a headstone or grave marker",
+      "copy": {
+        "summary": "Many families order a headstone weeks or months after the burial. Cemeteries often have rules about size, material, and timing, so ask the cemetery before you order.",
+        "acknowledge": "There is no rush on this one. It can wait until you feel ready.",
+        "ask": "Would you like me to remind you about this in a month or two?",
+        "offer_next": "When you are ready, I can help you compare marker options and prices."
+      },
+      "how_to": [
+        "Ask the cemetery for its marker rules.",
+        "Get quotes from more than one monument company.",
+        "Check the inscription carefully before approving."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "months_1_3",
+        "target_days_after_death": 45
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "high",
+        "check_in_before": true
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W2-CREMATION-AUTH",
+      "version": 1,
+      "phase": "W2",
+      "category": "cremation",
+      "title": "Sign the cremation authorization",
+      "copy": {
+        "summary": "Cremation requires written permission from the person with legal authority. Who that is depends on state law, and the provider will tell you who must sign.",
+        "acknowledge": "Signing this can feel very final. It is okay to take a breath first.",
+        "ask": "Has the provider told you who needs to sign?",
+        "offer_next": "If more than one relative must agree, I can help you keep track of who has signed."
+      },
+      "how_to": [
+        "Ask the provider who must sign and whether others must agree.",
+        "Ask how long the process takes and how remains are returned."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "first_week",
+        "target_days_after_death": 2
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "If family members disagree about cremation, talk with an attorney before signing."
+      },
+      "jurisdiction_keys": [
+        "cremation_authorization"
+      ],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "high",
+        "check_in_before": true
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W2-REMAINS-PLAN",
+      "version": 1,
+      "phase": "W2",
+      "category": "cremation",
+      "title": "Decide what to do with the ashes",
+      "copy": {
+        "summary": "Some families keep ashes at home, bury them, place them in a columbarium, or scatter them. You do not have to decide right away.",
+        "acknowledge": "There is no deadline here. Many families wait.",
+        "ask": "Would you like to set this aside for now and come back to it later?",
+        "offer_next": "I can remind you in a few weeks, or whenever you choose."
+      },
+      "how_to": [
+        "Ask the provider for a temporary container if you are unsure.",
+        "If you plan to scatter ashes, check the rules for that place first."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "months_1_3",
+        "target_days_after_death": 30
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "high",
+        "check_in_before": true
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W3-SSA-REPORT",
+      "version": 1,
+      "phase": "W3",
+      "category": "government",
+      "title": "Make sure Social Security knows",
+      "copy": {
+        "summary": "The funeral director usually reports the death to Social Security if you give them the Social Security number. Social Security handles the report for Medicare too. If you report it yourself, it must be by phone at 1-800-772-1213 (TTY 1-800-325-0778) or in person. They do not take reports online or by email.",
+        "acknowledge": "This is one of the calls people most often worry about, and it is usually simpler than it sounds.",
+        "ask": "Has the funeral home said they will report the death to Social Security?",
+        "offer_next": "If they have, I will mark this done. If not, I can help you prepare for the call."
+      },
+      "how_to": [
+        "Ask the funeral home if they report deaths to Social Security.",
+        "If they do not, call Social Security or visit a local office.",
+        "Give the Social Security number to the funeral home or to Social Security directly. Do not type it into this chat."
+      ],
+      "who_usually_does_it": [
+        "funeral_home",
+        "you"
+      ],
+      "timing": {
+        "window": "first_week",
+        "target_days_after_death": 3
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [
+          "decedent_ssn"
+        ],
+        "chat_capture": "never"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [
+        "SRC-USAGOV-SSA-REPORT"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "low",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "notification",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W3-SSA-RETURN-PAYMENT",
+      "version": 1,
+      "phase": "W3",
+      "category": "government",
+      "title": "Return any Social Security payment for the month of death",
+      "copy": {
+        "summary": "Social Security cannot pay benefits for the month a person dies. The payment that arrives the next month must go back. For example, if they died in July, the August payment is returned.",
+        "acknowledge": "It can feel strange to give money back. This rule applies to everyone.",
+        "ask": "Were their Social Security payments deposited directly into a bank account?",
+        "offer_next": "If they were, the next step is asking that bank to return the payment. I can add that to the bank's checklist."
+      },
+      "how_to": [
+        "If paid by direct deposit, ask the bank to return the payment for the month of death and any later payments.",
+        "If paid by paper check, do not cash it. Return it to Social Security."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "first_month",
+        "target_days_after_death": 14
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [
+        "S-W3-SSA-REPORT"
+      ],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [
+        "SRC-USAGOV-SSA-REPORT"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "low",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      },
+      "product_notes": "Warn the user not to close the bank account that receives SSA deposits until any return is handled."
+    },
+    {
+      "id": "S-W3-SSA-SURVIVOR",
+      "version": 1,
+      "phase": "W3",
+      "category": "benefits",
+      "title": "Ask about Social Security survivor benefits",
+      "copy": {
+        "summary": "A one-time payment of $255 may be available to a surviving spouse, or to certain children if there is no spouse. Monthly survivor benefits may also be available. You must apply, and there are time limits, so it is best to ask early.",
+        "acknowledge": "You may be owed support that no one will tell you about unless you ask.",
+        "ask": "Would you like to set up a reminder to call Social Security about survivor benefits?",
+        "offer_next": "I can list the things to have ready before you call."
+      },
+      "how_to": [
+        "Call Social Security at 1-800-772-1213 to ask about survivor benefits.",
+        "Have their death certificate, your ID, and your marriage or birth certificate ready if you are a spouse or child."
+      ],
+      "who_usually_does_it": [
+        "surviving_family"
+      ],
+      "timing": {
+        "window": "first_month",
+        "target_days_after_death": 21
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": true,
+      "depends_on": [
+        "S-W3-SSA-REPORT"
+      ],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [
+        "SRC-SSA-HANDBOOK-428",
+        "SRC-SSA-CFR-404-390",
+        "SRC-USAGOV-SSA-REPORT"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "medium",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "claim",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W3-CREDIT-BUREAUS",
+      "version": 1,
+      "phase": "W3",
+      "category": "identity_protection",
+      "title": "Tell the credit bureaus",
+      "copy": {
+        "summary": "Marking their credit file as deceased helps prevent identity theft. A surviving spouse or executor writes to the credit bureaus with a copy of the death certificate and proof of marriage or executorship. TransUnion says it notifies the other two bureaus when it receives a report.",
+        "acknowledge": "Protecting their name is a real way of caring for them.",
+        "ask": "Would you like me to prepare a short letter you can print and mail?",
+        "offer_next": "Once it is mailed, I will remind you to check that the file shows deceased."
+      },
+      "how_to": [
+        "Mail a letter with the death certificate copy and proof of your authority.",
+        "Ask that the file be marked deceased and request a copy of the credit report.",
+        "Use the report to find accounts you may not know about."
+      ],
+      "who_usually_does_it": [
+        "surviving_spouse",
+        "executor"
+      ],
+      "timing": {
+        "window": "first_month",
+        "target_days_after_death": 21
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [
+        "S-W1-ORDER-DC"
+      ],
+      "sensitive_data": {
+        "fields": [
+          "decedent_ssn"
+        ],
+        "chat_capture": "never"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [
+        "SRC-CA-AG-DECEASED-IDTHEFT",
+        "SRC-TRANSUNION-DEATH"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "low",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "notification",
+        "repeatable_per": null
+      },
+      "product_notes": "Letter template must leave the SSN blank for the user to handwrite. Never store or print SSN from chat."
+    },
+    {
+      "id": "S-W3-DMV-LICENSE",
+      "version": 1,
+      "phase": "W3",
+      "category": "government",
+      "title": "Cancel their driver's license or state ID",
+      "copy": {
+        "summary": "Cancelling a driver's license or state ID helps prevent misuse. How to do it depends on the state.",
+        "acknowledge": "This is a quick one for most families.",
+        "ask": "Which state issued their driver's license?",
+        "offer_next": "I will show you that state's steps, or tell you if I do not have verified steps for it yet."
+      },
+      "how_to": [
+        "Follow the state motor vehicle agency's process for a deceased driver."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "first_month",
+        "target_days_after_death": 21
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [
+        "S-W1-ORDER-DC"
+      ],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [
+        "dmv_notification"
+      ],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "low",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "notification",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W3-VA-NOTIFY",
+      "version": 1,
+      "phase": "W3",
+      "category": "veteran",
+      "title": "Tell the VA and ask about benefits",
+      "copy": {
+        "summary": "If your loved one was a veteran or received VA benefits, call the VA. They can explain burial benefits and any payments that must stop.",
+        "acknowledge": "Their service is part of their story, and there are benefits meant to honor it.",
+        "ask": "Did they receive any payments from the VA?",
+        "offer_next": "I can help you gather their discharge papers before you call."
+      },
+      "how_to": [
+        "Call the VA at 800-827-1000.",
+        "Have their discharge papers (DD214) ready if you can find them."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "first_month",
+        "target_days_after_death": 10
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [
+        "SRC-VA-21P530-INSTR",
+        "SRC-VA-BURIAL-ALLOWANCE"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "medium",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "notification",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W2-VA-MEMORIAL-BENEFITS",
+      "version": 1,
+      "phase": "W2",
+      "category": "veteran",
+      "title": "Apply for veteran burial and memorial benefits",
+      "copy": {
+        "summary": "Eligible veterans can receive burial in a VA national cemetery, a government headstone, marker, or medallion, a burial flag, and a Presidential Memorial Certificate. The funeral home can often help with the forms.",
+        "acknowledge": "These honors can mean a great deal to families.",
+        "ask": "Do you know where they will be buried, a VA national cemetery or a private cemetery?",
+        "offer_next": "Based on your answer, I will show the right form and phone number."
+      },
+      "how_to": [
+        "For a VA national cemetery, call the National Cemetery Scheduling Office at 800-535-1117.",
+        "For a headstone or marker in a private cemetery, use VA Form 40-1330. For a medallion, use VA Form 40-1330M.",
+        "For a Presidential Memorial Certificate, use VA Form 40-0247.",
+        "For a burial flag, use VA Form 27-2008."
+      ],
+      "who_usually_does_it": [
+        "funeral_home",
+        "you"
+      ],
+      "timing": {
+        "window": "first_week",
+        "target_days_after_death": 3
+      },
+      "deadlines": [],
+      "documents_needed": [
+        "dd214"
+      ],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [
+        "SRC-VA-QSG-BURIAL",
+        "SRC-VA-PRIVATE-CEMETERY"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "medium",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "claim",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W3-VA-BURIAL-ALLOWANCE",
+      "version": 1,
+      "phase": "W3",
+      "category": "veteran",
+      "title": "Apply for the VA burial allowance",
+      "copy": {
+        "summary": "The VA may repay part of the funeral and burial costs. You can apply online or by mail with VA Form 21P-530EZ. Some surviving spouses on record are paid automatically.",
+        "acknowledge": "Money questions can feel out of place right now, but this can ease some of the cost.",
+        "ask": "Do you have the itemized funeral bill yet?",
+        "offer_next": "When you do, I can remind you to apply and list what to attach."
+      },
+      "how_to": [
+        "Apply online or by mail with VA Form 21P-530EZ.",
+        "Attach the death certificate, discharge papers, and the itemized funeral bill."
+      ],
+      "who_usually_does_it": [
+        "person_who_paid"
+      ],
+      "timing": {
+        "window": "months_1_3",
+        "target_days_after_death": 45
+      },
+      "deadlines": [
+        {
+          "description": "Non-service-connected burial allowance claims must be filed within 2 years of permanent burial or cremation.",
+          "rule": "2_years_from_burial_or_cremation",
+          "hard": true,
+          "source_ids": [
+            "SRC-VA-21P530-INSTR"
+          ]
+        }
+      ],
+      "documents_needed": [
+        "dd214",
+        "itemized_funeral_bill"
+      ],
+      "certified_copy_needed": true,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [
+        "SRC-VA-BURIAL-ALLOWANCE",
+        "SRC-VA-21P530-INSTR"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "low",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "claim",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W3-USCIS",
+      "version": 1,
+      "phase": "W3",
+      "category": "immigration",
+      "title": "Check on any pending immigration case",
+      "copy": {
+        "summary": "If your loved one was sponsoring a family member for immigration, or was waiting on their own case, the death can affect that case. Some surviving relatives may still be able to continue under immigration law.",
+        "acknowledge": "This can feel frightening. You do not have to sort it out alone.",
+        "ask": "Was your loved one part of a pending immigration petition or application?",
+        "offer_next": "If yes, the next step is talking with an immigration attorney or accredited representative. I can help you prepare questions."
+      },
+      "how_to": [
+        "Gather any USCIS receipt notices or case numbers.",
+        "Talk with an immigration attorney before contacting USCIS."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "first_month",
+        "target_days_after_death": 14
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "required",
+        "reason": "Immigration relief after a death is fact-specific and discretionary. Cairn does not advise on immigration cases."
+      },
+      "jurisdiction_keys": [],
+      "citations": [
+        "SRC-USCIS-PM-V7A9"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "high",
+        "check_in_before": true
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W0-ABROAD-CONSULATE",
+      "version": 1,
+      "phase": "W0",
+      "category": "abroad",
+      "title": "Contact the U.S. embassy or consulate",
+      "copy": {
+        "summary": "When a U.S. citizen dies abroad, the nearest U.S. embassy or consulate helps the family. Local hospitals or police often notify them, and consular officers then try to reach the next of kin.",
+        "acknowledge": "Being far away makes this even harder. Help is available.",
+        "ask": "Has an embassy or consulate already contacted you?",
+        "offer_next": "If not, I can help you find the right one and what to ask."
+      },
+      "how_to": [
+        "Contact the nearest U.S. embassy or consulate.",
+        "Ask for their list of local funeral homes and lawyers."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "first_24_hours",
+        "target_days_after_death": 0
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [
+        "SRC-STATE-DEATH-ABROAD"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "high",
+        "check_in_before": true
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W1-CRODA",
+      "version": 1,
+      "phase": "W1",
+      "category": "abroad",
+      "title": "Get the Consular Report of Death Abroad",
+      "copy": {
+        "summary": "After the foreign country issues its local death certificate, the embassy or consulate may prepare a Consular Report of Death Abroad. Families use it in the U.S. to settle estate matters.",
+        "acknowledge": "Getting official papers from another country takes patience.",
+        "ask": "Has the local death certificate been issued yet?",
+        "offer_next": "Once it has, I will track the consular report as your main certificate."
+      },
+      "how_to": [
+        "Ask the consulate when the report will be ready.",
+        "Ask how to order more certified copies later."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "first_month",
+        "target_days_after_death": 21
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [
+        "S-W0-ABROAD-CONSULATE"
+      ],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [
+        "SRC-STATE-DEATH-ABROAD"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "medium",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W2-REPATRIATION",
+      "version": 1,
+      "phase": "W2",
+      "category": "abroad",
+      "title": "Decide on local burial or bringing them home",
+      "copy": {
+        "summary": "Families can arrange local burial or cremation, or return remains to the United States. The State Department cannot pay for returning remains, but it can help send instructions and private funds.",
+        "acknowledge": "Wanting to bring them home is a very natural feeling.",
+        "ask": "Are you leaning toward bringing them home, or arranging things where they died?",
+        "offer_next": "I can list what each path usually involves so you can compare."
+      },
+      "how_to": [
+        "Ask the consulate what documents are required to send remains to the U.S.",
+        "Get quotes from a funeral home experienced with international transfers."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "first_week",
+        "target_days_after_death": 2
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [
+        "SRC-STATE-DEATH-ABROAD"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "high",
+        "check_in_before": true
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W0-ABROAD-NONCITIZEN",
+      "version": 1,
+      "phase": "W0",
+      "category": "abroad",
+      "title": "Contact local authorities and their home country's consulate",
+      "copy": {
+        "summary": "When someone who was not a U.S. citizen dies outside the United States, the local authorities where they died, and the consulate of the country they were a citizen of, are usually the main contacts. The U.S. embassy's death services are set up for U.S. citizens.",
+        "acknowledge": "Being far away and dealing with another country's system is a lot. You do not have to figure it out alone.",
+        "ask": "Do you know which country's consulate represents them?",
+        "offer_next": "Once we know, I can help you list what to ask the local authorities and the consulate."
+      },
+      "how_to": [
+        "Ask the hospital or police where they died who the local contact is.",
+        "Contact the consulate or embassy of the country they were a citizen of.",
+        "Ask whether a local funeral home can help with paperwork and transport."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "first_24_hours",
+        "target_days_after_death": 0
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "Cross-border estates often need advice in both countries."
+      },
+      "jurisdiction_keys": [],
+      "citations": [
+        "SRC-STATE-DEATH-ABROAD"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "high",
+        "check_in_before": true
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W1-FOREIGN-DC",
+      "version": 1,
+      "phase": "W1",
+      "category": "abroad",
+      "title": "Get the local death certificate and translations",
+      "copy": {
+        "summary": "The country where the death happened issues the official death certificate. U.S. banks, insurers, and courts may ask for a certified English translation, so ask each one what they accept.",
+        "acknowledge": "Paperwork in another language can feel like one more wall. We can take it one piece at a time.",
+        "ask": "Has the local death certificate been issued yet?",
+        "offer_next": "Once it has, I will track it as your main certificate and note which institutions want a translation."
+      },
+      "how_to": [
+        "Ask the local civil registry for several certified copies.",
+        "Ask each U.S. institution whether it needs a certified English translation.",
+        "Keep the originals safe and send copies where allowed."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "first_month",
+        "target_days_after_death": 14
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [
+        "S-W0-ABROAD-NONCITIZEN"
+      ],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "An attorney can confirm which documents a U.S. court will accept."
+      },
+      "jurisdiction_keys": [],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "medium",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W4-BANKS",
+      "version": 1,
+      "phase": "W4",
+      "category": "financial",
+      "title": "Notify each bank or credit union",
+      "copy": {
+        "summary": "Each bank has its own process. They usually need a certified death certificate and proof that you have authority, such as court papers naming the executor.",
+        "acknowledge": "One account at a time is plenty.",
+        "ask": "Which bank would you like to start with?",
+        "offer_next": "After each call, I will note what they asked for and what is still open."
+      },
+      "how_to": [
+        "Ask the bank for its bereavement or estate services team.",
+        "Ask what documents they need and whether joint accounts change hands automatically.",
+        "Do not close an account that may receive a Social Security return until that is settled."
+      ],
+      "who_usually_does_it": [
+        "executor",
+        "surviving_spouse"
+      ],
+      "timing": {
+        "window": "first_month",
+        "target_days_after_death": 14
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": true,
+      "depends_on": [
+        "S-W1-ORDER-DC"
+      ],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "If a bank refuses to work with you, or you are unsure whether you have authority, talk with an attorney."
+      },
+      "jurisdiction_keys": [],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "low",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "notification",
+        "repeatable_per": "financial_account"
+      }
+    },
+    {
+      "id": "S-W4-DEBTS",
+      "version": 1,
+      "phase": "W4",
+      "category": "financial",
+      "title": "Notify credit card companies and lenders",
+      "copy": {
+        "summary": "Credit card companies, mortgage lenders, and other lenders need to know about the death. Before you pay any debt with your own money, find out whether you are responsible for it.",
+        "acknowledge": "Bills can keep arriving for a while. Seeing them does not mean you owe them.",
+        "ask": "Would you like to list their credit cards and loans so we can track each one?",
+        "offer_next": "I will keep each lender's status in one place."
+      },
+      "how_to": [
+        "Notify each lender and ask them to note the death on the account.",
+        "Ask for a statement of the balance at the date of death.",
+        "Do not pay from your own money until you know who is responsible."
+      ],
+      "who_usually_does_it": [
+        "executor"
+      ],
+      "timing": {
+        "window": "first_month",
+        "target_days_after_death": 21
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": true,
+      "depends_on": [
+        "S-W1-ORDER-DC"
+      ],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "Whether a family member must pay a debt depends on state law and the account. Talk with an attorney before paying debts personally."
+      },
+      "jurisdiction_keys": [],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "medium",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "notification",
+        "repeatable_per": "debt_account"
+      }
+    },
+    {
+      "id": "S-W4-LIFE-INSURANCE",
+      "version": 1,
+      "phase": "W4",
+      "category": "insurance",
+      "title": "Find and claim life insurance",
+      "copy": {
+        "summary": "If you are not sure whether they had life insurance, the free NAIC Life Insurance Policy Locator searches participating insurers. If a policy is found, the insurer contacts the beneficiary.",
+        "acknowledge": "Some families find policies they never knew existed.",
+        "ask": "Do you know of any life insurance policies, or should we search?",
+        "offer_next": "I can walk you through the locator, and track any claims you file."
+      },
+      "how_to": [
+        "Contact known insurers to start a claim.",
+        "Use the NAIC Life Insurance Policy Locator if you are unsure.",
+        "Check old employer benefits and bank statements for premium payments."
+      ],
+      "who_usually_does_it": [
+        "beneficiary"
+      ],
+      "timing": {
+        "window": "first_month",
+        "target_days_after_death": 21
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": true,
+      "depends_on": [
+        "S-W1-ORDER-DC"
+      ],
+      "sensitive_data": {
+        "fields": [
+          "decedent_ssn"
+        ],
+        "chat_capture": "never"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [
+        "SRC-CT-LIPL"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "medium",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "claim",
+        "repeatable_per": "insurance_policy"
+      }
+    },
+    {
+      "id": "S-W4-OTHER-INSURANCE",
+      "version": 1,
+      "phase": "W4",
+      "category": "insurance",
+      "title": "Update health, home, and car insurance",
+      "copy": {
+        "summary": "Health insurance can usually be cancelled. Do not cancel home or car insurance on property that still exists until someone else has coverage in place.",
+        "acknowledge": "Letting property go uninsured is a common and costly mistake, so this one is worth a careful look.",
+        "ask": "Did they own a home or car that is still insured in their name?",
+        "offer_next": "I can help you list each policy and what should happen to it."
+      },
+      "how_to": [
+        "Cancel health and dental plans after final claims are settled.",
+        "Keep home and car coverage active until ownership changes."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "first_month",
+        "target_days_after_death": 21
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [
+        "dmv_notification"
+      ],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "low",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "notification",
+        "repeatable_per": "insurance_policy"
+      }
+    },
+    {
+      "id": "S-W4-EMPLOYER",
+      "version": 1,
+      "phase": "W4",
+      "category": "employer",
+      "title": "Contact their employer or former employer",
+      "copy": {
+        "summary": "If they were working, or had a pension or retirement plan from a past job, contact the employer or plan administrator. Retirement benefits are usually paid to the named beneficiary under the plan's terms. The plan will likely ask for a death certificate.",
+        "acknowledge": "Reaching out to their workplace can bring up a lot. You can keep the call short.",
+        "ask": "Were they working, or did they have a pension or retirement plan from an employer?",
+        "offer_next": "I can list the questions to ask about final pay, group life insurance, and retirement plans."
+      },
+      "how_to": [
+        "Ask human resources about final pay and unused leave.",
+        "Ask about group life insurance and retirement plan beneficiaries.",
+        "Ask about health coverage continuation for any family on their plan."
+      ],
+      "who_usually_does_it": [
+        "surviving_spouse",
+        "executor"
+      ],
+      "timing": {
+        "window": "first_month",
+        "target_days_after_death": 14
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": true,
+      "depends_on": [
+        "S-W1-ORDER-DC"
+      ],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [
+        "SRC-IRS-RETIREMENT-DEATH"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "medium",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "notification",
+        "repeatable_per": null
+      },
+      "product_notes": "Health coverage continuation elections can be time-limited. Surface the plan's own deadline once the user reports it."
+    },
+    {
+      "id": "S-W4-UTILITIES",
+      "version": 1,
+      "phase": "W4",
+      "category": "household",
+      "title": "Update utilities, phone, and subscriptions",
+      "copy": {
+        "summary": "Utilities for a home that is still occupied or for sale usually stay on. Subscriptions and memberships can be cancelled.",
+        "acknowledge": "This is a good task to hand to a helper.",
+        "ask": "Would you like to list the accounts so a family member can help?",
+        "offer_next": "I can keep a simple checklist you can share."
+      },
+      "how_to": [
+        "Keep utilities on for any property still being cared for.",
+        "Cancel subscriptions, memberships, and phone plans."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "months_1_3",
+        "target_days_after_death": 30
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "low",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "notification",
+        "repeatable_per": "household_account"
+      }
+    },
+    {
+      "id": "S-W5-FIND-WILL",
+      "version": 1,
+      "phase": "W5",
+      "category": "estate_documents",
+      "title": "Find the will and other estate papers",
+      "copy": {
+        "summary": "Look for the original will, any trust papers, deeds, and account statements. The original will is important, not just a copy.",
+        "acknowledge": "Going through their papers can be emotional. Short sessions are okay.",
+        "ask": "Do you know where they kept important papers?",
+        "offer_next": "I can give you a short list of places people often keep these."
+      },
+      "how_to": [
+        "Check home files, a safe, or a safe deposit box.",
+        "Ask their attorney or financial advisor if they had one.",
+        "Keep the original will safe and unaltered."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "first_month",
+        "target_days_after_death": 14
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "If you find more than one will, or a will seems changed, talk with an attorney."
+      },
+      "jurisdiction_keys": [],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "high",
+        "check_in_before": true
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W5-PROBATE-NEEDED",
+      "version": 1,
+      "phase": "W5",
+      "category": "probate",
+      "title": "Find out whether probate is needed",
+      "copy": {
+        "summary": "Probate is the court process for settling an estate. Whether you need it, and which version, depends on state law, what they owned, and how it was titled.",
+        "acknowledge": "This is where many families first talk with an attorney, and that is a good thing.",
+        "ask": "Did they own real estate, or accounts with no named beneficiary?",
+        "offer_next": "I will show your state's court information, and I can help you prepare questions for an attorney."
+      },
+      "how_to": [
+        "List assets and how each is titled or who is named as beneficiary.",
+        "Look at your state's probate court information.",
+        "Consider a consultation with an estate attorney."
+      ],
+      "who_usually_does_it": [
+        "executor"
+      ],
+      "timing": {
+        "window": "first_month",
+        "target_days_after_death": 21
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [
+        "S-W5-FIND-WILL"
+      ],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "Probate rules vary by state and by estate. An estate attorney can confirm what applies."
+      },
+      "jurisdiction_keys": [
+        "probate"
+      ],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "medium",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W5-GET-AUTHORITY",
+      "version": 1,
+      "phase": "W5",
+      "category": "probate",
+      "title": "Get legal authority to act for the estate",
+      "copy": {
+        "summary": "Banks and others often ask for court papers showing who can act for the estate. The name of these papers depends on your state.",
+        "acknowledge": "Waiting on the court can feel slow. It is normal.",
+        "ask": "Has anyone filed with the probate court yet?",
+        "offer_next": "Once papers are issued, I will note which institutions are waiting on them."
+      },
+      "how_to": [
+        "File the state's opening petition with the probate court, often with the original will and a death certificate.",
+        "Ask for extra certified copies of the court papers."
+      ],
+      "who_usually_does_it": [
+        "executor"
+      ],
+      "timing": {
+        "window": "months_1_3",
+        "target_days_after_death": 45
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": true,
+      "depends_on": [
+        "S-W5-PROBATE-NEEDED"
+      ],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "An attorney can file for you and flag problems early."
+      },
+      "jurisdiction_keys": [
+        "probate"
+      ],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "medium",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W5-TRUST",
+      "version": 1,
+      "phase": "W5",
+      "category": "trust",
+      "title": "Review any trust with the successor trustee",
+      "copy": {
+        "summary": "If they had a living trust, the successor trustee named in it usually manages trust property. Trust property often does not go through probate.",
+        "acknowledge": "A trust can make things simpler, but the first read can still be confusing.",
+        "ask": "Do you know who is named as the successor trustee?",
+        "offer_next": "I can help you list the property held in the trust and track each item."
+      },
+      "how_to": [
+        "Find the trust document and any amendments.",
+        "Identify the successor trustee.",
+        "List property titled in the trust's name."
+      ],
+      "who_usually_does_it": [
+        "successor_trustee"
+      ],
+      "timing": {
+        "window": "first_month",
+        "target_days_after_death": 21
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [
+        "S-W5-FIND-WILL"
+      ],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "A trustee has legal duties. An attorney can explain them for your state."
+      },
+      "jurisdiction_keys": [
+        "trust_administration"
+      ],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "medium",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W5-NO-WILL",
+      "version": 1,
+      "phase": "W5",
+      "category": "probate",
+      "title": "Understand what happens when there is no will",
+      "copy": {
+        "summary": "When there is no will, state law decides who inherits and who can be appointed to handle the estate.",
+        "acknowledge": "Not having a will is very common. It does not mean things will go badly.",
+        "ask": "Are there any family members who might disagree about how things are handled?",
+        "offer_next": "I will show your state's court guidance, and I can help you prepare for an attorney consultation."
+      },
+      "how_to": [
+        "Read your state's probate court guidance for estates without a will.",
+        "List close relatives, since the court may ask for names and addresses."
+      ],
+      "who_usually_does_it": [
+        "next_of_kin"
+      ],
+      "timing": {
+        "window": "first_month",
+        "target_days_after_death": 21
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [
+        "S-W5-FIND-WILL"
+      ],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "Heirship rules are set by state law. An attorney should confirm who inherits."
+      },
+      "jurisdiction_keys": [
+        "intestacy",
+        "probate"
+      ],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "medium",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W5-IRS-FORM-56",
+      "version": 1,
+      "phase": "W5",
+      "category": "tax",
+      "title": "Tell the IRS who is handling the estate",
+      "copy": {
+        "summary": "The personal representative may need to file IRS Form 56 to notify the IRS of the fiduciary relationship. This lets the IRS communicate with you about their taxes.",
+        "acknowledge": "Tax forms can wait until you have legal authority in place.",
+        "ask": "Have you been named executor or administrator yet?",
+        "offer_next": "Once you have, I will add Form 56 to your tax checklist."
+      },
+      "how_to": [
+        "Review Form 56 and its instructions, or ask a tax professional."
+      ],
+      "who_usually_does_it": [
+        "executor"
+      ],
+      "timing": {
+        "window": "months_1_3",
+        "target_days_after_death": 60
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [
+        "S-W5-GET-AUTHORITY"
+      ],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "A tax professional can confirm whether Form 56 is needed in your situation."
+      },
+      "jurisdiction_keys": [],
+      "citations": [
+        "SRC-IRS-TOPIC-356"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "low",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W6-INVENTORY",
+      "version": 1,
+      "phase": "W6",
+      "category": "assets",
+      "title": "Make a list of what they owned and owed",
+      "copy": {
+        "summary": "A simple list of accounts, property, and debts makes every later step easier. Cairn keeps it for you and updates status as you go.",
+        "acknowledge": "You do not have to find everything at once.",
+        "ask": "Would you like to start with the biggest things, like a home, car, or bank accounts?",
+        "offer_next": "I will add each item to your tracker so nothing gets lost."
+      },
+      "how_to": [
+        "List bank, investment, and retirement accounts.",
+        "List real estate, vehicles, and valuable belongings.",
+        "List debts and regular bills."
+      ],
+      "who_usually_does_it": [
+        "executor"
+      ],
+      "timing": {
+        "window": "months_1_3",
+        "target_days_after_death": 30
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "medium",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "inventory",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W6-UNCLAIMED",
+      "version": 1,
+      "phase": "W6",
+      "category": "assets",
+      "title": "Search for unclaimed money",
+      "copy": {
+        "summary": "States hold forgotten accounts, refunds, and deposits as unclaimed property. Searching is free.",
+        "acknowledge": "Families sometimes find money their loved one forgot about.",
+        "ask": "Which states did they live or work in?",
+        "offer_next": "I can list the search sites for each state."
+      },
+      "how_to": [
+        "Search unclaimed.org or each state's unclaimed property site for every state where they lived or worked.",
+        "Never pay a company to search for you. The official search is free."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "months_1_3",
+        "target_days_after_death": 45
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [
+        "SRC-NAUPA"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "low",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W6-VEHICLES",
+      "version": 1,
+      "phase": "W6",
+      "category": "assets",
+      "title": "Transfer or sell their vehicle",
+      "copy": {
+        "summary": "How a vehicle changes hands depends on the state and how the title is held. Some states have simpler rules for a surviving spouse.",
+        "acknowledge": "Their car can hold a lot of memories.",
+        "ask": "Is the car titled only in their name, or jointly with someone?",
+        "offer_next": "I will show your state's steps if I have verified ones."
+      },
+      "how_to": [
+        "Find the title and any loan paperwork.",
+        "Follow the state's transfer process for a deceased owner.",
+        "Keep the car insured until it is transferred or sold."
+      ],
+      "who_usually_does_it": [
+        "executor",
+        "surviving_spouse"
+      ],
+      "timing": {
+        "window": "months_1_3",
+        "target_days_after_death": 45
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": true,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "If the vehicle is part of a probate estate, confirm authority before signing a title."
+      },
+      "jurisdiction_keys": [
+        "vehicle_transfer"
+      ],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "medium",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": "vehicle"
+      }
+    },
+    {
+      "id": "S-W6-REAL-ESTATE",
+      "version": 1,
+      "phase": "W6",
+      "category": "assets",
+      "title": "Protect and plan for any real estate",
+      "copy": {
+        "summary": "A home needs to stay secure, insured, and maintained until it is transferred or sold. Transferring real estate usually requires legal steps that depend on the state and the deed.",
+        "acknowledge": "A family home often carries the deepest feelings of all.",
+        "ask": "Is anyone living in the home right now?",
+        "offer_next": "I can help you track insurance, utilities, and upkeep while you decide."
+      },
+      "how_to": [
+        "Keep the home insured and utilities on as needed.",
+        "Find the deed and any mortgage statements.",
+        "Talk with an attorney before selling or transferring."
+      ],
+      "who_usually_does_it": [
+        "executor"
+      ],
+      "timing": {
+        "window": "months_1_3",
+        "target_days_after_death": 30
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "required",
+        "reason": "Real estate transfer after death is a legal process that depends on state law and the deed."
+      },
+      "jurisdiction_keys": [
+        "real_estate_transfer"
+      ],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "high",
+        "check_in_before": true
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": "real_property"
+      }
+    },
+    {
+      "id": "S-W6-RETIREMENT-INVEST",
+      "version": 1,
+      "phase": "W6",
+      "category": "assets",
+      "title": "Claim retirement and investment accounts",
+      "copy": {
+        "summary": "Retirement accounts usually pass to the named beneficiary under the plan's terms. The plan will explain payment options and whether a rollover is possible.",
+        "acknowledge": "These decisions can have tax effects, so there is no need to rush.",
+        "ask": "Do you know who is named as beneficiary on their retirement accounts?",
+        "offer_next": "I can help you track each account and the options the plan offers."
+      },
+      "how_to": [
+        "Contact each plan or brokerage.",
+        "Ask about payout options and rollover rules before choosing."
+      ],
+      "who_usually_does_it": [
+        "beneficiary"
+      ],
+      "timing": {
+        "window": "months_1_3",
+        "target_days_after_death": 45
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": true,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "A tax professional can explain how each payout choice is taxed."
+      },
+      "jurisdiction_keys": [],
+      "citations": [
+        "SRC-IRS-RETIREMENT-DEATH"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "medium",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "claim",
+        "repeatable_per": "financial_account"
+      }
+    },
+    {
+      "id": "S-W6-BELONGINGS",
+      "version": 1,
+      "phase": "W6",
+      "category": "liquidation",
+      "title": "Sort, sell, donate, or keep belongings",
+      "copy": {
+        "summary": "Personal belongings can be kept by family, sold through an estate sale, consignment, or auction, or donated. Keep records of what was sold and for how much, since the estate may need to report it.",
+        "acknowledge": "Going through their things is often the hardest part. Many families do it slowly.",
+        "ask": "Would you like to start by choosing a few things that family wants to keep?",
+        "offer_next": "I can help you compare estate sale companies and keep a record of each sale."
+      },
+      "how_to": [
+        "Let family choose keepsakes first, following the will if there is one.",
+        "Get an appraisal for valuable items.",
+        "Compare estate sale, consignment, auction, and donation options.",
+        "Record every sale and donation."
+      ],
+      "who_usually_does_it": [
+        "executor"
+      ],
+      "timing": {
+        "window": "months_3_12",
+        "target_days_after_death": 90
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [
+        "S-W5-GET-AUTHORITY"
+      ],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "Before selling anything, confirm you have legal authority to sell it."
+      },
+      "jurisdiction_keys": [],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "high",
+        "check_in_before": true
+      },
+      "tracker": {
+        "type": "inventory",
+        "repeatable_per": null
+      },
+      "product_notes": "Differentiator: liquidation guidance. Expand with channel comparisons and record-keeping export for estate accounting."
+    },
+    {
+      "id": "S-W6-DIGITAL",
+      "version": 1,
+      "phase": "W6",
+      "category": "digital",
+      "title": "Handle email, social media, and online accounts",
+      "copy": {
+        "summary": "Many online services let family close or memorialize an account. Some photos and messages may be worth saving first.",
+        "acknowledge": "Their online presence can hold precious memories.",
+        "ask": "Are there accounts you want to save photos or messages from first?",
+        "offer_next": "I can help you list accounts and what you want done with each."
+      },
+      "how_to": [
+        "List email, social media, and cloud accounts.",
+        "Save photos or files you want to keep.",
+        "Follow each service's process to close or memorialize."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "months_3_12",
+        "target_days_after_death": 90
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "medium",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": "digital_account"
+      }
+    },
+    {
+      "id": "S-W7-FINAL-1040",
+      "version": 1,
+      "phase": "W7",
+      "category": "tax",
+      "title": "File their final income tax return",
+      "copy": {
+        "summary": "The surviving spouse or representative files the final federal return, reporting income up to the date of death. The usual due date applies. The IRS does not need a copy of the death certificate. A surviving spouse can generally still file jointly for the year of death.",
+        "acknowledge": "Taxes can wait until the regular season. This is on the list so it does not surprise you.",
+        "ask": "Do you usually work with a tax preparer, or would you like a list of what to gather?",
+        "offer_next": "I will remind you before the filing deadline."
+      },
+      "how_to": [
+        "Gather their income records for the year.",
+        "Note on the return that the person has died.",
+        "Attach Form 1310 to claim a refund if you are not a surviving spouse or court-appointed representative."
+      ],
+      "who_usually_does_it": [
+        "surviving_spouse",
+        "executor"
+      ],
+      "timing": {
+        "window": "year_plus",
+        "target_days_after_death": 200
+      },
+      "deadlines": [
+        {
+          "description": "The final return is due on the normal filing deadline for the year of death unless extended.",
+          "rule": "normal_filing_deadline_following_year",
+          "hard": true,
+          "source_ids": [
+            "SRC-IRS-FINAL-RETURN"
+          ]
+        }
+      ],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "A tax professional is helpful if they owned a business, had unfiled returns, or had complex income."
+      },
+      "jurisdiction_keys": [],
+      "citations": [
+        "SRC-IRS-FINAL-RETURN",
+        "SRC-IRS-TOPIC-356"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "low",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W7-ESTATE-1041",
+      "version": 1,
+      "phase": "W7",
+      "category": "tax",
+      "title": "Check whether the estate files its own tax return",
+      "copy": {
+        "summary": "Income the estate earns after the death, like interest or rent, may need to be reported on Form 1041. The estate may also need its own tax ID number.",
+        "acknowledge": "This one is best handled with a tax professional.",
+        "ask": "Is the estate earning any income, like rent, interest, or dividends?",
+        "offer_next": "I can note this for your tax preparer."
+      },
+      "how_to": [
+        "Ask a tax professional whether Form 1041 is required.",
+        "Ask whether the estate needs its own tax ID number."
+      ],
+      "who_usually_does_it": [
+        "executor"
+      ],
+      "timing": {
+        "window": "year_plus",
+        "target_days_after_death": 240
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [
+        "S-W5-GET-AUTHORITY"
+      ],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "Estate income tax is technical. Use a tax professional."
+      },
+      "jurisdiction_keys": [],
+      "citations": [
+        "SRC-IRS-PUB-559"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "low",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W7-STATE-TAX",
+      "version": 1,
+      "phase": "W7",
+      "category": "tax",
+      "title": "Check state tax filings",
+      "copy": {
+        "summary": "Many states require their own final income tax return. Some also have estate or inheritance taxes.",
+        "acknowledge": "This is a check, not a task, for many families.",
+        "ask": "Which state did they live in at the time of death?",
+        "offer_next": "I will show your state's guidance if I have verified it."
+      },
+      "how_to": [
+        "Ask a tax professional which state returns are required."
+      ],
+      "who_usually_does_it": [
+        "executor"
+      ],
+      "timing": {
+        "window": "year_plus",
+        "target_days_after_death": 200
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "A tax professional can confirm state filing requirements."
+      },
+      "jurisdiction_keys": [
+        "state_tax"
+      ],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "low",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W8-CLOSE-ESTATE",
+      "version": 1,
+      "phase": "W8",
+      "category": "probate",
+      "title": "Close the estate",
+      "copy": {
+        "summary": "After debts are paid, assets are distributed, and taxes are filed, the estate can be closed. The steps and timing depend on state law.",
+        "acknowledge": "Reaching this point is a real accomplishment, even if it feels bittersweet.",
+        "ask": "Would you like to review what is still open before closing?",
+        "offer_next": "I can show every item still marked open in your tracker."
+      },
+      "how_to": [
+        "Confirm all debts, distributions, and tax filings are complete.",
+        "File any closing papers your state's court requires."
+      ],
+      "who_usually_does_it": [
+        "executor"
+      ],
+      "timing": {
+        "window": "months_3_12",
+        "target_days_after_death": 270
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [
+        "S-W5-GET-AUTHORITY"
+      ],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "An attorney can confirm the estate is ready to close."
+      },
+      "jurisdiction_keys": [
+        "probate"
+      ],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "medium",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W8-KEEP-RECORDS",
+      "version": 1,
+      "phase": "W8",
+      "category": "records",
+      "title": "Keep records for a few years",
+      "copy": {
+        "summary": "Keep copies of tax returns, court papers, and records of what you paid and distributed. Questions can come up later.",
+        "acknowledge": "Saving these protects you as the person who handled things.",
+        "ask": "Would you like to export your Cairn records to keep?",
+        "offer_next": "I can create a summary of everything you completed."
+      },
+      "how_to": [
+        "Save tax returns, court papers, receipts, and correspondence."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "ongoing",
+        "target_days_after_death": 365
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [],
+      "citations": [],
+      "citation_status": "general_guidance",
+      "support": {
+        "emotional_weight": "low",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "task",
+        "repeatable_per": null
+      }
+    },
+    {
+      "id": "S-W8-GRIEF-SUPPORT",
+      "version": 1,
+      "phase": "W8",
+      "category": "support",
+      "title": "Care for yourself after the tasks",
+      "copy": {
+        "summary": "When the tasks slow down, grief often feels louder. Grief counselors, support groups, and faith communities can help. If you ever feel unsafe or in crisis, you can call or text 988 any time.",
+        "acknowledge": "You have carried so much. You matter in this too.",
+        "ask": "Would you like me to share some grief support options near you?",
+        "offer_next": "I can check in with you in a few weeks, only if you want me to."
+      },
+      "how_to": [
+        "Consider a grief support group or counselor.",
+        "If you are in crisis, call or text 988, or chat at 988lifeline.org."
+      ],
+      "who_usually_does_it": [
+        "you"
+      ],
+      "timing": {
+        "window": "ongoing",
+        "target_days_after_death": 30
+      },
+      "deadlines": [],
+      "documents_needed": [],
+      "certified_copy_needed": false,
+      "depends_on": [],
+      "sensitive_data": {
+        "fields": [],
+        "chat_capture": "allowed"
+      },
+      "attorney_flag": {
+        "level": "none",
+        "reason": null
+      },
+      "jurisdiction_keys": [
+        "grief_support"
+      ],
+      "citations": [
+        "SRC-SAMHSA-988"
+      ],
+      "citation_status": "cited",
+      "support": {
+        "emotional_weight": "high",
+        "check_in_before": false
+      },
+      "tracker": {
+        "type": "support",
+        "repeatable_per": null
+      }
+    }
+  ]
+}

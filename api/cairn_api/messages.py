@@ -17,14 +17,8 @@ POA_ENDS_AT_DEATH = Note(
     legal_review_required=True,  # [LEGAL REVIEW REQUIRED] open question 3 in database/CLAUDE.md
 )
 
-START_CASE_FOR = {
-    Relationship.spouse: "When you're ready, we'll start with a few details about your spouse. "
-                         "First, what was their legal first name?",
-    Relationship.child: "When you're ready, we'll start with a few details about your parent. "
-                        "First, what was their legal first name?",
-}
-START_CASE_DEFAULT = ("When you're ready, we'll start with a few details about the person who died. "
-                      "First, what was their legal first name?")
+# No legal name or other identity is asked for at case creation (never_collect_at_case_creation).
+START_CASE_DEFAULT = "When you're ready, we'll start a new case together. You can skip any question."
 
 INVITATIONS_UNAVAILABLE = "Joining a case someone else started needs an invitation. That's coming soon."
 
@@ -75,70 +69,10 @@ def registration_next_step(relationship: Relationship | None) -> NextStep:
                 Option(value="change", label="No, I'm family"),
             ],
         )
-    return NextStep(action="start_case", prompt=START_CASE_FOR.get(relationship, START_CASE_DEFAULT))
-
-
-# ------------------------------------------------------------------ case intake
-
-def after_identity(professional: bool) -> NextStep:
-    return NextStep(
-        action="record_death_event",
-        prompt="Next, the date of death." if professional
-        else "Thank you. Next, we'll note a few details about the death. What was the date?",
-    )
-
-
-ASK_ESTATE_QUESTIONS = NextStep(
-    action="answer_estate_questions",
-    prompt="Two quick questions, and you can skip either one. Did they serve in the military?",
-    options=[Option(value="yes", label="Yes"), Option(value="no", label="No"),
-             Option(value="unknown", label="I don't know"), Option(value="skip", label="Skip for now")],
-)
-
-ASK_HAS_WILL = NextStep(
-    action="answer_has_will",
-    prompt="Did they have a will or a trust?",
-    options=[Option(value="yes", label="Yes"), Option(value="no", label="No"),
-             Option(value="unknown", label="I don't know"), Option(value="skip", label="Skip for now")],
-)
-
-READY_FOR_JOURNEY = NextStep(
-    action="start_journey",
-    prompt="That's everything we need to begin. We'll put together the first few weeks, one step at a time.",
-)
-
-VIEW_JOURNEY = NextStep(action="view_journey", prompt="Here's what's next.")
-
-UNKNOWN_IS_FINE = Note(
-    kind="info", text="\"I don't know\" is a fine answer for now. You can change it any time.")
-
-WILL_LOCATION_LATER = Note(
-    kind="info", text="You'll be able to add where the will is kept later. You don't need it right now.")
-
-FILL_IN_LATER = Note(
-    kind="info", text="Anything you don't have yet can be filled in later. It won't hold up the journey.")
-
-DEATH_STATE_HINT = Note(
-    kind="info",
-    text="The state where the death happened decides which office issues death certificates. "
-         "It can be different from the state where they lived.",
-)
-
-
-def missing_for_journey(missing: list[str]) -> NextStep:
-    if "date_of_death" in missing or "death_state" in missing:
-        return NextStep(action="record_death_event",
-                        prompt="Before we can build the journey, we need the date and the state of death.")
-    return NextStep(action="complete_identity", prompt="We still need the person's legal name.")
+    return NextStep(action="start_case", prompt=START_CASE_DEFAULT)
 
 
 # ------------------------------------------------------------------ journey
-
-JOURNEY_EMPTY = Note(
-    kind="info",
-    text="We couldn't find guidance for this state yet. We're adding more states, "
-         "and we'll let you know when steps are ready.",
-)
 
 CHECK_IN_MESSAGE = ("We've set the tasks aside. Nothing is lost, and everything will be right here "
                     "when you come back. There's nothing you need to do today.")

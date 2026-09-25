@@ -94,9 +94,12 @@ class PlaceType(str, Enum):
 
 
 class TaskStatus(str, Enum):
+    """not_started is the spec's todo."""
     not_started = "not_started"
+    check_on_this = "check_on_this"
     in_progress = "in_progress"
     done = "done"
+    not_today = "not_today"
     skipped = "skipped"
     not_applicable = "not_applicable"
 
@@ -137,6 +140,8 @@ class Note(ResponseModel):
     kind: Literal["acknowledgment", "info", "legal", "crisis", "reminder", "account"]
     text: str
     legal_review_required: bool = False
+    source_urls: list[str] = Field(default_factory=list, description="Citations. Render next to the text.")
+    attorney_line: str | None = Field(default=None, description="Shown with anything flagged for an attorney.")
 
 
 # ------------------------------------------------------------ registration and onboarding (UC-REG-01 to UC-REG-14)
@@ -368,6 +373,8 @@ class CaseHandoffRequest(RequestModel):
 
 class CaseHandoffResponse(ResponseModel):
     language_profile: Literal["family", "professional"]
+    user_role: str = Field(description="The same answer as a case creation user_role. Send it to POST /v1/cases "
+                                       "so the question is not asked again.")
     notes: list[Note]
     next_step: NextStep
 
@@ -391,120 +398,422 @@ class PolicyVersions(ResponseModel):
     acknowledgments: dict[ConsentType, str] = Field(description="Current document_version for each acknowledgment.")
 
 
-# ------------------------------------------------------------------ case and deceased (UC-5 to UC-8)
+# ------------------------------------------------------------------ case creation (UC-CASE-01 to UC-CASE-18)
+#
+# Only the spec's data_fields are collected at case creation. Legal names, dates
+# of birth, SSNs, account numbers, and medical details never are
+# (never_collect_at_case_creation). Free text is redacted as it is parsed
+# (RedactedText) and is never stored. Only confirmed field values are.
 
-class DeceasedIdentityIn(RequestModel):
-    legal_first_name: Name
-    legal_middle_name: OptionalText100 | None = None
-    legal_last_name: Name
-    date_of_birth: PastDate | None = None
-    domicile_state: StateCode | None = Field(default=None, description="State of legal residence.")
+def _redact(value: str) -> str:
+    from .redaction import redacted_str
+    return redacted_str(value)
+
+
+# Free text from the user. Redacted during request parsing, so handlers, the
+# database, logs, and any model call only ever see the redacted string.
+RedactedText = Annotated[str, Field(min_length=1, max_length=2000), AfterValidator(_no_control_chars),
+                         AfterValidator(_redact)]
+OwnWords = Annotated[str, Field(min_length=1, max_length=120), AfterValidator(_no_control_chars),
+                     AfterValidator(_redact)]
+DisplayName = Annotated[str, Field(min_length=1, max_length=60), AfterValidator(_no_control_chars),
+                        AfterValidator(_redact)]
+
+
+class FieldKey(str, Enum):
+    """The spec's data_fields, in the order Cairn suggests them. There is no required order."""
+    user_role = "user_role"
+    display_name = "display_name"
+    date_of_death = "date_of_death"
+    place_of_death = "place_of_death"
+    residence_state = "residence_state"
+    circumstance = "circumstance"
+    veteran_status = "veteran_status"
+    estate_plan_status = "estate_plan_status"
+    completed_items = "completed_items"
+
+
+class AnswerState(str, Enum):
+    answered = "answered"
+    skipped = "skipped"
+    unsure = "unsure"
+
+
+class UserRole(str, Enum):
+    spouse_partner = "spouse_partner"
+    child = "child"
+    other_family = "other_family"
+    named_executor = "named_executor"
+    power_of_attorney = "power_of_attorney"
+    professional_fiduciary = "professional_fiduciary"
+    friend = "friend"
+    other = "other"
+    prefer_not_to_say = "prefer_not_to_say"
+
+
+class DatePrecision(str, Enum):
+    exact = "exact"
+    today = "today"
+    this_week = "this_week"
+    unknown = "unknown"
+
+
+class ResidenceChoice(str, Enum):
+    same_as_place_of_death = "same_as_place_of_death"
+    different = "different"
+    unknown = "unknown"
+
+
+class Circumstance(str, Enum):
+    expected_illness_or_hospice = "expected_illness_or_hospice"
+    sudden_natural = "sudden_natural"
+    accident_or_unexpected = "accident_or_unexpected"
+    under_investigation = "under_investigation"
+    prefer_not_to_say = "prefer_not_to_say"
+
+
+class EstatePlanStatus(str, Enum):
+    yes_location_known = "yes_location_known"
+    yes_location_unknown = "yes_location_unknown"
+    no = "no"
+    unknown = "unknown"
+
+
+class CompletedItem(str, Enum):
+    death_pronounced = "death_pronounced"
+    funeral_provider_chosen = "funeral_provider_chosen"
+    funeral_home_has_ssn = "funeral_home_has_ssn"
+    certificates_ordered = "certificates_ordered"
+    ssa_notified = "ssa_notified"
+    bank_notified = "bank_notified"
+    other = "other"
+    none_or_unsure = "none_or_unsure"
+
+
+# DateOfDeath has a field named date, which would shadow the type inside the class.
+_Date = date
+
+
+class DateOfDeath(RequestModel):
+    precision: DatePrecision
+    date: _Date | None = Field(default=None, description="Required for exact. For today the server fills in "
+                                                        "today's date in the user's time zone. Otherwise null.")
+
+    @model_validator(mode="after")
+    def _check(self):
+        if self.precision == DatePrecision.exact:
+            if self.date is None:
+                raise ValueError("send the date for an exact date of death")
+            if self.date > _Date.today():
+                raise ValueError("the date of death can't be in the future")
+        elif self.precision != DatePrecision.today and self.date is not None:
+            raise ValueError("send a date only for exact or today")
+        return self
+
+
+class PlaceOfDeath(RequestModel):
+    state: StateCode | None = Field(default=None, description="Where the death happened. This decides the "
+                                                             "death certificate office, never residence_state.")
+    county_or_city: Annotated[str, Field(min_length=1, max_length=100), AfterValidator(_no_control_chars),
+                              AfterValidator(_redact)] | None = None
+    outside_us: bool = False
+
+    @model_validator(mode="after")
+    def _check(self):
+        if self.outside_us and self.state is not None:
+            raise ValueError("a death outside the United States has no state")
+        return self
+
+
+class ResidenceState(RequestModel):
+    choice: ResidenceChoice
+    state: StateCode | None = Field(default=None, description="Only with choice different.")
+
+    @model_validator(mode="after")
+    def _check(self):
+        if self.state is not None and self.choice != ResidenceChoice.different:
+            raise ValueError("send a state only when they lived in a different state")
+        return self
+
+
+def _completed(items: list[CompletedItem]) -> list[CompletedItem]:
+    if len(set(items)) != len(items):
+        raise ValueError("each item can be sent once")
+    if CompletedItem.none_or_unsure in items and len(items) > 1:
+        raise ValueError("none_or_unsure can't be combined with other items")
+    return items
+
+
+CompletedItems = Annotated[list[CompletedItem], Field(min_length=1, max_length=8), AfterValidator(_completed)]
+
+# The value type for each field. The API checks the value against this, and the
+# database checks it again (cairn.intake_value_valid).
+FIELD_VALUE_TYPES: dict[FieldKey, object] = {
+    FieldKey.user_role: UserRole,
+    FieldKey.display_name: DisplayName,
+    FieldKey.date_of_death: DateOfDeath,
+    FieldKey.place_of_death: PlaceOfDeath,
+    FieldKey.residence_state: ResidenceState,
+    FieldKey.circumstance: Circumstance,
+    FieldKey.veteran_status: TriState,
+    FieldKey.estate_plan_status: EstatePlanStatus,
+    FieldKey.completed_items: CompletedItems,
+}
+
+
+class SafetyMode(str, Enum):
+    normal = "normal"
+    overwhelm = "overwhelm"
+    acute_distress = "acute_distress"
+    risk_of_harm = "risk_of_harm"
+
+
+class IntakeSession(RequestModel):
+    """Per-session state the client keeps and sends back with each turn (UC-CASE-14).
+
+    The server never stores it. Decision 7 in database/CLAUDE.md: no inference
+    about the user's emotional state is persisted. Send back the session from
+    the last response. Omit it at the start of a new session.
+    """
+    safety_mode: SafetyMode = SafetyMode.normal
+    sensitivity: Literal["normal", "raised"] = "normal"
+    consecutive_skips: Annotated[int, Field(ge=0, le=100)] = 0
+    offered: list[Literal["loss_survivor_resources"]] = Field(default_factory=list, max_length=4)
+    ask_residence: bool = Field(default=False, description="The user said the death happened away from home, "
+                                                           "so residence_state is asked (UC-CASE-04).")
+
+
+class StartCaseRequest(RequestModel):
+    user_role: UserRole | None = Field(
+        default=None,
+        description="The answer from the onboarding hand-off (CaseHandoffResponse.user_role), so the "
+                    "question is not asked twice. Omit to ask it during intake.")
+
+
+class AnswerIn(RequestModel):
+    """Answer one question by button or form. Every question accepts skipped and unsure."""
+    state: AnswerState
+    value: object | None = Field(default=None, description="Required when state is answered. Its shape "
+                                                           "depends on the field. See FIELD_VALUE_TYPES.")
+    own_words: OwnWords | None = Field(default=None, description="The user's words for this answer, shown on "
+                                                                "the review screen. Never for circumstance.")
+    away_from_home: bool = Field(default=False, description="place_of_death only. The death happened away "
+                                                            "from home, so residence_state is asked next.")
+    session: IntakeSession | None = None
+
+    @model_validator(mode="after")
+    def _check(self):
+        if (self.state == AnswerState.answered) != (self.value is not None):
+            raise ValueError("send a value only with state answered")
+        if self.state != AnswerState.answered and self.own_words is not None:
+            raise ValueError("own_words go with an answer")
+        return self
+
+
+class IntakeMessageIn(RequestModel):
+    """Free text from the user (UC-CASE-01 own words, and any chat turn). Never stored."""
+    text: RedactedText
+    session: IntakeSession | None = None
+
+
+class ProposedAnswerIn(RequestModel):
+    field: FieldKey
+    value: object
+    own_words: OwnWords | None = None
+
+
+class ConfirmationIn(RequestModel):
+    """The proposals the user confirmed ("Did I get that right?"). Only data_fields keys are accepted."""
+    answers: Annotated[list[ProposedAnswerIn], Field(min_length=1, max_length=9)]
+    session: IntakeSession | None = None
+
+
+class SessionIn(RequestModel):
+    session: IntakeSession | None = None
+
+
+class IntakePreferencesIn(RequestModel):
+    skip_explainers: bool | None = Field(default=None, description="UC-CASE-02. Shorter pace, no explainers.")
+    name_fallback: Literal["your_loved_one", "the_person_who_died"] | None = Field(
+        default=None, description="UC-CASE-03. What to say when no display name was given.")
+    session: IntakeSession | None = None
+
+    @model_validator(mode="after")
+    def _check(self):
+        if self.skip_explainers is None and self.name_fallback is None:
+            raise ValueError("send skip_explainers, name_fallback, or both")
+        return self
+
+
+class DeathNotYetIn(RequestModel):
+    """UC-CASE-17. not_yet records that the person hasn't died. has_happened clears it."""
+    choice: Literal["not_yet", "save_draft", "come_back_later", "has_happened"]
+    session: IntakeSession | None = None
+
+
+class AttorneyTrigger(str, Enum):
+    contested_will = "contested_will"
+    family_disagreement = "family_disagreement"
+    unsure_of_authority = "unsure_of_authority"
+    multi_state_property = "multi_state_property"
+
+
+class AttorneyReferralIn(RequestModel):
+    """UC-CASE-16. Something Cairn should not guide alone. The journey is never blocked by it."""
+    trigger: AttorneyTrigger
+    session: IntakeSession | None = None
+
+
+class StartJourneyIn(RequestModel):
+    pre_button_notice_version: Annotated[str, Field(min_length=1, max_length=64)] = Field(
+        description="From JourneyPreviewResponse.pre_button_notice.version. Proves the notice was shown "
+                    "before Start journey was enabled.")
+
+
+class FirstTaskIn(RequestModel):
+    """UC-CASE-13. A task id, small_task, or not_today. Cairn never starts a task the user didn't choose."""
+    choice: UUID | Literal["small_task", "not_today"]
+
+
+class ReadAloud(ResponseModel):
+    """Every case creation screen offers Read this to me."""
+    label: str
+    text: str
+
+
+class SupportResource(ResponseModel):
+    id: str
+    text: str
+    url: str
+
+
+class AnswerOption(ResponseModel):
+    value: str
+    label: str
+
+
+class Question(ResponseModel):
+    field: FieldKey
+    pre_question: str | None = Field(default=None, description="Why Cairn asks. Shown before the question.")
+    prompt: str
+    input: Literal["choice", "multi_choice", "text", "date_of_death", "place_of_death", "residence_state"]
+    options: list[AnswerOption] = Field(description="Answer choices. Large tap targets.")
+    skip: AnswerOption = Field(description="Skip for now. On every question.")
+    not_sure: AnswerOption = Field(description="I'm not sure. On every question.")
+    free_text_allowed: bool = True
+    free_text_label: str
+
+
+class ProposedAnswer(ResponseModel):
+    field: FieldKey
+    value: object
+    label: str = Field(description="How the value reads back to the user.")
+    own_words: str | None = None
+
+
+class CaseOut(ResponseModel):
+    id: UUID
+    status: Literal["draft", "active", "read_only", "paused", "closed"] = Field(
+        description="read_only when the case is active and the account's free period has ended.")
+    display_name: str = Field(description="What to call the person who died. Not a legal name.")
+    journey_template_key: str | None
+    journey_template_version: int | None
+    journey_started_at: datetime | None
+    journey_started_on: date | None
+    last_intake_step: FieldKey | None
+    last_activity_at: datetime
+    draft_expires_at: datetime | None = Field(description="Drafts only. Any activity moves it out again.")
+    death_not_yet_occurred: bool
+    skip_explainers: bool
+    tasks_paused_until: datetime | None
+    created_at: datetime
+
+
+class IntakeTurnResponse(ResponseModel):
+    """One conversational turn. Acknowledgment first, at most one question, exactly one next action."""
+    case: CaseOut
+    voice: Literal["steady_direct", "warm_patient", "brisk_businesslike", "plain_practical", "steady_care"]
+    safety_mode: SafetyMode
+    acknowledgment: str | None = None
+    body: list[str] = Field(default_factory=list, description="Statements, never questions.")
+    notes: list[Note] = Field(default_factory=list)
+    question: Question | None = None
+    proposals: list[ProposedAnswer] | None = Field(default=None, description="Free-text readback. Nothing is "
+                                                                             "saved until confirmed.")
+    support: list[SupportResource] = Field(default_factory=list)
+    redactions: list[str] = Field(default_factory=list, description="Kinds of values removed, never the values.")
+    masked_text: str | None = Field(default=None, description="The user's message with sensitive numbers "
+                                                              "removed. Replace the local copy with this.")
+    next_step: NextStep
+    session: IntakeSession
+    read_aloud: ReadAloud
+
+
+class CaseListItem(ResponseModel):
+    id: UUID
+    status: str
+    display_name: str
+    last_activity_at: datetime
+    draft_expires_at: datetime | None
+
+
+class CaseListResponse(ResponseModel):
+    cases: list[CaseListItem]
+
+
+class ReviewLine(ResponseModel):
+    field: FieldKey
+    label: str
+    answer: str = Field(description="The user's own words where free text was given, except circumstance.")
+    answer_state: AnswerState | None
+    edit: NextStep
+
+
+class ReviewResponse(ResponseModel):
+    case: CaseOut
+    acknowledgment: str
+    told_me: list[ReviewLine] = Field(description="What you told me")
+    told_me_heading: str
+    later: list[ReviewLine] = Field(description="What we can figure out later")
+    later_heading: str
+    next_step: NextStep
+    read_aloud: ReadAloud
 
 
 class DeceasedIdentityPatch(RequestModel):
-    """Edits after the first save. Omitted fields are left unchanged. Null clears an optional field."""
+    """Just-in-time identity, inside a task that needs it, once the journey has started.
+
+    Never part of case creation. Omitted fields are left unchanged. Null clears a field.
+    """
     legal_first_name: Name | None = None
     legal_middle_name: OptionalText100 | None = None
     legal_last_name: Name | None = None
     date_of_birth: PastDate | None = None
-    domicile_state: StateCode | None = None
 
     @model_validator(mode="after")
     def _check(self):
         if not self.model_fields_set:
             raise ValueError("send at least one field to change")
-        for required in ("legal_first_name", "legal_last_name"):
-            if required in self.model_fields_set and getattr(self, required) is None:
-                raise ValueError(f"{required} can't be cleared")
         return self
-
-
-class DeathEventIn(RequestModel):
-    date_of_death: PastDate
-    death_state: StateCode = Field(description="State where the death occurred. This decides which vital "
-                                               "records office issues the certificate. It may differ from "
-                                               "the state of residence.")
-    place_type: PlaceType | None = None
-    county: OptionalText100 | None = None
-    city: OptionalText100 | None = None
-    facility_name: OptionalText200 | None = None
-
-
-class EstateFlagsIn(RequestModel):
-    """Answer one question at a time. Omitted fields are unchanged. 'skip' saves 'unknown'."""
-    veteran_status: TriStateAnswer | None = None
-    has_will: TriStateAnswer | None = None
-
-    @model_validator(mode="after")
-    def _at_least_one(self):
-        if self.veteran_status is None and self.has_will is None:
-            raise ValueError("send veteran_status, has_will, or both")
-        return self
-
-
-class CreateCaseRequest(RequestModel):
-    """Creates the case, the first owner membership, and the deceased record in one transaction.
-
-    death_event and estate_flags are optional so a fiduciary with complete
-    records can send everything in one session (UC-8). Each section is still
-    validated and audited on its own.
-    """
-    relationship: Relationship
-    deceased: DeceasedIdentityIn
-    death_event: DeathEventIn | None = None
-    estate_flags: EstateFlagsIn | None = None
-    start_journey: bool = Field(
-        default=False,
-        description="Generate the journey in the same request if the minimum fields are present.",
-    )
-
-    @model_validator(mode="after")
-    def _dates_in_order(self):
-        dob = self.deceased.date_of_birth
-        if dob and self.death_event and self.death_event.date_of_death < dob:
-            raise ValueError("the date of death is earlier than the date of birth")
-        return self
-
-
-class CaseOut(ResponseModel):
-    id: UUID
-    status: Literal["active", "paused", "closed"]
-    relationship: Relationship | None
-    journey_started_on: date
-    tasks_paused_until: datetime | None
-    created_at: datetime
 
 
 class DeceasedOut(ResponseModel):
     id: UUID
-    legal_first_name: str
+    legal_first_name: str | None
     legal_middle_name: str | None
-    legal_last_name: str
+    legal_last_name: str | None
     date_of_birth: date | None
-    domicile_state: str | None
-    veteran_status: TriState
-    has_will: TriState
-    date_of_death: date | None
-    place_type: PlaceType | None
-    death_state: str | None
-    county: str | None
-    city: str | None
-    facility_name: str | None
-
-
-class IntakeStatus(ResponseModel):
-    ready_for_journey: bool = Field(description="True when the minimum fields for the journey are present.")
-    missing_required: list[str]
-    unanswered_optional: list[str]
 
 
 class CaseResponse(ResponseModel):
+    """Opening a case. For a draft this is the resume turn (UC-CASE-10) and counts as activity."""
     case: CaseOut
-    deceased: DeceasedOut
-    intake: IntakeStatus
-    journey_task_count: int
+    deceased: DeceasedOut | None = Field(description="Only once a task has collected it.")
+    acknowledgment: str | None = None
+    body: list[str] = Field(default_factory=list)
     notes: list[Note]
     next_step: NextStep
+    read_aloud: ReadAloud
 
 
 # ------------------------------------------------------------------ journey and tasks (UC-9 to UC-13)
@@ -531,6 +840,10 @@ class TaskSummary(ResponseModel):
     snoozed_until: datetime | None
     completed_at: datetime | None
     attorney_referral: bool
+    attorney_line: str | None = None
+    why_now: str | None = None
+    waypoint: str | None = None
+    notes: list[Note] = Field(default_factory=list, description="Journey notes attached to this task.")
 
 
 class CertificateOrderRecord(ResponseModel):
@@ -575,13 +888,78 @@ class CheckIn(ResponseModel):
 class JourneyResponse(ResponseModel):
     case_id: UUID
     mode: Literal["tasks", "paused", "not_started"]
-    journey_started_on: date
+    journey_started_on: date | None
     current_week: int
     paused_until: datetime | None = None
     check_in: CheckIn | None = None
     next_action: TaskSummary | None = None
     weeks: list[WeekOut]
     notes: list[Note]
+    support: list[SupportResource] = Field(default_factory=list)
+    next_step: NextStep
+
+
+class PreviewTask(ResponseModel):
+    task_key: str
+    title: str
+    plain_summary: str
+    journey_week: int
+    waypoint: str | None
+    status: TaskStatus = Field(description="done for completed_items, check_on_this when unsure, else not_started.")
+    status_label: str = Field(description="Done, Check on this, or When you're ready. Text, never color alone.")
+    attorney_referral: bool
+    attorney_line: str | None
+    citations: list[CitationOut]
+    notes: list[Note]
+
+
+class PreviewWeek(ResponseModel):
+    week: int
+    label: str
+    tasks: list[PreviewTask]
+
+
+class PreButtonNotice(ResponseModel):
+    text: str
+    version: str = Field(description="Send back with Start journey.")
+
+
+class JourneyPreviewResponse(ResponseModel):
+    """UC-CASE-12. The journey that fits, before it starts. Nothing here starts the free period."""
+    case: CaseOut
+    journey_template_key: str
+    journey_template_version: int
+    explanation: str = Field(description="One or two sentences on why this journey fits.")
+    weeks: list[PreviewWeek]
+    notes: list[Note]
+    support: list[SupportResource]
+    pre_button_notice: PreButtonNotice | None = Field(description="Shown above the buttons. None when the "
+                                                                  "journey can't start (the death hasn't happened).")
+    start_available: bool
+    next_step: NextStep = Field(description="Start journey and Not yet, or why it can't start.")
+    read_aloud: ReadAloud
+
+
+class FirstTaskChoice(ResponseModel):
+    task: TaskSummary
+    why_now: str | None
+
+
+class StartJourneyResponse(ResponseModel):
+    case: CaseOut
+    confirmation: str = Field(description="With the trial end date in the user's local time zone.")
+    trial_started_now: bool
+    trial_end_date: date
+    recommended: list[FirstTaskChoice] = Field(description="The one or two most time-sensitive tasks.")
+    small_task: str
+    next_step: NextStep = Field(description="What feels doable right now? Recommended, small task, Not today.")
+    read_aloud: ReadAloud
+
+
+class FirstTaskResponse(ResponseModel):
+    case: CaseOut
+    acknowledgment: str | None
+    task: TaskSummary | None
     next_step: NextStep
 
 
@@ -661,7 +1039,7 @@ class StatusCounts(ResponseModel):
 class CaseStatusResponse(ResponseModel):
     case_id: UUID
     as_of: datetime
-    deceased_name: str
+    deceased_name: str = Field(description="The display name from intake, or its fallback. Not a legal name.")
     journey_paused: bool
     paused_until: datetime | None
     counts: StatusCounts

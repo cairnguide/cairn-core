@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/cairn/journey-selection.schema.json",
+  "title": "Cairn journey selection rules (case creation spec, journey_selection)",
+  "description": "Which base path a case follows, which add-ons apply, and what completed_items mark done. Loaded into cairn.journey_templates, immutable per version.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version", "counsel_reviewed_at", "source", "mvp_window", "verified_states",
+    "base_path_by_circumstance", "paths", "waypoints", "task_waypoints", "add_ons", "notes",
+    "support_resources", "completed_items", "check_on_this_when_unsure"
+  ],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "counsel_reviewed_at": {
+      "type": ["string", "null"],
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}(T[0-9:.+\\-Z]+)?$"
+    },
+    "source": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "mvp_window": { "const": "first_4_weeks" },
+    "verified_states": {
+      "description": "States with counsel-reviewed content. A place of death outside this list adds the state office task (UC-CASE-16).",
+      "type": "array", "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[A-Z]{2}$" }
+    },
+    "base_path_by_circumstance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected_illness_or_hospice", "sudden_natural", "accident_or_unexpected",
+                   "under_investigation", "prefer_not_to_say", "skipped_or_unknown"],
+      "properties": {
+        "expected_illness_or_hospice": { "$ref": "#/$defs/key" },
+        "sudden_natural": { "$ref": "#/$defs/key" },
+        "accident_or_unexpected": { "$ref": "#/$defs/key" },
+        "under_investigation": { "$ref": "#/$defs/key" },
+        "prefer_not_to_say": { "$ref": "#/$defs/key" },
+        "skipped_or_unknown": { "$ref": "#/$defs/key" }
+      }
+    },
+    "paths": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/key" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title_copy_key", "why_copy_key", "tasks"],
+        "properties": {
+          "title_copy_key": { "$ref": "#/$defs/key" },
+          "why_copy_key": { "$ref": "#/$defs/key" },
+          "tasks": { "$ref": "#/$defs/task_list" }
+        }
+      }
+    },
+    "waypoints": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": { "$ref": "#/$defs/key" }
+    },
+    "task_waypoints": {
+      "description": "Which MVP waypoint each task belongs to. null for add-ons outside the five waypoints.",
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/key" },
+      "additionalProperties": { "anyOf": [{ "$ref": "#/$defs/key" }, { "type": "null" }] }
+    },
+    "add_ons": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "when"],
+        "properties": {
+          "id": { "$ref": "#/$defs/key" },
+          "spec_key": { "type": "string", "description": "The add name used in the spec, for traceability." },
+          "when": { "$ref": "#/$defs/condition" },
+          "add_tasks": { "$ref": "#/$defs/task_list" },
+          "add_notes": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/key" } },
+          "add_support_resources": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/key" } },
+          "replace_tasks": {
+            "type": "object",
+            "propertyNames": { "$ref": "#/$defs/key" },
+            "additionalProperties": { "$ref": "#/$defs/key" }
+          },
+          "attorney_flag": { "type": "boolean" },
+          "legal_review": { "type": "boolean" },
+          "reason": { "type": "string" },
+          "source_urls": { "$ref": "#/$defs/urls" }
+        },
+        "anyOf": [
+          { "required": ["add_tasks"] }, { "required": ["add_notes"] },
+          { "required": ["add_support_resources"] }, { "required": ["replace_tasks"] }
+        ]
+      }
+    },
+    "notes": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/key" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["copy_key", "attach_to_task", "source_urls", "attorney_flag", "legal_review"],
+        "properties": {
+          "copy_key": { "$ref": "#/$defs/key" },
+          "attach_to_task": { "anyOf": [{ "$ref": "#/$defs/key" }, { "type": "null" }] },
+          "source_urls": { "$ref": "#/$defs/urls" },
+          "attorney_flag": { "type": "boolean" },
+          "legal_review": { "type": "boolean" }
+        }
+      }
+    },
+    "support_resources": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/key" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["copy_key", "url", "always"],
+        "properties": {
+          "copy_key": { "$ref": "#/$defs/key" },
+          "url": { "type": "string", "pattern": "^https://" },
+          "always": { "type": "boolean" }
+        }
+      }
+    },
+    "completed_items": {
+      "description": "completed_items values and the tasks each one marks done.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["death_pronounced", "funeral_provider_chosen", "funeral_home_has_ssn",
+                   "certificates_ordered", "ssa_notified", "bank_notified", "other"],
+      "properties": {
+        "death_pronounced": { "$ref": "#/$defs/task_list" },
+        "funeral_provider_chosen": { "$ref": "#/$defs/task_list" },
+        "funeral_home_has_ssn": { "$ref": "#/$defs/task_list" },
+        "certificates_ordered": { "$ref": "#/$defs/task_list" },
+        "ssa_notified": { "$ref": "#/$defs/task_list" },
+        "bank_notified": { "$ref": "#/$defs/task_list" },
+        "other": { "$ref": "#/$defs/task_list" }
+      }
+    },
+    "check_on_this_when_unsure": {
+      "description": "Tasks that start as check_on_this instead of todo when completed_items is none_or_unsure.",
+      "$ref": "#/$defs/task_list"
+    }
+  },
+  "$defs": {
+    "key": { "type": "string", "pattern": "^[a-z][a-z0-9_]{2,63}$" },
+    "task_list": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/key" } },
+    "urls": { "type": "array", "items": { "type": "string", "pattern": "^https://" } },
+    "fact": {
+      "enum": [
+        "user_role", "date_of_death.precision", "place_of_death.state", "place_of_death.outside_us",
+        "place_state_verified", "residence_state", "circumstance", "veteran_status", "estate_plan_status",
+        "completed_items", "base_path", "attorney_triggers"
+      ]
+    },
+    "condition": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false, "required": ["all"],
+          "properties": { "all": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/condition" } } }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["any"],
+          "properties": { "any": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/condition" } } }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["not"],
+          "properties": { "not": { "$ref": "#/$defs/condition" } }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["fact", "op", "value"],
+          "properties": {
+            "fact": { "$ref": "#/$defs/fact" },
+            "op": { "enum": ["eq", "ne", "in", "not_in", "contains", "not_contains"] },
+            "value": {}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["fact", "op"],
+          "properties": {
+            "fact": { "$ref": "#/$defs/fact" },
+            "op": { "enum": ["is_null", "not_null", "empty", "not_empty"] }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,345 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cairn.guide/schemas/step-library.schema.json",
+  "title": "Cairn step library",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "phases",
+    "steps"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "phases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "key",
+          "title"
+        ],
+        "properties": {
+          "id": {
+            "enum": [
+              "W0",
+              "W1",
+              "W2",
+              "W3",
+              "W4",
+              "W5",
+              "W6",
+              "W7",
+              "W8"
+            ]
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "version",
+          "phase",
+          "category",
+          "title",
+          "copy",
+          "how_to",
+          "who_usually_does_it",
+          "timing",
+          "deadlines",
+          "documents_needed",
+          "certified_copy_needed",
+          "depends_on",
+          "sensitive_data",
+          "attorney_flag",
+          "jurisdiction_keys",
+          "citations",
+          "citation_status",
+          "support",
+          "tracker"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^S-[A-Z0-9-]+$"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "phase": {
+            "enum": [
+              "W0",
+              "W1",
+              "W2",
+              "W3",
+              "W4",
+              "W5",
+              "W6",
+              "W7",
+              "W8"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "copy": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "summary",
+              "acknowledge",
+              "ask",
+              "offer_next"
+            ],
+            "properties": {
+              "summary": {
+                "type": "string",
+                "minLength": 1
+              },
+              "acknowledge": {
+                "type": "string",
+                "minLength": 1
+              },
+              "ask": {
+                "type": "string",
+                "pattern": "^[^?]*\\?$"
+              },
+              "offer_next": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "how_to": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "who_usually_does_it": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "timing": {
+            "type": "object",
+            "required": [
+              "window"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "window": {
+                "enum": [
+                  "first_24_hours",
+                  "first_week",
+                  "first_2_weeks",
+                  "first_month",
+                  "months_1_3",
+                  "months_3_12",
+                  "year_plus",
+                  "ongoing"
+                ]
+              },
+              "target_days_after_death": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "deadlines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "description",
+                "rule",
+                "hard",
+                "source_ids"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "rule": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "hard": {
+                  "type": "boolean"
+                },
+                "source_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^SRC-[A-Z0-9-]+$"
+                  },
+                  "uniqueItems": true,
+                  "minItems": 1
+                }
+              }
+            }
+          },
+          "documents_needed": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "certified_copy_needed": {
+            "type": "boolean"
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^S-[A-Z0-9-]+$"
+            }
+          },
+          "sensitive_data": {
+            "type": "object",
+            "required": [
+              "fields",
+              "chat_capture"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "chat_capture": {
+                "enum": [
+                  "never",
+                  "allowed"
+                ]
+              }
+            }
+          },
+          "attorney_flag": {
+            "type": "object",
+            "required": [
+              "level"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "level": {
+                "enum": [
+                  "none",
+                  "suggest",
+                  "required"
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "jurisdiction_keys": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "citations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^SRC-[A-Z0-9-]+$"
+            },
+            "uniqueItems": true
+          },
+          "citation_status": {
+            "enum": [
+              "cited",
+              "general_guidance"
+            ]
+          },
+          "support": {
+            "type": "object",
+            "required": [
+              "emotional_weight",
+              "check_in_before"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "emotional_weight": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "check_in_before": {
+                "type": "boolean"
+              }
+            }
+          },
+          "tracker": {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "enum": [
+                  "task",
+                  "notification",
+                  "claim",
+                  "inventory",
+                  "support"
+                ]
+              },
+              "repeatable_per": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "product_notes": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

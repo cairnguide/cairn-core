@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Cairn API",
-    "description": "\nCairn walks a family through the logistics of a death, one step at a time.\n\nEvery response that moves a conversation forward carries a `next_step` with a\nsingle prompt, so clients can ask one question at a time. Errors use RFC 9457\nproblem details (`application/problem+json`) and never echo submitted values.\n\nAuthentication is an Auth0 access token. Accounts can be created with Google,\nApple, or an email magic link (see GET /v1/welcome). Onboarding follows\nUC-REG-01 to UC-REG-14, one question per screen. The free trial is 28 days from\nthe first case, after which the account is read-only until subscribed. The\ncase is the security boundary and is enforced in the database with\nrow-level security.\n",
+    "description": "\nCairn walks a family through the logistics of a death, one step at a time.\n\nEvery response that moves a conversation forward carries a `next_step` with a\nsingle prompt, so clients can ask one question at a time. Errors use RFC 9457\nproblem details (`application/problem+json`) and never echo submitted values.\n\nAuthentication is an Auth0 access token. Accounts can be created with Google,\nApple, or an email magic link (see GET /v1/welcome). Onboarding follows\nUC-REG-01 to UC-REG-14, one question per screen. Case creation follows\nUC-CASE-01 to UC-CASE-18: a case starts as a draft, and the free period of 28\ndays starts only when the user taps Start journey on their first case. After\nit ends the account is read-only until subscribed. No payment information is\nasked for anywhere in case creation. Free text is redacted as it is received\nand never stored. The case is the security boundary and is enforced in the\ndatabase with row-level security.\n",
     "version": "0.1.0"
   },
   "paths": {
@@ -357,7 +357,7 @@
           "Onboarding"
         ],
         "summary": "Start toward case creation",
-        "description": "After UC-REG-12. The relationship shapes the wording of case creation. A power of attorney is told that authority generally ends at death. Not stored here. It's saved on the case when the case is created.",
+        "description": "After UC-REG-12. The relationship shapes the wording of case creation. A power of attorney is told that authority generally ends at death. Not stored here. Send user_role to POST /v1/cases to save it.",
         "operationId": "case_handoff_v1_onboarding_case_handoff_post",
         "requestBody": {
           "content": {
@@ -546,22 +546,53 @@
       }
     },
     "/v1/cases": {
+      "get": {
+        "tags": [
+          "Case creation"
+        ],
+        "summary": "Your cases, drafts included",
+        "operationId": "list_cases_v1_cases_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseListResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
       "post": {
         "tags": [
-          "Cases"
+          "Case creation"
         ],
-        "summary": "Start a case and record who died",
-        "description": "UC-5. Creates the case, the caller's owner membership, and the deceased record in one transaction. The account's first case also starts the 28-day free trial in that transaction (UC-REG-08), and the response carries a note with the local end date. Needs finished onboarding and a writable account. UC-8: a fiduciary can include death_event and estate_flags in the same request, and set start_journey to build the journey once the minimum fields are present.",
+        "summary": "Start a new case",
+        "description": "UC-CASE-01 and UC-CASE-18. Creates a draft case right away and acknowledges the loss before asking anything. Offers two ways in: one question at a time, or in your own words. Creating or editing a draft never starts the free period (DEC-01). A read-only account can create a draft. Nothing about the person who died is collected here.",
         "operationId": "create_case_v1_cases_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateCaseRequest"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/StartCaseRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Req"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "201": {
@@ -569,13 +600,13 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CaseResponse"
+                  "$ref": "#/components/schemas/IntakeTurnResponse"
                 }
               }
             }
           },
           "403": {
-            "description": "Not a member of this case, not an owner, the case does not exist, or the account is read-only (code account_read_only)."
+            "description": "Not a member of this case, the case does not exist, or (for an active case) the account is read-only (code account_read_only)."
           },
           "409": {
             "description": "Onboarding isn't finished, or a changed acknowledgment needs to be agreed to."
@@ -601,9 +632,10 @@
     "/v1/cases/{case_id}": {
       "get": {
         "tags": [
-          "Cases"
+          "Case creation"
         ],
-        "summary": "Case, deceased, and intake progress",
+        "summary": "Open a case",
+        "description": "UC-CASE-10. Opening a draft counts as activity and resets its 28 days. The response greets the user, says in one line where they left off, and asks whether to continue.",
         "operationId": "get_case_v1_cases__case_id__get",
         "security": [
           {
@@ -634,7 +666,7 @@
             }
           },
           "403": {
-            "description": "Not a member of this case, not an owner, the case does not exist, or the account is read-only (code account_read_only)."
+            "description": "Not a member of this case, the case does not exist, or (for an active case) the account is read-only (code account_read_only)."
           },
           "409": {
             "description": "Onboarding isn't finished, or a changed acknowledgment needs to be agreed to."
@@ -655,9 +687,10 @@
     "/v1/cases/{case_id}/deceased": {
       "patch": {
         "tags": [
-          "Cases"
+          "Case creation"
         ],
-        "summary": "Correct the deceased's identifying details",
+        "summary": "Record the deceased's legal identity, inside the task that needs it",
+        "description": "Just in time only. full_legal_name and date_of_birth are never part of case creation (never_collect_at_case_creation). Refused while the case is a draft. The database refuses it too.",
         "operationId": "patch_deceased_v1_cases__case_id__deceased_patch",
         "security": [
           {
@@ -698,10 +731,10 @@
             }
           },
           "403": {
-            "description": "Not a member of this case, not an owner, the case does not exist, or the account is read-only (code account_read_only)."
+            "description": "Not a member of this case, the case does not exist, or (for an active case) the account is read-only (code account_read_only)."
           },
           "409": {
-            "description": "Onboarding isn't finished, or a changed acknowledgment needs to be agreed to."
+            "description": "The case is still a draft."
           },
           "422": {
             "description": "Validation Error",
@@ -716,14 +749,14 @@
         }
       }
     },
-    "/v1/cases/{case_id}/death-event": {
+    "/v1/cases/{case_id}/intake/answers/{field}": {
       "put": {
         "tags": [
-          "Cases"
+          "Case creation"
         ],
-        "summary": "Record the death event",
-        "description": "UC-6. Replaces all death-event fields. Omitted optional fields are cleared.",
-        "operationId": "put_death_event_v1_cases__case_id__death_event_put",
+        "summary": "Answer, skip, or say I'm not sure",
+        "description": "UC-CASE-02 to UC-CASE-09. Saves one data_fields answer with its answer_state (answered, skipped, unsure). A question with any answer is not asked again. Changing an answer recomputes the journey and says what changed in one line. On an active case it adds or sets aside add-on tasks without touching progress on other tasks.",
+        "operationId": "put_answer_v1_cases__case_id__intake_answers__field__put",
         "security": [
           {
             "HTTPBearer": []
@@ -739,6 +772,14 @@
               "format": "uuid",
               "title": "Case Id"
             }
+          },
+          {
+            "name": "field",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FieldKey"
+            }
           }
         ],
         "requestBody": {
@@ -746,7 +787,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DeathEventIn"
+                "$ref": "#/components/schemas/AnswerIn"
               }
             }
           }
@@ -757,16 +798,13 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CaseResponse"
+                  "$ref": "#/components/schemas/IntakeTurnResponse"
                 }
               }
             }
           },
           "403": {
-            "description": "Not a member of this case, not an owner, the case does not exist, or the account is read-only (code account_read_only)."
-          },
-          "409": {
-            "description": "Onboarding isn't finished, or a changed acknowledgment needs to be agreed to."
+            "description": "Not the owner of this case, the case does not exist, or an active case on a read-only account."
           },
           "422": {
             "description": "Validation Error",
@@ -781,14 +819,14 @@
         }
       }
     },
-    "/v1/cases/{case_id}/estate-flags": {
-      "patch": {
+    "/v1/cases/{case_id}/intake/messages": {
+      "post": {
         "tags": [
-          "Cases"
+          "Case creation"
         ],
-        "summary": "Answer the veteran and will questions",
-        "description": "UC-7. Send one answer at a time. Omitted answers are unchanged. 'skip' saves 'unknown'.",
-        "operationId": "patch_estate_flags_v1_cases__case_id__estate_flags_patch",
+        "summary": "Say something in your own words",
+        "description": "UC-CASE-01 own words, UC-CASE-05, UC-CASE-07, UC-CASE-10, UC-CASE-14 to UC-CASE-17. The text is redacted as it is received and never stored. Cairn reads back only the data_fields it found and asks Did I get that right? Nothing is saved until the user confirms. Signs of distress stop the questions.",
+        "operationId": "post_message_v1_cases__case_id__intake_messages_post",
         "security": [
           {
             "HTTPBearer": []
@@ -811,7 +849,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/EstateFlagsIn"
+                "$ref": "#/components/schemas/IntakeMessageIn"
               }
             }
           }
@@ -822,16 +860,682 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CaseResponse"
+                  "$ref": "#/components/schemas/IntakeTurnResponse"
                 }
               }
             }
           },
           "403": {
-            "description": "Not a member of this case, not an owner, the case does not exist, or the account is read-only (code account_read_only)."
+            "description": "Not the owner of this case, the case does not exist, or an active case on a read-only account."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/intake/confirmations": {
+      "post": {
+        "tags": [
+          "Case creation"
+        ],
+        "summary": "Confirm what Cairn read back",
+        "description": "UC-CASE-01 own words. Saves the confirmed values. Only data_fields keys are accepted, each checked like a button answer, so nothing else from the free text can be stored. Then asks only about fields still missing.",
+        "operationId": "confirm_v1_cases__case_id__intake_confirmations_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmationIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeTurnResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner of this case, the case does not exist, or an active case on a read-only account."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/intake/continue": {
+      "post": {
+        "tags": [
+          "Case creation"
+        ],
+        "summary": "Keep going",
+        "description": "The user asked to continue: after choosing one question at a time, after resuming, or after stepping away during distress (UC-CASE-14). Returns the next question still missing.",
+        "operationId": "continue_intake_v1_cases__case_id__intake_continue_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SessionIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Req"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeTurnResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner of this case, the case does not exist, or an active case on a read-only account."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/intake/pause": {
+      "post": {
+        "tags": [
+          "Case creation"
+        ],
+        "summary": "Stop for now",
+        "description": "UC-CASE-10. Everything is already saved with each answer. This records where the user left off and confirms it plainly, including that an untouched draft is deleted after 28 days. Pausing never starts the free period, and no reminder about the draft is sent.",
+        "operationId": "pause_v1_cases__case_id__intake_pause_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SessionIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Req"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeTurnResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner of this case, the case does not exist, or an active case on a read-only account."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/intake/preferences": {
+      "put": {
+        "tags": [
+          "Case creation"
+        ],
+        "summary": "Choose a shorter pace, or what to call them when there's no name",
+        "description": "UC-CASE-02 (professional fiduciary pace) and UC-CASE-03 (name fallback).",
+        "operationId": "preferences_v1_cases__case_id__intake_preferences_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntakePreferencesIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeTurnResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner of this case, the case does not exist, or an active case on a read-only account."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/intake/death-not-yet": {
+      "post": {
+        "tags": [
+          "Case creation"
+        ],
+        "summary": "The death has not happened yet",
+        "description": "UC-CASE-17. not_yet records it, explains that journeys start after a death, and offers to save a draft or come back later. Start journey is not offered and the free period does not start. save_draft confirms the draft and its 28-day deletion. has_happened clears it. The pre-need path is not built (OPEN-DECISION-05).",
+        "operationId": "death_not_yet_v1_cases__case_id__intake_death_not_yet_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeathNotYetIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeTurnResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner of this case, the case does not exist, or an active case on a read-only account."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/intake/attorney-referrals": {
+      "post": {
+        "tags": [
+          "Case creation"
+        ],
+        "summary": "Something Cairn should not guide alone",
+        "description": "UC-CASE-16 and UC-CASE-07. Records the reason and adds Talk to an estate attorney as a task, with the attorney referral line. The journey is never blocked. Cairn keeps showing every step it can help with. A death outside the US and a state with no verified content are handled from the answers.",
+        "operationId": "attorney_referral_v1_cases__case_id__intake_attorney_referrals_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttorneyReferralIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeTurnResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner of this case, the case does not exist, or an active case on a read-only account."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/review": {
+      "get": {
+        "tags": [
+          "Case creation"
+        ],
+        "summary": "Review what you shared",
+        "description": "UC-CASE-11. Two groups: what you told me, and what we can figure out later. Each line has Edit. The user's own words are shown where free text was given, except for how it happened, which shows the choice's label.",
+        "operationId": "review_v1_cases__case_id__review_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner of this case, the case does not exist, or an active case on a read-only account."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/journey/preview": {
+      "get": {
+        "tags": [
+          "Journey"
+        ],
+        "summary": "See the journey that fits",
+        "description": "UC-CASE-12. Runs journey selection on the answers so far and explains in a sentence or two why the journey fits. Shows the first four weeks by week: done items checked, open items labeled When you're ready. Missing answers never block it. Shows the pre-button notice, then Start journey and Not yet. Viewing it never starts the free period.",
+        "operationId": "preview_v1_cases__case_id__journey_preview_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JourneyPreviewResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, not an owner, or the case does not exist."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/journey/start": {
+      "post": {
+        "tags": [
+          "Journey"
+        ],
+        "summary": "Start journey",
+        "description": "UC-CASE-12 and UC-CASE-18. In one transaction: the case becomes active, the journey template key and version are pinned, journey_started_at is set, the tasks are created, and on the account's first journey the 28-day free period starts (DEC-01). A second journey never restarts or extends it (DEC-04). No payment information is asked for or stored (DEC-02). Send back the pre-button notice version to show the notice was on screen first. A read-only account gets a subscription prompt.",
+        "operationId": "start_v1_cases__case_id__journey_start_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartJourneyIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartJourneyResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, not an owner, or the case does not exist."
           },
           "409": {
-            "description": "Onboarding isn't finished, or a changed acknowledgment needs to be agreed to."
+            "description": "Already started, the death hasn't happened, or the notice changed since it was shown."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/journey/not-yet": {
+      "post": {
+        "tags": [
+          "Journey"
+        ],
+        "summary": "Not yet",
+        "description": "UC-CASE-12. The case stays a draft, the free period doesn't start, and everything is saved.",
+        "operationId": "not_yet_v1_cases__case_id__journey_not_yet_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FirstTaskResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, not an owner, or the case does not exist."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/journey/first-task": {
+      "post": {
+        "tags": [
+          "Journey"
+        ],
+        "summary": "Choose what feels doable right now",
+        "description": "UC-CASE-13. A task id opens that task (any task, without comment), small_task offers the small thing, and not_today leaves the case active with no task in progress. Cairn never starts a task the user didn't choose.",
+        "operationId": "first_task_v1_cases__case_id__journey_first_task_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FirstTaskIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FirstTaskResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, not an owner, or the case does not exist."
           },
           "422": {
             "description": "Validation Error",
@@ -847,65 +1551,12 @@
       }
     },
     "/v1/cases/{case_id}/journey": {
-      "post": {
-        "tags": [
-          "Journey"
-        ],
-        "summary": "Build the four-week journey",
-        "description": "UC-9. Matches the deceased's details to the current task templates and creates the case's tasks. Returns 409 with the missing fields until the date and state of death are recorded. Safe to repeat.",
-        "operationId": "build_journey_v1_cases__case_id__journey_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "case_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Case Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JourneyResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Not a member of this case, not an owner, or the case does not exist."
-          },
-          "409": {
-            "description": "Required intake fields are missing."
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
       "get": {
         "tags": [
           "Journey"
         ],
         "summary": "The journey, with one next action in front",
-        "description": "UC-9 and UC-12. While paused, returns a calm check-in and no task list.",
+        "description": "UC-9 and UC-12. While paused, a calm check-in and no task list. A draft points to the preview.",
         "operationId": "get_journey_v1_cases__case_id__journey_get",
         "security": [
           {
@@ -1724,6 +2375,121 @@
         "title": "AcknowledgmentIn",
         "description": "agreed=false is the \"I'm not sure\" path (UC-REG-10). Nothing is recorded for it."
       },
+      "AnswerIn": {
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/AnswerState"
+          },
+          "value": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value",
+            "description": "Required when state is answered. Its shape depends on the field. See FIELD_VALUE_TYPES."
+          },
+          "own_words": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Own Words",
+            "description": "The user's words for this answer, shown on the review screen. Never for circumstance."
+          },
+          "away_from_home": {
+            "type": "boolean",
+            "title": "Away From Home",
+            "description": "place_of_death only. The death happened away from home, so residence_state is asked next.",
+            "default": false
+          },
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntakeSession"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "AnswerIn",
+        "description": "Answer one question by button or form. Every question accepts skipped and unsure."
+      },
+      "AnswerOption": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "AnswerOption"
+      },
+      "AnswerState": {
+        "type": "string",
+        "enum": [
+          "answered",
+          "skipped",
+          "unsure"
+        ],
+        "title": "AnswerState"
+      },
+      "AttorneyReferralIn": {
+        "properties": {
+          "trigger": {
+            "$ref": "#/components/schemas/AttorneyTrigger"
+          },
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntakeSession"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "trigger"
+        ],
+        "title": "AttorneyReferralIn",
+        "description": "UC-CASE-16. Something Cairn should not guide alone. The journey is never blocked by it."
+      },
+      "AttorneyTrigger": {
+        "type": "string",
+        "enum": [
+          "contested_will",
+          "family_disagreement",
+          "unsure_of_authority",
+          "multi_state_property"
+        ],
+        "title": "AttorneyTrigger"
+      },
       "CaseHandoffRequest": {
         "properties": {
           "relationship": {
@@ -1747,6 +2513,11 @@
             ],
             "title": "Language Profile"
           },
+          "user_role": {
+            "type": "string",
+            "title": "User Role",
+            "description": "The same answer as a case creation user_role. Send it to POST /v1/cases so the question is not asked again."
+          },
           "notes": {
             "items": {
               "$ref": "#/components/schemas/Note"
@@ -1761,10 +2532,70 @@
         "type": "object",
         "required": [
           "language_profile",
+          "user_role",
           "notes",
           "next_step"
         ],
         "title": "CaseHandoffResponse"
+      },
+      "CaseListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "last_activity_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last Activity At"
+          },
+          "draft_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "display_name",
+          "last_activity_at",
+          "draft_expires_at"
+        ],
+        "title": "CaseListItem"
+      },
+      "CaseListResponse": {
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/CaseListItem"
+            },
+            "type": "array",
+            "title": "Cases"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cases"
+        ],
+        "title": "CaseListResponse"
       },
       "CaseOut": {
         "properties": {
@@ -1776,26 +2607,101 @@
           "status": {
             "type": "string",
             "enum": [
+              "draft",
               "active",
+              "read_only",
               "paused",
               "closed"
             ],
-            "title": "Status"
+            "title": "Status",
+            "description": "read_only when the case is active and the account's free period has ended."
           },
-          "relationship": {
+          "display_name": {
+            "type": "string",
+            "title": "Display Name",
+            "description": "What to call the person who died. Not a legal name."
+          },
+          "journey_template_key": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/Relationship"
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journey Template Key"
+          },
+          "journey_template_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journey Template Version"
+          },
+          "journey_started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journey Started At"
+          },
+          "journey_started_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journey Started On"
+          },
+          "last_intake_step": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FieldKey"
               },
               {
                 "type": "null"
               }
             ]
           },
-          "journey_started_on": {
+          "last_activity_at": {
             "type": "string",
-            "format": "date",
-            "title": "Journey Started On"
+            "format": "date-time",
+            "title": "Last Activity At"
+          },
+          "draft_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Expires At",
+            "description": "Drafts only. Any activity moves it out again."
+          },
+          "death_not_yet_occurred": {
+            "type": "boolean",
+            "title": "Death Not Yet Occurred"
+          },
+          "skip_explainers": {
+            "type": "boolean",
+            "title": "Skip Explainers"
           },
           "tasks_paused_until": {
             "anyOf": [
@@ -1819,8 +2725,16 @@
         "required": [
           "id",
           "status",
-          "relationship",
+          "display_name",
+          "journey_template_key",
+          "journey_template_version",
+          "journey_started_at",
           "journey_started_on",
+          "last_intake_step",
+          "last_activity_at",
+          "draft_expires_at",
+          "death_not_yet_occurred",
+          "skip_explainers",
           "tasks_paused_until",
           "created_at"
         ],
@@ -1832,14 +2746,33 @@
             "$ref": "#/components/schemas/CaseOut"
           },
           "deceased": {
-            "$ref": "#/components/schemas/DeceasedOut"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeceasedOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Only once a task has collected it."
           },
-          "intake": {
-            "$ref": "#/components/schemas/IntakeStatus"
+          "acknowledgment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledgment"
           },
-          "journey_task_count": {
-            "type": "integer",
-            "title": "Journey Task Count"
+          "body": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Body"
           },
           "notes": {
             "items": {
@@ -1850,18 +2783,21 @@
           },
           "next_step": {
             "$ref": "#/components/schemas/NextStep"
+          },
+          "read_aloud": {
+            "$ref": "#/components/schemas/ReadAloud"
           }
         },
         "type": "object",
         "required": [
           "case",
           "deceased",
-          "intake",
-          "journey_task_count",
           "notes",
-          "next_step"
+          "next_step",
+          "read_aloud"
         ],
-        "title": "CaseResponse"
+        "title": "CaseResponse",
+        "description": "Opening a case. For a draft this is the resume turn (UC-CASE-10) and counts as activity."
       },
       "CaseStatusResponse": {
         "properties": {
@@ -1877,7 +2813,8 @@
           },
           "deceased_name": {
             "type": "string",
-            "title": "Deceased Name"
+            "title": "Deceased Name",
+            "description": "The display name from intake, or its fallback. Not a legal name."
           },
           "journey_paused": {
             "type": "boolean",
@@ -2210,6 +3147,36 @@
         ],
         "title": "CitationOut"
       },
+      "ConfirmationIn": {
+        "properties": {
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/ProposedAnswerIn"
+            },
+            "type": "array",
+            "maxItems": 9,
+            "minItems": 1,
+            "title": "Answers"
+          },
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntakeSession"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "answers"
+        ],
+        "title": "ConfirmationIn",
+        "description": "The proposals the user confirmed (\"Did I get that right?\"). Only data_fields keys are accepted."
+      },
       "ConsentType": {
         "type": "string",
         "enum": [
@@ -2219,185 +3186,36 @@
         ],
         "title": "ConsentType"
       },
-      "CreateCaseRequest": {
+      "DeathNotYetIn": {
         "properties": {
-          "relationship": {
-            "$ref": "#/components/schemas/Relationship"
+          "choice": {
+            "type": "string",
+            "enum": [
+              "not_yet",
+              "save_draft",
+              "come_back_later",
+              "has_happened"
+            ],
+            "title": "Choice"
           },
-          "deceased": {
-            "$ref": "#/components/schemas/DeceasedIdentityIn"
-          },
-          "death_event": {
+          "session": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/DeathEventIn"
+                "$ref": "#/components/schemas/IntakeSession"
               },
               {
                 "type": "null"
               }
             ]
-          },
-          "estate_flags": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/EstateFlagsIn"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "start_journey": {
-            "type": "boolean",
-            "title": "Start Journey",
-            "description": "Generate the journey in the same request if the minimum fields are present.",
-            "default": false
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "relationship",
-          "deceased"
+          "choice"
         ],
-        "title": "CreateCaseRequest",
-        "description": "Creates the case, the first owner membership, and the deceased record in one transaction.\n\ndeath_event and estate_flags are optional so a fiduciary with complete\nrecords can send everything in one session (UC-8). Each section is still\nvalidated and audited on its own."
-      },
-      "DeathEventIn": {
-        "properties": {
-          "date_of_death": {
-            "type": "string",
-            "format": "date",
-            "title": "Date Of Death"
-          },
-          "death_state": {
-            "type": "string",
-            "title": "Death State",
-            "description": "State where the death occurred. This decides which vital records office issues the certificate. It may differ from the state of residence.",
-            "examples": [
-              "NH"
-            ]
-          },
-          "place_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PlaceType"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "county": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 100,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "County"
-          },
-          "city": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 100,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "City"
-          },
-          "facility_name": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 200,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Facility Name"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "date_of_death",
-          "death_state"
-        ],
-        "title": "DeathEventIn"
-      },
-      "DeceasedIdentityIn": {
-        "properties": {
-          "legal_first_name": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Legal First Name"
-          },
-          "legal_middle_name": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 100,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Legal Middle Name"
-          },
-          "legal_last_name": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Legal Last Name"
-          },
-          "date_of_birth": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Date Of Birth"
-          },
-          "domicile_state": {
-            "anyOf": [
-              {
-                "type": "string",
-                "examples": [
-                  "NH"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Domicile State",
-            "description": "State of legal residence."
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "legal_first_name",
-          "legal_last_name"
-        ],
-        "title": "DeceasedIdentityIn"
+        "title": "DeathNotYetIn",
+        "description": "UC-CASE-17. not_yet records that the person hasn't died. has_happened clears it."
       },
       "DeceasedIdentityPatch": {
         "properties": {
@@ -2451,26 +3269,12 @@
               }
             ],
             "title": "Date Of Birth"
-          },
-          "domicile_state": {
-            "anyOf": [
-              {
-                "type": "string",
-                "examples": [
-                  "NH"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Domicile State"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "title": "DeceasedIdentityPatch",
-        "description": "Edits after the first save. Omitted fields are left unchanged. Null clears an optional field."
+        "description": "Just-in-time identity, inside a task that needs it, once the journey has started.\n\nNever part of case creation. Omitted fields are left unchanged. Null clears a field."
       },
       "DeceasedOut": {
         "properties": {
@@ -2480,7 +3284,14 @@
             "title": "Id"
           },
           "legal_first_name": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Legal First Name"
           },
           "legal_middle_name": {
@@ -2495,7 +3306,14 @@
             "title": "Legal Middle Name"
           },
           "legal_last_name": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Legal Last Name"
           },
           "date_of_birth": {
@@ -2509,89 +3327,6 @@
               }
             ],
             "title": "Date Of Birth"
-          },
-          "domicile_state": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Domicile State"
-          },
-          "veteran_status": {
-            "$ref": "#/components/schemas/TriState"
-          },
-          "has_will": {
-            "$ref": "#/components/schemas/TriState"
-          },
-          "date_of_death": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Date Of Death"
-          },
-          "place_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PlaceType"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "death_state": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Death State"
-          },
-          "county": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "County"
-          },
-          "city": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "City"
-          },
-          "facility_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Facility Name"
           }
         },
         "type": "object",
@@ -2600,46 +3335,115 @@
           "legal_first_name",
           "legal_middle_name",
           "legal_last_name",
-          "date_of_birth",
-          "domicile_state",
-          "veteran_status",
-          "has_will",
-          "date_of_death",
-          "place_type",
-          "death_state",
-          "county",
-          "city",
-          "facility_name"
+          "date_of_birth"
         ],
         "title": "DeceasedOut"
       },
-      "EstateFlagsIn": {
+      "FieldKey": {
+        "type": "string",
+        "enum": [
+          "user_role",
+          "display_name",
+          "date_of_death",
+          "place_of_death",
+          "residence_state",
+          "circumstance",
+          "veteran_status",
+          "estate_plan_status",
+          "completed_items"
+        ],
+        "title": "FieldKey",
+        "description": "The spec's data_fields, in the order Cairn suggests them. There is no required order."
+      },
+      "FirstTaskChoice": {
         "properties": {
-          "veteran_status": {
+          "task": {
+            "$ref": "#/components/schemas/TaskSummary"
+          },
+          "why_now": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/TriStateAnswer"
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Why Now"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task",
+          "why_now"
+        ],
+        "title": "FirstTaskChoice"
+      },
+      "FirstTaskIn": {
+        "properties": {
+          "choice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "small_task",
+                  "not_today"
+                ]
+              }
+            ],
+            "title": "Choice"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "choice"
+        ],
+        "title": "FirstTaskIn",
+        "description": "UC-CASE-13. A task id, small_task, or not_today. Cairn never starts a task the user didn't choose."
+      },
+      "FirstTaskResponse": {
+        "properties": {
+          "case": {
+            "$ref": "#/components/schemas/CaseOut"
+          },
+          "acknowledgment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledgment"
+          },
+          "task": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskSummary"
               },
               {
                 "type": "null"
               }
             ]
           },
-          "has_will": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TriStateAnswer"
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
           }
         },
-        "additionalProperties": false,
         "type": "object",
-        "title": "EstateFlagsIn",
-        "description": "Answer one question at a time. Omitted fields are unchanged. 'skip' saves 'unknown'."
+        "required": [
+          "case",
+          "acknowledgment",
+          "task",
+          "next_step"
+        ],
+        "title": "FirstTaskResponse"
       },
       "HTTPValidationError": {
         "properties": {
@@ -2762,35 +3566,318 @@
         ],
         "title": "InstitutionType"
       },
-      "IntakeStatus": {
+      "IntakeMessageIn": {
         "properties": {
-          "ready_for_journey": {
+          "text": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Text"
+          },
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntakeSession"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "IntakeMessageIn",
+        "description": "Free text from the user (UC-CASE-01 own words, and any chat turn). Never stored."
+      },
+      "IntakePreferencesIn": {
+        "properties": {
+          "skip_explainers": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skip Explainers",
+            "description": "UC-CASE-02. Shorter pace, no explainers."
+          },
+          "name_fallback": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "your_loved_one",
+                  "the_person_who_died"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name Fallback",
+            "description": "UC-CASE-03. What to say when no display name was given."
+          },
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntakeSession"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "IntakePreferencesIn"
+      },
+      "IntakeSession": {
+        "properties": {
+          "safety_mode": {
+            "$ref": "#/components/schemas/SafetyMode",
+            "default": "normal"
+          },
+          "sensitivity": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "raised"
+            ],
+            "title": "Sensitivity",
+            "default": "normal"
+          },
+          "consecutive_skips": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Consecutive Skips",
+            "default": 0
+          },
+          "offered": {
+            "items": {
+              "type": "string",
+              "const": "loss_survivor_resources"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Offered"
+          },
+          "ask_residence": {
             "type": "boolean",
-            "title": "Ready For Journey",
-            "description": "True when the minimum fields for the journey are present."
+            "title": "Ask Residence",
+            "description": "The user said the death happened away from home, so residence_state is asked (UC-CASE-04).",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "IntakeSession",
+        "description": "Per-session state the client keeps and sends back with each turn (UC-CASE-14).\n\nThe server never stores it. Decision 7 in database/CLAUDE.md: no inference\nabout the user's emotional state is persisted. Send back the session from\nthe last response. Omit it at the start of a new session."
+      },
+      "IntakeTurnResponse": {
+        "properties": {
+          "case": {
+            "$ref": "#/components/schemas/CaseOut"
           },
-          "missing_required": {
+          "voice": {
+            "type": "string",
+            "enum": [
+              "steady_direct",
+              "warm_patient",
+              "brisk_businesslike",
+              "plain_practical",
+              "steady_care"
+            ],
+            "title": "Voice"
+          },
+          "safety_mode": {
+            "$ref": "#/components/schemas/SafetyMode"
+          },
+          "acknowledgment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledgment"
+          },
+          "body": {
             "items": {
               "type": "string"
             },
             "type": "array",
-            "title": "Missing Required"
+            "title": "Body",
+            "description": "Statements, never questions."
           },
-          "unanswered_optional": {
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/Note"
+            },
+            "type": "array",
+            "title": "Notes"
+          },
+          "question": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Question"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposals": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ProposedAnswer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposals",
+            "description": "Free-text readback. Nothing is saved until confirmed."
+          },
+          "support": {
+            "items": {
+              "$ref": "#/components/schemas/SupportResource"
+            },
+            "type": "array",
+            "title": "Support"
+          },
+          "redactions": {
             "items": {
               "type": "string"
             },
             "type": "array",
-            "title": "Unanswered Optional"
+            "title": "Redactions",
+            "description": "Kinds of values removed, never the values."
+          },
+          "masked_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Masked Text",
+            "description": "The user's message with sensitive numbers removed. Replace the local copy with this."
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
+          },
+          "session": {
+            "$ref": "#/components/schemas/IntakeSession"
+          },
+          "read_aloud": {
+            "$ref": "#/components/schemas/ReadAloud"
           }
         },
         "type": "object",
         "required": [
-          "ready_for_journey",
-          "missing_required",
-          "unanswered_optional"
+          "case",
+          "voice",
+          "safety_mode",
+          "next_step",
+          "session",
+          "read_aloud"
         ],
-        "title": "IntakeStatus"
+        "title": "IntakeTurnResponse",
+        "description": "One conversational turn. Acknowledgment first, at most one question, exactly one next action."
+      },
+      "JourneyPreviewResponse": {
+        "properties": {
+          "case": {
+            "$ref": "#/components/schemas/CaseOut"
+          },
+          "journey_template_key": {
+            "type": "string",
+            "title": "Journey Template Key"
+          },
+          "journey_template_version": {
+            "type": "integer",
+            "title": "Journey Template Version"
+          },
+          "explanation": {
+            "type": "string",
+            "title": "Explanation",
+            "description": "One or two sentences on why this journey fits."
+          },
+          "weeks": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewWeek"
+            },
+            "type": "array",
+            "title": "Weeks"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/Note"
+            },
+            "type": "array",
+            "title": "Notes"
+          },
+          "support": {
+            "items": {
+              "$ref": "#/components/schemas/SupportResource"
+            },
+            "type": "array",
+            "title": "Support"
+          },
+          "pre_button_notice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PreButtonNotice"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Shown above the buttons. None when the journey can't start (the death hasn't happened)."
+          },
+          "start_available": {
+            "type": "boolean",
+            "title": "Start Available"
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep",
+            "description": "Start journey and Not yet, or why it can't start."
+          },
+          "read_aloud": {
+            "$ref": "#/components/schemas/ReadAloud"
+          }
+        },
+        "type": "object",
+        "required": [
+          "case",
+          "journey_template_key",
+          "journey_template_version",
+          "explanation",
+          "weeks",
+          "notes",
+          "support",
+          "pre_button_notice",
+          "start_available",
+          "next_step",
+          "read_aloud"
+        ],
+        "title": "JourneyPreviewResponse",
+        "description": "UC-CASE-12. The journey that fits, before it starts. Nothing here starts the free period."
       },
       "JourneyResponse": {
         "properties": {
@@ -2809,8 +3896,15 @@
             "title": "Mode"
           },
           "journey_started_on": {
-            "type": "string",
-            "format": "date",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Journey Started On"
           },
           "current_week": {
@@ -2862,6 +3956,13 @@
             },
             "type": "array",
             "title": "Notes"
+          },
+          "support": {
+            "items": {
+              "$ref": "#/components/schemas/SupportResource"
+            },
+            "type": "array",
+            "title": "Support"
           },
           "next_step": {
             "$ref": "#/components/schemas/NextStep"
@@ -2954,6 +4055,26 @@
             "type": "boolean",
             "title": "Legal Review Required",
             "default": false
+          },
+          "source_urls": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Source Urls",
+            "description": "Citations. Render next to the text."
+          },
+          "attorney_line": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attorney Line",
+            "description": "Shown with anything flagged for an attorney."
           }
         },
         "type": "object",
@@ -3077,17 +4198,6 @@
         ],
         "title": "PauseResponse"
       },
-      "PlaceType": {
-        "type": "string",
-        "enum": [
-          "hospital",
-          "hospice",
-          "home",
-          "facility",
-          "other"
-        ],
-        "title": "PlaceType"
-      },
       "PolicyVersions": {
         "properties": {
           "terms_version": {
@@ -3118,6 +4228,25 @@
         ],
         "title": "PolicyVersions"
       },
+      "PreButtonNotice": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "Send back with Start journey."
+          }
+        },
+        "type": "object",
+        "required": [
+          "text",
+          "version"
+        ],
+        "title": "PreButtonNotice"
+      },
       "PreferredNameIn": {
         "properties": {
           "preferred_name": {
@@ -3146,6 +4275,269 @@
           "preferred_name"
         ],
         "title": "PreferredNameIn"
+      },
+      "PreviewTask": {
+        "properties": {
+          "task_key": {
+            "type": "string",
+            "title": "Task Key"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "plain_summary": {
+            "type": "string",
+            "title": "Plain Summary"
+          },
+          "journey_week": {
+            "type": "integer",
+            "title": "Journey Week"
+          },
+          "waypoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Waypoint"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus",
+            "description": "done for completed_items, check_on_this when unsure, else not_started."
+          },
+          "status_label": {
+            "type": "string",
+            "title": "Status Label",
+            "description": "Done, Check on this, or When you're ready. Text, never color alone."
+          },
+          "attorney_referral": {
+            "type": "boolean",
+            "title": "Attorney Referral"
+          },
+          "attorney_line": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attorney Line"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/CitationOut"
+            },
+            "type": "array",
+            "title": "Citations"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/Note"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_key",
+          "title",
+          "plain_summary",
+          "journey_week",
+          "waypoint",
+          "status",
+          "status_label",
+          "attorney_referral",
+          "attorney_line",
+          "citations",
+          "notes"
+        ],
+        "title": "PreviewTask"
+      },
+      "PreviewWeek": {
+        "properties": {
+          "week": {
+            "type": "integer",
+            "title": "Week"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewTask"
+            },
+            "type": "array",
+            "title": "Tasks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "week",
+          "label",
+          "tasks"
+        ],
+        "title": "PreviewWeek"
+      },
+      "ProposedAnswer": {
+        "properties": {
+          "field": {
+            "$ref": "#/components/schemas/FieldKey"
+          },
+          "value": {
+            "title": "Value"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "description": "How the value reads back to the user."
+          },
+          "own_words": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Own Words"
+          }
+        },
+        "type": "object",
+        "required": [
+          "field",
+          "value",
+          "label"
+        ],
+        "title": "ProposedAnswer"
+      },
+      "ProposedAnswerIn": {
+        "properties": {
+          "field": {
+            "$ref": "#/components/schemas/FieldKey"
+          },
+          "value": {
+            "title": "Value"
+          },
+          "own_words": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Own Words"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "field",
+          "value"
+        ],
+        "title": "ProposedAnswerIn"
+      },
+      "Question": {
+        "properties": {
+          "field": {
+            "$ref": "#/components/schemas/FieldKey"
+          },
+          "pre_question": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pre Question",
+            "description": "Why Cairn asks. Shown before the question."
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          },
+          "input": {
+            "type": "string",
+            "enum": [
+              "choice",
+              "multi_choice",
+              "text",
+              "date_of_death",
+              "place_of_death",
+              "residence_state"
+            ],
+            "title": "Input"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/AnswerOption"
+            },
+            "type": "array",
+            "title": "Options",
+            "description": "Answer choices. Large tap targets."
+          },
+          "skip": {
+            "$ref": "#/components/schemas/AnswerOption",
+            "description": "Skip for now. On every question."
+          },
+          "not_sure": {
+            "$ref": "#/components/schemas/AnswerOption",
+            "description": "I'm not sure. On every question."
+          },
+          "free_text_allowed": {
+            "type": "boolean",
+            "title": "Free Text Allowed",
+            "default": true
+          },
+          "free_text_label": {
+            "type": "string",
+            "title": "Free Text Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "field",
+          "prompt",
+          "input",
+          "options",
+          "skip",
+          "not_sure",
+          "free_text_label"
+        ],
+        "title": "Question"
+      },
+      "ReadAloud": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "text"
+        ],
+        "title": "ReadAloud",
+        "description": "Every case creation screen offers Read this to me."
       },
       "RegistrationRequest": {
         "properties": {
@@ -3196,6 +4588,107 @@
           "fiduciary"
         ],
         "title": "Relationship"
+      },
+      "ReviewLine": {
+        "properties": {
+          "field": {
+            "$ref": "#/components/schemas/FieldKey"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "answer": {
+            "type": "string",
+            "title": "Answer",
+            "description": "The user's own words where free text was given, except circumstance."
+          },
+          "answer_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnswerState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "edit": {
+            "$ref": "#/components/schemas/NextStep"
+          }
+        },
+        "type": "object",
+        "required": [
+          "field",
+          "label",
+          "answer",
+          "answer_state",
+          "edit"
+        ],
+        "title": "ReviewLine"
+      },
+      "ReviewResponse": {
+        "properties": {
+          "case": {
+            "$ref": "#/components/schemas/CaseOut"
+          },
+          "acknowledgment": {
+            "type": "string",
+            "title": "Acknowledgment"
+          },
+          "told_me": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewLine"
+            },
+            "type": "array",
+            "title": "Told Me",
+            "description": "What you told me"
+          },
+          "told_me_heading": {
+            "type": "string",
+            "title": "Told Me Heading"
+          },
+          "later": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewLine"
+            },
+            "type": "array",
+            "title": "Later",
+            "description": "What we can figure out later"
+          },
+          "later_heading": {
+            "type": "string",
+            "title": "Later Heading"
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
+          },
+          "read_aloud": {
+            "$ref": "#/components/schemas/ReadAloud"
+          }
+        },
+        "type": "object",
+        "required": [
+          "case",
+          "acknowledgment",
+          "told_me",
+          "told_me_heading",
+          "later",
+          "later_heading",
+          "next_step",
+          "read_aloud"
+        ],
+        "title": "ReviewResponse"
+      },
+      "SafetyMode": {
+        "type": "string",
+        "enum": [
+          "normal",
+          "overwhelm",
+          "acute_distress",
+          "risk_of_harm"
+        ],
+        "title": "SafetyMode"
       },
       "Screen": {
         "properties": {
@@ -3317,6 +4810,23 @@
         ],
         "title": "ScreenId"
       },
+      "SessionIn": {
+        "properties": {
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntakeSession"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SessionIn"
+      },
       "SignInMethod": {
         "type": "string",
         "enum": [
@@ -3364,6 +4874,93 @@
           "auth0_connection"
         ],
         "title": "SignInOption"
+      },
+      "StartCaseRequest": {
+        "properties": {
+          "user_role": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRole"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The answer from the onboarding hand-off (CaseHandoffResponse.user_role), so the question is not asked twice. Omit to ask it during intake."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "StartCaseRequest"
+      },
+      "StartJourneyIn": {
+        "properties": {
+          "pre_button_notice_version": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Pre Button Notice Version",
+            "description": "From JourneyPreviewResponse.pre_button_notice.version. Proves the notice was shown before Start journey was enabled."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "pre_button_notice_version"
+        ],
+        "title": "StartJourneyIn"
+      },
+      "StartJourneyResponse": {
+        "properties": {
+          "case": {
+            "$ref": "#/components/schemas/CaseOut"
+          },
+          "confirmation": {
+            "type": "string",
+            "title": "Confirmation",
+            "description": "With the trial end date in the user's local time zone."
+          },
+          "trial_started_now": {
+            "type": "boolean",
+            "title": "Trial Started Now"
+          },
+          "trial_end_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Trial End Date"
+          },
+          "recommended": {
+            "items": {
+              "$ref": "#/components/schemas/FirstTaskChoice"
+            },
+            "type": "array",
+            "title": "Recommended",
+            "description": "The one or two most time-sensitive tasks."
+          },
+          "small_task": {
+            "type": "string",
+            "title": "Small Task"
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep",
+            "description": "What feels doable right now? Recommended, small task, Not today."
+          },
+          "read_aloud": {
+            "$ref": "#/components/schemas/ReadAloud"
+          }
+        },
+        "type": "object",
+        "required": [
+          "case",
+          "confirmation",
+          "trial_started_now",
+          "trial_end_date",
+          "recommended",
+          "small_task",
+          "next_step",
+          "read_aloud"
+        ],
+        "title": "StartJourneyResponse"
       },
       "StatusCounts": {
         "properties": {
@@ -3421,6 +5018,29 @@
         ],
         "title": "Support",
         "description": "Shown on every onboarding screen (UC-REG-14)."
+      },
+      "SupportResource": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "text",
+          "url"
+        ],
+        "title": "SupportResource"
       },
       "TaskCategory": {
         "type": "string",
@@ -3513,6 +5133,47 @@
           "attorney_referral": {
             "type": "boolean",
             "title": "Attorney Referral"
+          },
+          "attorney_line": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attorney Line"
+          },
+          "why_now": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Why Now"
+          },
+          "waypoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Waypoint"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/Note"
+            },
+            "type": "array",
+            "title": "Notes",
+            "description": "Journey notes attached to this task."
           },
           "attorney_referral_note": {
             "anyOf": [
@@ -3646,12 +5307,15 @@
         "type": "string",
         "enum": [
           "not_started",
+          "check_on_this",
           "in_progress",
           "done",
+          "not_today",
           "skipped",
           "not_applicable"
         ],
-        "title": "TaskStatus"
+        "title": "TaskStatus",
+        "description": "not_started is the spec's todo."
       },
       "TaskSummary": {
         "properties": {
@@ -3732,6 +5396,47 @@
           "attorney_referral": {
             "type": "boolean",
             "title": "Attorney Referral"
+          },
+          "attorney_line": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attorney Line"
+          },
+          "why_now": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Why Now"
+          },
+          "waypoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Waypoint"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/Note"
+            },
+            "type": "array",
+            "title": "Notes",
+            "description": "Journey notes attached to this task."
           }
         },
         "type": "object",
@@ -3822,25 +5527,20 @@
         "type": "object",
         "title": "TextInput"
       },
-      "TriState": {
+      "UserRole": {
         "type": "string",
         "enum": [
-          "yes",
-          "no",
-          "unknown"
+          "spouse_partner",
+          "child",
+          "other_family",
+          "named_executor",
+          "power_of_attorney",
+          "professional_fiduciary",
+          "friend",
+          "other",
+          "prefer_not_to_say"
         ],
-        "title": "TriState"
-      },
-      "TriStateAnswer": {
-        "type": "string",
-        "enum": [
-          "yes",
-          "no",
-          "unknown",
-          "skip"
-        ],
-        "title": "TriStateAnswer",
-        "description": "What the client may send. 'skip' is stored as 'unknown'."
+        "title": "UserRole"
       },
       "ValidationError": {
         "properties": {
@@ -4013,12 +5713,12 @@
       "description": "Settings and account deletion (UC-ACCT-01)."
     },
     {
-      "name": "Cases",
-      "description": "UC-5 to UC-8. The case, the deceased, and the death."
+      "name": "Case creation",
+      "description": "UC-CASE-01 to UC-CASE-11 and UC-CASE-14 to UC-CASE-18. Drafts, intake answers, own words, review, and safety."
     },
     {
       "name": "Journey",
-      "description": "UC-9, UC-12, UC-13. The four-week journey, pausing, and status."
+      "description": "UC-CASE-12 and UC-CASE-13 (start the journey that fits), UC-12 and UC-13 (pausing and status)."
     },
     {
       "name": "Tasks",

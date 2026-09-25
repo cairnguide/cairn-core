@@ -1,0 +1,185 @@
+{
+  "schema_version": "1.0.0",
+  "id": "US-NH",
+  "name": "New Hampshire",
+  "version": 1,
+  "legal_review": "pending",
+  "legal_review_card": "https://trello.com/c/ljqleuFz",
+  "last_researched": "2026-09-25",
+  "keys": {
+    "vital_records": {
+      "status": "researched",
+      "summary": "In New Hampshire, certified copies come from the state Division of Vital Records Administration or any city or town clerk. You must have a direct and tangible interest, such as being immediate family or the legal representative, and show photo ID.",
+      "fields": {
+        "issuing_offices": [
+          "NH Division of Vital Records Administration, 9 Ratification Way, Concord, NH 03301-2455",
+          "Any New Hampshire city or town clerk"
+        ],
+        "eligibility": "Applicant must have a direct and tangible interest in the record.",
+        "id_required": true,
+        "application_must_include": [
+          "full name of the deceased",
+          "date and place of death",
+          "purpose of the request",
+          "applicant's relationship to the deceased",
+          "applicant's name, address, phone, and signature"
+        ],
+        "fees": [
+          {
+            "label": "Search fee, includes first certified copy, charged even if no record is found",
+            "amount_usd": 15,
+            "as_of": "2026-09-25"
+          },
+          {
+            "label": "Each additional copy of the same record ordered at the same time",
+            "amount_usd": 10,
+            "as_of": "2026-09-25"
+          }
+        ],
+        "fee_notes": "Card processing fees may be added.",
+        "order_url": "https://www.sos.nh.gov/vital-records/request-certificates"
+      },
+      "source_ids": [
+        "SRC-NH-DVRA-CERTS",
+        "SRC-NH-RSA-5C-82",
+        "SRC-NH-RSA-5C-83"
+      ]
+    },
+    "probate": {
+      "status": "researched",
+      "summary": "Estates are handled by the NH Circuit Court, Probate Division, starting with a Petition for Estate Administration. A simpler path called Waiver of Administration may be available in some families' situations. If approved, the waiver statement is filed no sooner than 6 months and no later than 1 year after the executor or administrator is appointed, and there can be no unpaid debts or unresolved claims.",
+      "fields": {
+        "court": "NH Circuit Court, Probate Division",
+        "opening_form": {
+          "name": "Petition for Estate Administration",
+          "number": "NHJB-2145-Pe"
+        },
+        "simplified_path": {
+          "name": "Waiver of Administration",
+          "conditions_summary": "All beneficially interested parties must sign an assent. There can be no outstanding debts or unresolved claims.",
+          "closing_window": "Waiver statement filed 6 to 12 months after appointment."
+        }
+      },
+      "source_ids": [
+        "SRC-NH-COURTS-ESTATE-NO-WILL",
+        "SRC-NH-PETITION-2145"
+      ],
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "Whether Waiver of Administration fits a given family is a legal judgment."
+      }
+    },
+    "intestacy": {
+      "status": "researched",
+      "summary": "When there is no will, the person asking to be administrator files with the Probate Division and must list the names and addresses of children and other close relatives. The administrator must keep everyone with a legal interest informed.",
+      "fields": {},
+      "source_ids": [
+        "SRC-NH-COURTS-ESTATE-NO-WILL"
+      ],
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "Who inherits is set by state law. An attorney should confirm heirs."
+      }
+    },
+    "death_investigation": {
+      "status": "researched",
+      "summary": "New Hampshire has a statewide Office of the Chief Medical Examiner. State law lists the deaths it investigates, including accidents, suicides, overdoses, and sudden unexpected deaths of people under 60 who seemed healthy. When the office takes a case, it completes the cause-of-death section of the death certificate.",
+      "fields": {
+        "office": "NH Office of the Chief Medical Examiner, 246 Pleasant Street, Suite 218, Concord, NH 03301-2598",
+        "phone": "603-271-1235",
+        "statute": "RSA 611-B:11",
+        "death_certificate_note": "When the OCME accepts jurisdiction, the OCME completes the certification section including cause of death."
+      },
+      "source_ids": [
+        "SRC-NH-OCME",
+        "SRC-NH-OCME-REPORT",
+        "SRC-NH-RSA-611B-11"
+      ]
+    },
+    "cremation_authorization": {
+      "status": "researched",
+      "summary": "In New Hampshire, the right to authorize cremation follows the state's custody-and-control law. A person your loved one named in a signed document comes first. Otherwise it is the next of kin in order: spouse, then adult children, then parents, then adult siblings, and so on. If several people share the same level, a majority decides. Cremation cannot happen until 48 hours after death, except for certain contagious diseases, and a medical examiner's certificate and burial permit are required first.",
+      "fields": {
+        "authority_order": [
+          "person designated in a signed document",
+          "spouse",
+          "adult son or daughter",
+          "parent",
+          "adult brother or sister",
+          "adult grandchild",
+          "adult niece or nephew",
+          "maternal grandparent",
+          "paternal grandparent",
+          "adult aunt or uncle",
+          "adult first cousin",
+          "other adult relative"
+        ],
+        "same_level_rule": "Majority of next of kin at the same level decides. If they cannot agree, a court decides.",
+        "minimum_wait_hours": 48,
+        "required_before_cremation": [
+          "medical examiner's certificate",
+          "burial permit"
+        ]
+      },
+      "source_ids": [
+        "SRC-NH-RSA-325A-17",
+        "SRC-NH-RSA-290-16",
+        "SRC-NH-RSA-290-17",
+        "SRC-NH-RSA-325A-18",
+        "SRC-NH-RSA-5C-71"
+      ],
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "If family members at the same level disagree, the decision can go to court. Talk with an attorney."
+      }
+    },
+    "state_tax": {
+      "status": "researched",
+      "summary": "New Hampshire does not require an estate tax return for deaths on or after January 1, 2005, and its legacy and succession (inheritance) tax was repealed for deaths on or after January 1, 2003. The state Interest and Dividends Tax was repealed for tax periods beginning after December 31, 2024, but a return may still be owed for 2024 or earlier years.",
+      "fields": {
+        "estate_tax_return_required": false,
+        "inheritance_tax": "repealed for deaths on or after 2003-01-01",
+        "interest_and_dividends_tax": "repealed for periods beginning after 2024-12-31. Earlier periods may still require a return.",
+        "contact": "NH DRA Taxpayer Call Center, 603-230-5920"
+      },
+      "source_ids": [
+        "SRC-NH-DRA-ESTATE",
+        "SRC-NH-DRA-ID-REPEAL"
+      ],
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "A tax professional can confirm whether any prior-year state return is owed."
+      }
+    },
+    "grief_support": {
+      "status": "researched",
+      "summary": "New Hampshire's Office of the Chief Medical Examiner keeps a list of grief support resources, including community mental health centers across the state. If you ever feel unsafe or in crisis, you can call or text 988 any time.",
+      "fields": {
+        "resource_url": "https://doj.nh.gov/bureaus/chief-medical-examiner/grief-and-support-services",
+        "crisis_line": "988"
+      },
+      "source_ids": [
+        "SRC-NH-OCME-GRIEF",
+        "SRC-SAMHSA-988"
+      ]
+    },
+    "vehicle_transfer": {
+      "status": "researched",
+      "summary": "Under RSA 261:17, a family-use vehicle owned by a married New Hampshire resident generally passes to the surviving spouse unless the title says otherwise. The surviving spouse can transfer it by signing the title and providing a copy of the death record.",
+      "fields": {
+        "statute": "RSA 261:17",
+        "surviving_spouse_documents": [
+          "signed certificate of title",
+          "copy of the death record"
+        ]
+      },
+      "source_ids": [
+        "SRC-NH-RSA-261-17"
+      ],
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "Applies to married residents and family-use vehicles. Other situations may need probate authority."
+      }
+    }
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "schema_version": "1.0.0",
+  "id": "US-FL",
+  "name": "Florida",
+  "version": 1,
+  "legal_review": "pending",
+  "legal_review_card": "https://trello.com/c/ljqleuFz",
+  "last_researched": "2026-09-25",
+  "keys": {
+    "vital_records": {
+      "status": "researched",
+      "summary": "Florida issues two versions of the death certificate, with and without the cause of death. Anyone 18 or older can get the version without cause of death. The version with cause of death is limited to close family and people who show an interest in the estate, and requires photo ID. Florida clerks of court will not accept the version with cause of death for probate filings, so many families order some of each.",
+      "fields": {
+        "issuing_offices": [
+          "Florida Bureau of Vital Statistics, Jacksonville",
+          "County health department vital statistics offices (deaths from 2009 on)"
+        ],
+        "versions": [
+          "without_cause_of_death",
+          "with_cause_of_death"
+        ],
+        "with_cause_eligible": [
+          "spouse",
+          "parent",
+          "child 18+",
+          "grandchild 18+",
+          "sibling 18+",
+          "person showing interest in the estate through a will or insurance policy",
+          "someone acting on behalf of an eligible person"
+        ],
+        "id_required_for_cause_version": true,
+        "fees": [
+          {
+            "label": "State bureau search fee, includes one certified copy",
+            "amount_usd": 5,
+            "as_of": "2026-09-25"
+          },
+          {
+            "label": "State bureau, each additional copy",
+            "amount_usd": 4,
+            "as_of": "2026-09-25"
+          }
+        ],
+        "fee_notes": "County health department fees vary. Online orders go through VitalChek, which adds its own fee.",
+        "probate_copy_tip": "Use the version without cause of death for probate filings.",
+        "order_url": "https://www.floridahealth.gov/certificates-records/death-certificates/"
+      },
+      "source_ids": [
+        "SRC-FL-DOH-DEATH",
+        "SRC-FL-HIGHLANDS-DEATH",
+        "SRC-FL-PASCO-CDA"
+      ]
+    },
+    "probate": {
+      "status": "researched",
+      "summary": "Florida has a simpler court process called summary administration. It is generally available when the Florida estate subject to probate, not counting property exempt from creditors, is worth $75,000 or less, or when the person has been dead for more than 2 years. Larger or more complex estates go through formal administration.",
+      "fields": {
+        "simplified_path": {
+          "name": "Summary administration",
+          "value_limit_usd": 75000,
+          "alternative_condition": "Decedent has been dead more than 2 years.",
+          "exclusions_note": "Value excludes property exempt from creditors' claims."
+        }
+      },
+      "source_ids": [
+        "SRC-FL-15CIR-SUMMARY"
+      ],
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "Whether property counts toward the limit, especially a homestead, is a legal question. Talk with a Florida probate attorney."
+      }
+    }
+  }
+}

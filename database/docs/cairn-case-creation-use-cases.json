@@ -1,0 +1,1031 @@
+{
+  "spec_id": "cairn-case-creation",
+  "spec_version": "0.3.0",
+  "date": "2026-09-25",
+  "status": "draft_pending_usability_and_legal_review",
+  "human_readable_spec": "https://claude.ai/artifact/Fycpvac5Lgke9wkxKoA82Y",
+  "trello_cards": {
+    "case_creation": "https://trello.com/c/RDV4A5xi",
+    "death_certificate_assistant": "https://trello.com/c/GU7rMQQ1",
+    "registration_onboarding": "https://trello.com/c/nCJTOytG",
+    "voice_eval_set": "https://trello.com/c/np61DtxY",
+    "crisis_fallback_plan": "https://trello.com/c/PAA01d2O",
+    "tone_principles": "https://trello.com/c/kO1Og5QJ"
+  },
+  "instructions_for_claude_code": [
+    "Read the existing codebase first. Map every entity, field, and state in this spec to the existing schema, migrations, RLS policies, and journey template loader before writing code.",
+    "Extend existing tables where a matching concept exists. Do not rename or drop existing tables or columns without asking the developer first.",
+    "Write new schema changes as forward migrations. Add RLS policies so a case and its answers are readable and writable only by the authenticated user linked to that case.",
+    "Journey templates are content-as-code: versioned files in the repo, loaded read-only into the database. Add the template keys and add-on rules in this spec as template data, not hard-coded logic.",
+    "Implement acceptance_criteria for every use case as automated tests. Treat any criterion tagged [SAFETY] or [PRIVACY] as a release blocker.",
+    "All user-facing copy in this file is draft and pending legal review. Store it in the existing copy or i18n layer, never inline in components, so it can be changed without a code change.",
+    "Items listed in open_decisions must be implemented as configuration values with the stated default, so they can be changed later without a migration.",
+    "Never store values that match the never_collect_at_case_creation list. Redact them before persistence and before sending conversation text to the model or to logs.",
+    "Do not implement anything in out_of_scope_mvp. Stub it with the specified fallback behavior only."
+  ],
+  "confirmed_decisions": [
+    {
+      "id": "DEC-01",
+      "decision": "The 28-day free period starts at the moment the user taps 'Start journey' on their first case. Saving or editing a draft case never starts it.",
+      "date": "2026-09-25"
+    },
+    {
+      "id": "DEC-02",
+      "decision": "No payment information is requested or stored at 'Start journey'. The user is told this before and after tapping the button. The user is prompted to subscribe only when the 28 days are up (day 29), with a reminder beforehand.",
+      "date": "2026-09-25"
+    },
+    {
+      "id": "DEC-03",
+      "decision": "Free period length is exactly 28 days. On day 29 without a subscription the account becomes read-only. Nothing is deleted and nothing is charged.",
+      "date": "2026-09-24",
+      "source": "Trello card 47"
+    },
+    {
+      "id": "DEC-04",
+      "decision": "One free period per account. A second case does not restart or extend it.",
+      "date": "2026-09-24",
+      "source": "Trello card 47"
+    },
+    {
+      "id": "DEC-05",
+      "decision": "The death certificate office is keyed on the place of death, not the place of residence.",
+      "date": "2026-09-25",
+      "source_urls": [
+        "https://cdc.gov/nchs/w2w",
+        "https://stacks.cdc.gov/view/cdc/120499/cdc_120499_DS1.pdf"
+      ]
+    },
+    {
+      "id": "DEC-06",
+      "decision": "MVP: one authenticated user per case, no document upload, journey shows the first 4 weeks only.",
+      "date": "2026-09-21"
+    },
+    {
+      "id": "DEC-07",
+      "decision": "A draft case with no user activity for 28 days is deleted automatically and permanently, including its intake answers and any conversation text tied to it. Any user activity on the draft resets the 28 days. Active and read_only cases are never subject to this rule.",
+      "date": "2026-09-25"
+    }
+  ],
+  "global_rules": {
+    "voice": {
+      "source": "user.selected_voice from onboarding",
+      "enum": [
+        "steady_direct",
+        "warm_patient",
+        "brisk_businesslike",
+        "plain_practical"
+      ],
+      "override": "When safety_mode is acute_distress or risk_of_harm, every voice uses the shared steady_care style."
+    },
+    "pacing": [
+      "No timers and no required question order.",
+      "Every question offers 'Skip for now' and 'I'm not sure'.",
+      "Never ask the same question twice in one session.",
+      "Missing answers become open items. They never block showing a journey."
+    ],
+    "free_text_intake": "The user may answer with buttons or with free text containing several answers at once. Cairn extracts only fields in the data_fields list, reads them back for confirmation, and marks them answered. Fields not in the list are discarded, not stored.",
+    "comfort_first_turn_contract": [
+      "Acknowledge before asking.",
+      "Ask at most one question per turn.",
+      "Offer, do not demand.",
+      "End every turn with exactly one clear next action."
+    ],
+    "accessibility": [
+      "Large tap targets for every answer choice plus a free-text option.",
+      "Plain language, short sentences.",
+      "No meaning carried by color alone (color blindness).",
+      "'Read this to me' available on every case creation screen (reading difficulty)."
+    ],
+    "legal": [
+      "Cairn never gives legal advice and never presents itself as a substitute for an attorney.",
+      "Every state-specific or agency-specific statement must carry a citation URL to the issuing authority. Render the citation next to the statement.",
+      "Content flagged attorney_flag must show the attorney referral line."
+    ]
+  },
+  "never_collect_at_case_creation": {
+    "fields": [
+      "ssn",
+      "bank_account_number",
+      "card_number",
+      "any_financial_account_number",
+      "date_of_birth",
+      "medical_cause_of_death",
+      "medical_history",
+      "full_legal_name"
+    ],
+    "note": "full_legal_name and date_of_birth are collected later, just in time, inside the task that needs them (for example the death certificate task). They are never part of case creation.",
+    "redaction": "See UC-CASE-15."
+  },
+  "data_fields": [
+    {
+      "key": "user_role",
+      "question_copy": "What is your connection to them?",
+      "required_for_journey": false,
+      "default": "family_member",
+      "enum": [
+        "spouse_partner",
+        "child",
+        "other_family",
+        "named_executor",
+        "power_of_attorney",
+        "professional_fiduciary",
+        "friend",
+        "other",
+        "prefer_not_to_say"
+      ],
+      "why": "Shapes wording and triggers the power of attorney authority note."
+    },
+    {
+      "key": "display_name",
+      "question_copy": "What would you like me to call them?",
+      "required_for_journey": false,
+      "default": "your loved one",
+      "type": "string",
+      "max_length": 60,
+      "why": "Conversation display only. Not a legal name."
+    },
+    {
+      "key": "date_of_death",
+      "question_copy": "When did they die?",
+      "required_for_journey": false,
+      "type": "object",
+      "shape": {
+        "precision": [
+          "exact",
+          "today",
+          "this_week",
+          "unknown"
+        ],
+        "date": "date|null"
+      },
+      "why": "Anchors the 4-week journey and time-sensitive tasks."
+    },
+    {
+      "key": "place_of_death",
+      "question_copy": "Where did the death happen?",
+      "required_for_journey": false,
+      "type": "object",
+      "shape": {
+        "state": "US state or territory code|null",
+        "county_or_city": "string|null",
+        "outside_us": "boolean"
+      },
+      "required_for_tasks": [
+        "death_certificate"
+      ],
+      "why": "Certified death certificates come from the vital records office in the state or area where the death occurred.",
+      "source_urls": [
+        "https://cdc.gov/nchs/w2w"
+      ]
+    },
+    {
+      "key": "residence_state",
+      "question_copy": "Did they live in a different state?",
+      "required_for_journey": false,
+      "ask_only_if": "user indicates the death happened away from home",
+      "enum": [
+        "same_as_place_of_death",
+        "different",
+        "unknown"
+      ],
+      "extra": {
+        "state": "code|null"
+      },
+      "why": "Used later for DMV and estate tasks. Never used for the certificate office."
+    },
+    {
+      "key": "circumstance",
+      "question_copy": "Had they been ill, or was it sudden?",
+      "pre_question_copy": "This helps me know which steps to show you. You don't need to share details.",
+      "required_for_journey": false,
+      "enum": [
+        "expected_illness_or_hospice",
+        "sudden_natural",
+        "accident_or_unexpected",
+        "under_investigation",
+        "prefer_not_to_say"
+      ],
+      "why": "Sudden or non-natural deaths may be referred to a medical examiner or coroner, and the certificate may first show manner or cause as pending.",
+      "source_urls": [
+        "https://www.cdc.gov/nchs/data/misc/hb_me.pdf",
+        "https://www.health.pa.gov/topics/Documents/Reporting-Registries/SRN%202019-12%20Follow-up%20with%20Coroners%20and%20Medical%20Examiners%20for%20Pending%20Manner%20and%20Causes%20of%20Death.pdf"
+      ],
+      "privacy": "Store only the enum value. Never store free-text cause of death."
+    },
+    {
+      "key": "veteran_status",
+      "question_copy": "Did they ever serve in the military?",
+      "required_for_journey": false,
+      "enum": [
+        "yes",
+        "no",
+        "unknown"
+      ],
+      "why": "Adds the VA burial benefits step and the Veterans Crisis Line to support resources.",
+      "source_urls": [
+        "https://www.va.gov/burials-memorials/"
+      ]
+    },
+    {
+      "key": "estate_plan_status",
+      "question_copy": "Did they have a will or estate plan?",
+      "required_for_journey": false,
+      "enum": [
+        "yes_location_known",
+        "yes_location_unknown",
+        "no",
+        "unknown"
+      ],
+      "why": "Changes who has authority and adds will-related tasks."
+    },
+    {
+      "key": "completed_items",
+      "question_copy": "Has anything already been taken care of? Tap anything that's done. It's fine if nothing is.",
+      "required_for_journey": false,
+      "type": "array",
+      "enum": [
+        "death_pronounced",
+        "funeral_provider_chosen",
+        "funeral_home_has_ssn",
+        "certificates_ordered",
+        "ssa_notified",
+        "bank_notified",
+        "other",
+        "none_or_unsure"
+      ],
+      "why": "Marks journey tasks done so the user is not asked to redo them."
+    }
+  ],
+  "entities_and_states": {
+    "case": {
+      "status_enum": [
+        "draft",
+        "active",
+        "read_only"
+      ],
+      "fields_to_add_or_map": {
+        "status": "enum above, default draft",
+        "journey_template_key": "string|null, set at start_journey",
+        "journey_template_version": "string|null, set at start_journey",
+        "journey_started_at": "timestamptz|null, set only at start_journey",
+        "last_intake_step": "string|null, for resume",
+        "intake_answers": "one row per data_fields key with value and answer_state (answered, skipped, unsure)",
+        "last_activity_at": "timestamptz, updated on any user answer, edit, or open of the draft",
+        "draft_expires_at": "derived: last_activity_at + 28 days, only meaningful while status == draft"
+      },
+      "transitions": [
+        {
+          "from": null,
+          "to": "draft",
+          "event": "start_new_case",
+          "use_case": "UC-CASE-01"
+        },
+        {
+          "from": "draft",
+          "to": "active",
+          "event": "start_journey",
+          "use_case": "UC-CASE-12"
+        },
+        {
+          "from": "active",
+          "to": "read_only",
+          "event": "account_trial_expired_without_subscription",
+          "note": "Account-level flag drives this. Case data is kept."
+        },
+        {
+          "from": "draft",
+          "to": "deleted",
+          "event": "draft_inactive_28_days",
+          "use_case": "UC-CASE-10",
+          "note": "Hard delete, not a status change. See draft_cleanup_job."
+        }
+      ]
+    },
+    "account_trial": {
+      "fields_to_add_or_map": {
+        "trial_started_at": "timestamptz|null. Set once, at the first start_journey event on any case. Never reset.",
+        "trial_ends_at": "trial_started_at + 28 days",
+        "trial_reminder_sent_at": "timestamptz|null",
+        "subscription_status": "none | active | lapsed",
+        "payment_method_on_file": "Must remain false or absent through the trial. No payment collection anywhere in case creation."
+      },
+      "rules": [
+        "trial_started_at is written inside the same transaction that moves the first case from draft to active.",
+        "If trial_started_at is already set, start_journey does not modify it.",
+        "Day 29 check: if now >= trial_ends_at and subscription_status != active, set account to read_only. Do not delete any data.",
+        "The subscription prompt is shown only when now >= trial_ends_at, or when a read-only user tries to start a new journey (UC-CASE-18)."
+      ]
+    },
+    "journey_task": {
+      "status_enum": [
+        "todo",
+        "check_on_this",
+        "in_progress",
+        "done",
+        "not_today"
+      ],
+      "note": "Tasks come from the versioned template. completed_items map to done. none_or_unsure maps relevant tasks to check_on_this."
+    },
+    "draft_cleanup_job": {
+      "schedule": "at least daily",
+      "selects": "cases where status == draft and now >= last_activity_at + draft_retention_days",
+      "action": "Hard delete the case, its intake answers, and conversation text tied to it, in one transaction.",
+      "audit": "Write an audit log entry with case id, user id, and deletion time only. Never log deleted content.",
+      "must_not": [
+        "Touch cases with status active or read_only.",
+        "Delete the user account.",
+        "Change account_trial fields."
+      ],
+      "config": {
+        "draft_retention_days": 28
+      }
+    }
+  },
+  "journey_selection": {
+    "base_path_by_circumstance": {
+      "expected_illness_or_hospice": "expected_loss",
+      "sudden_natural": "sudden_loss",
+      "accident_or_unexpected": "sudden_loss_investigation",
+      "under_investigation": "sudden_loss_investigation",
+      "prefer_not_to_say": "general",
+      "skipped_or_unknown": "general"
+    },
+    "add_ons": [
+      {
+        "when": "veteran_status in [yes, unknown]",
+        "add": "va_burial_benefits_step",
+        "source_urls": [
+          "https://www.va.gov/burials-memorials/"
+        ]
+      },
+      {
+        "when": "estate_plan_status == yes_location_known",
+        "add": [
+          "confirm_named_executor"
+        ]
+      },
+      {
+        "when": "estate_plan_status == yes_location_unknown",
+        "add": [
+          "find_the_will",
+          "confirm_named_executor"
+        ]
+      },
+      {
+        "when": "estate_plan_status in [no, unknown]",
+        "add": "no_will_explainer",
+        "attorney_flag": true,
+        "legal_review": true
+      },
+      {
+        "when": "user_role == power_of_attorney",
+        "add": "poa_authority_note",
+        "attorney_flag": true,
+        "legal_review": true
+      },
+      {
+        "when": "base_path in [sudden_loss, sudden_loss_investigation]",
+        "add": "certificate_may_be_pending_note",
+        "source_urls": [
+          "https://www.cdc.gov/nchs/data/misc/hb_me.pdf",
+          "https://www.health.pa.gov/topics/Documents/Reporting-Registries/SRN%202019-12%20Follow-up%20with%20Coroners%20and%20Medical%20Examiners%20for%20Pending%20Manner%20and%20Causes%20of%20Death.pdf"
+        ]
+      },
+      {
+        "when": "place_of_death.state is null",
+        "add": "certificate_task_waiting_on_place_note"
+      },
+      {
+        "when": "completed_items contains funeral_provider_chosen and not ssa_notified",
+        "change_task": {
+          "ssa_notify": "confirm_funeral_home_reported_death"
+        },
+        "reason": "In most cases the funeral director reports the death to Social Security using the SSN the family provides.",
+        "source_urls": [
+          "https://www.ssa.gov/faqs/en/questions/KA-02077.html",
+          "https://www.ssa.gov/forms/ssa-721.pdf"
+        ]
+      }
+    ],
+    "mvp_window": "first_4_weeks",
+    "mvp_waypoints": [
+      "first_hours",
+      "death_certificates",
+      "funeral_or_disposition",
+      "notify_ssa_and_agencies",
+      "notify_banks_insurers_employers"
+    ],
+    "rule": "Always produce a journey. Never block on missing answers."
+  },
+  "use_cases": [
+    {
+      "id": "UC-CASE-01",
+      "name": "Start a new case",
+      "trigger": [
+        "Onboarding completed",
+        "User taps 'Start a new case' on home"
+      ],
+      "preconditions": [
+        "User authenticated",
+        "UC-REG acknowledgments accepted"
+      ],
+      "main_flow": [
+        "Cairn acknowledges the loss before asking anything.",
+        "Cairn explains what happens next in one or two sentences.",
+        "Cairn offers two intake modes: one question at a time, or tell it in your own words.",
+        "System creates a case with status draft immediately."
+      ],
+      "alternate_flows": [
+        {
+          "name": "own_words",
+          "steps": [
+            "User sends free text.",
+            "Cairn extracts only data_fields keys, reads them back as a short list, asks 'Did I get that right?'",
+            "Cairn asks only about fields still missing."
+          ]
+        },
+        {
+          "name": "leaves_immediately",
+          "steps": [
+            "Draft is kept. See UC-CASE-10."
+          ]
+        }
+      ],
+      "postconditions": [
+        "case.status == draft",
+        "account_trial.trial_started_at unchanged"
+      ],
+      "copy": {
+        "intro": "I'll ask a few gentle questions so I can show you the steps that fit. You can skip anything, and you can stop and come back whenever you need."
+      },
+      "acceptance_criteria": [
+        "Creating a case sets status draft and does not set or change trial_started_at.",
+        "First Cairn message contains an acknowledgment and no more than one question.",
+        "[PRIVACY] Free-text intake persists only recognized data_fields keys."
+      ]
+    },
+    {
+      "id": "UC-CASE-02",
+      "name": "Share who you are to them",
+      "field": "user_role",
+      "main_flow": [
+        "Cairn asks the user_role question.",
+        "Answer changes wording only."
+      ],
+      "alternate_flows": [
+        {
+          "name": "power_of_attorney",
+          "steps": [
+            "Cairn shows the POA authority note once, with its citation and the attorney line."
+          ],
+          "copy": "A power of attorney usually ends when the person dies. After a death, the person named in the will as executor, or someone appointed by the court, usually takes over. An estate attorney can tell you what applies in your state.",
+          "source_urls": [
+            "https://www.alperlaw.com/?p=9650"
+          ],
+          "legal_review": "Replace with a primary-source or uniform-act citation before launch.",
+          "attorney_flag": true
+        },
+        {
+          "name": "professional_fiduciary",
+          "steps": [
+            "Cairn offers a shorter pace and to skip explainers, regardless of voice."
+          ]
+        }
+      ],
+      "acceptance_criteria": [
+        "Skipping stores answer_state skipped and uses default family_member.",
+        "POA note renders once per case, with citation link."
+      ]
+    },
+    {
+      "id": "UC-CASE-03",
+      "name": "Share what to call them",
+      "field": "display_name",
+      "main_flow": [
+        "Cairn asks the display_name question.",
+        "Cairn uses the answer in all later turns."
+      ],
+      "alternate_flows": [
+        {
+          "name": "skipped",
+          "steps": [
+            "Use 'your loved one'. In plain_practical, 'the person who died' if the user prefers."
+          ]
+        }
+      ],
+      "acceptance_criteria": [
+        "display_name is never used as, or copied into, a legal name field."
+      ]
+    },
+    {
+      "id": "UC-CASE-04",
+      "name": "Share when and where the death happened",
+      "fields": [
+        "date_of_death",
+        "place_of_death",
+        "residence_state"
+      ],
+      "main_flow": [
+        "Ask date_of_death.",
+        "Ask place_of_death with state picker and optional county or city.",
+        "If the user indicates the death was away from home, ask residence_state."
+      ],
+      "alternate_flows": [
+        {
+          "name": "place_unknown",
+          "steps": [
+            "Add certificate task with note."
+          ],
+          "copy": "When you know where it happened, I can find the right office."
+        },
+        {
+          "name": "outside_us",
+          "steps": [
+            "Set place_of_death.outside_us true.",
+            "Cairn explains kindly this is not covered yet, keeps the case, and suggests the funeral home and an attorney."
+          ],
+          "out_of_scope_mvp": true
+        }
+      ],
+      "acceptance_criteria": [
+        "Certificate office lookup uses place_of_death.state only, never residence_state.",
+        "An approximate date (today, this_week, unknown) is accepted."
+      ],
+      "source_urls": [
+        "https://cdc.gov/nchs/w2w",
+        "https://stacks.cdc.gov/view/cdc/120499/cdc_120499_DS1.pdf"
+      ]
+    },
+    {
+      "id": "UC-CASE-05",
+      "name": "Share how it happened",
+      "field": "circumstance",
+      "sensitivity": "highest",
+      "main_flow": [
+        "Cairn explains why it asks before asking.",
+        "Show the five circumstance choices.",
+        "Confirm without repeating anything painful and move on."
+      ],
+      "alternate_flows": [
+        {
+          "name": "user_volunteers_cause",
+          "steps": [
+            "Do not ask follow-up questions.",
+            "Do not store the cause.",
+            "Acknowledge simply.",
+            "Raise distress sensitivity for the session (UC-CASE-14).",
+            "If the user indicates death by suicide, offer loss-survivor resources once, without pushing."
+          ],
+          "source_urls": [
+            "https://afsp.org/ive-lost-someone/"
+          ]
+        },
+        {
+          "name": "prefer_not_to_say",
+          "steps": [
+            "Accept with no follow-up. Use general path."
+          ]
+        }
+      ],
+      "acceptance_criteria": [
+        "[PRIVACY] Only the enum value is persisted. Free text for this question is never stored or logged.",
+        "No follow-up question is asked after prefer_not_to_say."
+      ],
+      "source_urls": [
+        "https://www.cdc.gov/nchs/data/misc/hb_me.pdf",
+        "https://www.health.pa.gov/topics/Documents/Reporting-Registries/SRN%202019-12%20Follow-up%20with%20Coroners%20and%20Medical%20Examiners%20for%20Pending%20Manner%20and%20Causes%20of%20Death.pdf"
+      ]
+    },
+    {
+      "id": "UC-CASE-06",
+      "name": "Share military service",
+      "field": "veteran_status",
+      "main_flow": [
+        "Ask veteran_status."
+      ],
+      "alternate_flows": [
+        {
+          "name": "yes_or_unknown",
+          "steps": [
+            "Add VA step with one-line description and link.",
+            "Do not request discharge papers now.",
+            "If yes, add Veterans Crisis Line to this case's support resources."
+          ]
+        }
+      ],
+      "acceptance_criteria": [
+        "VA step renders with the VA.gov citation.",
+        "No document request appears during case creation."
+      ],
+      "source_urls": [
+        "https://www.va.gov/burials-memorials/",
+        "https://www.veteranscrisisline.net"
+      ]
+    },
+    {
+      "id": "UC-CASE-07",
+      "name": "Share whether there is a will or estate plan",
+      "field": "estate_plan_status",
+      "main_flow": [
+        "Ask estate_plan_status."
+      ],
+      "alternate_flows": [
+        {
+          "name": "no_or_unknown",
+          "steps": [
+            "Reassure this is common.",
+            "Add no_will_explainer task with attorney flag.",
+            "Do not explain state inheritance rules in chat."
+          ],
+          "attorney_flag": true,
+          "legal_review": true
+        },
+        {
+          "name": "family_disagreement_mentioned",
+          "steps": [
+            "Do not take sides.",
+            "Add 'Talk to an estate attorney' task (UC-CASE-16)."
+          ]
+        }
+      ],
+      "acceptance_criteria": [
+        "No document upload or request is offered (MVP)."
+      ]
+    },
+    {
+      "id": "UC-CASE-08",
+      "name": "Share what has already been done",
+      "field": "completed_items",
+      "main_flow": [
+        "Ask completed_items as a checklist.",
+        "Mark matching tasks done."
+      ],
+      "alternate_flows": [
+        {
+          "name": "none_or_unsure",
+          "steps": [
+            "Relevant tasks get status check_on_this instead of todo."
+          ]
+        }
+      ],
+      "acceptance_criteria": [
+        "If funeral_provider_chosen is checked and ssa_notified is not, the SSA task becomes 'Confirm the funeral home reported the death'."
+      ],
+      "source_urls": [
+        "https://www.ssa.gov/faqs/en/questions/KA-02077.html",
+        "https://www.ssa.gov/forms/ssa-721.pdf"
+      ]
+    },
+    {
+      "id": "UC-CASE-09",
+      "name": "Skip, say I'm not sure, or change an answer",
+      "main_flow": [
+        "Every question shows Skip for now and I'm not sure.",
+        "User can change any answer by chat or from the review screen.",
+        "On change, recompute journey selection and state what changed in one line."
+      ],
+      "acceptance_criteria": [
+        "answer_state values: answered, skipped, unsure.",
+        "A skipped question is not re-asked in the same session.",
+        "Changing an answer on an active case updates add-on tasks without deleting user progress on unaffected tasks."
+      ]
+    },
+    {
+      "id": "UC-CASE-10",
+      "name": "Pause and come back later",
+      "trigger": [
+        "User taps Stop for now",
+        "App closed",
+        "User says they need a break"
+      ],
+      "main_flow": [
+        "Save all answers and last_intake_step.",
+        "Confirm plainly that everything is saved.",
+        "On return, greet, state where they left off in one line, ask whether to continue."
+      ],
+      "copy": {
+        "pause": "Everything you've shared is saved. There's no rush. To protect your privacy, if this isn't picked up again within 28 days, it will be deleted automatically.",
+        "resume_question": "Would you like to keep going, or look at something else?"
+      },
+      "acceptance_criteria": [
+        "Pausing never starts the free period.",
+        "No reminder about an unfinished draft is sent unless the user opted in.",
+        "[PRIVACY] A draft with last_activity_at older than 28 days is fully deleted by draft_cleanup_job, including intake answers and tied conversation text.",
+        "Any answer, edit, or open of the draft updates last_activity_at and resets the 28 days.",
+        "draft_cleanup_job never deletes an active or read_only case.",
+        "The pause message tells the user about the 28-day automatic deletion."
+      ],
+      "config": {
+        "draft_retention_days": 28
+      },
+      "decisions": [
+        "DEC-07"
+      ]
+    },
+    {
+      "id": "UC-CASE-11",
+      "name": "Review what you shared",
+      "trigger": [
+        "User finished or skipped the questions they want to",
+        "User says that's all they know right now"
+      ],
+      "main_flow": [
+        "Show summary in two groups: What you told me, What we can figure out later.",
+        "Each line has Edit.",
+        "Ask 'Does this look right?'"
+      ],
+      "acceptance_criteria": [
+        "Summary uses the user's own words where free text was given (except circumstance, which shows the enum label)."
+      ]
+    },
+    {
+      "id": "UC-CASE-12",
+      "name": "See the journey that fits and start it",
+      "decisions": [
+        "DEC-01",
+        "DEC-02",
+        "DEC-03"
+      ],
+      "main_flow": [
+        "Run journey_selection and show a one or two sentence explanation of why the journey fits.",
+        "Show the first 4 weeks grouped by week. Done items checked, open items labeled 'When you're ready'.",
+        "Show the pre-button notice.",
+        "Show buttons 'Start journey' and 'Not yet'.",
+        "On Start journey: in one transaction set case.status active, set journey_template_key and version, set journey_started_at, create journey tasks, and if account_trial.trial_started_at is null set it to now and trial_ends_at to now plus 28 days.",
+        "Show the confirmation copy with the computed end date in the user's local time zone."
+      ],
+      "alternate_flows": [
+        {
+          "name": "not_yet",
+          "steps": [
+            "Case stays draft.",
+            "No trial change.",
+            "Confirm everything is saved."
+          ]
+        }
+      ],
+      "copy": {
+        "pre_button_notice": "When you tap Start journey, your 28 free days begin. You won't need to enter any payment information now.",
+        "confirmation_first_case": "Your journey has started. Your 28 free days begin today and end on {trial_end_date}. You don't need to enter any payment information now. When your 28 days are up, we'll ask whether you'd like to subscribe. If you don't, nothing is charged, and your account becomes read-only. Nothing is deleted. We'll remind you a few days before your free time ends."
+      },
+      "acceptance_criteria": [
+        "trial_started_at is set exactly once, at the first Start journey, and never by draft creation or edits.",
+        "trial_ends_at equals trial_started_at plus exactly 28 days.",
+        "[PRIVACY] No payment form, payment field, or payment SDK call exists anywhere in the case creation or Start journey flow.",
+        "Pre-button notice is visible before the Start journey button is enabled.",
+        "Confirmation shows the correct end date in the user's local time zone.",
+        "A reminder is scheduled for trial_ends_at minus trial_reminder_days_before.",
+        "Subscription prompt is shown only when now >= trial_ends_at."
+      ],
+      "config": {
+        "trial_length_days": 28,
+        "trial_reminder_days_before": "OPEN-DECISION-02, default 3"
+      }
+    },
+    {
+      "id": "UC-CASE-13",
+      "name": "Choose the first task",
+      "main_flow": [
+        "Name the one or two most time-sensitive tasks, one line each on why.",
+        "Offer one small low-effort alternative.",
+        "Ask 'What feels doable right now?' with three buttons: recommended task, small task, Not today.",
+        "Open the chosen task."
+      ],
+      "alternate_flows": [
+        {
+          "name": "not_today",
+          "steps": [
+            "Confirm that is fine and everything is saved."
+          ],
+          "copy": "When you come back, we'll start right here."
+        },
+        {
+          "name": "picks_other_task",
+          "steps": [
+            "Open it without comment."
+          ]
+        }
+      ],
+      "copy": {
+        "small_task_example": "Write down who you've already called."
+      },
+      "acceptance_criteria": [
+        "Cairn never auto-starts a task without the user choosing.",
+        "Not today leaves the case active with no task in progress."
+      ]
+    },
+    {
+      "id": "UC-CASE-14",
+      "name": "Signs of distress during case creation",
+      "depends_on": [
+        "Trello card 26 (incomplete)",
+        "Trello card 48 safety modes"
+      ],
+      "safety_modes": [
+        {
+          "mode": "overwhelm",
+          "example_signals": [
+            "'This is too much'",
+            "long gaps",
+            "repeated skips"
+          ],
+          "behavior": [
+            "Slow down.",
+            "Stop asking questions.",
+            "Offer to pause or do one small thing."
+          ]
+        },
+        {
+          "mode": "acute_distress",
+          "example_signals": [
+            "intense grief",
+            "panic",
+            "'I can't do this'"
+          ],
+          "behavior": [
+            "Leave task mode entirely.",
+            "Acknowledge and stay present.",
+            "Ask nothing about logistics.",
+            "Offer support options.",
+            "Return to tasks only if the user asks."
+          ]
+        },
+        {
+          "mode": "risk_of_harm",
+          "example_signals": [
+            "any mention of wanting to die or to hurt oneself or someone else"
+          ],
+          "behavior": [
+            "Immediately share 988 (call or text).",
+            "If veteran_status is yes, also share the Veterans Crisis Line (dial 988 then press 1).",
+            "Stop all logistics."
+          ],
+          "source_urls": [
+            "https://988lifeline.org",
+            "https://www.veteranscrisisline.net"
+          ]
+        }
+      ],
+      "copy": {
+        "steady_care_example": "We can set all of this aside. I'm here. You don't have to do anything right now."
+      },
+      "rules": [
+        "All voices converge on steady_care in acute_distress and risk_of_harm.",
+        "Never make promises about confidentiality or what a crisis line will do."
+      ],
+      "acceptance_criteria": [
+        "[SAFETY] In risk_of_harm, the first response contains 988 and contains no task or intake question.",
+        "[SAFETY] Veteran cases include the Veterans Crisis Line in risk_of_harm responses.",
+        "[SAFETY] In acute_distress, no intake question is asked until the user asks to continue."
+      ],
+      "open_items": [
+        "Signal definitions, thresholds, and human escalation path come from card 26."
+      ]
+    },
+    {
+      "id": "UC-CASE-15",
+      "name": "Sensitive numbers typed into the chat",
+      "trigger": [
+        "User input matches SSN, card number, or account number patterns"
+      ],
+      "main_flow": [
+        "Mask the value in the UI immediately.",
+        "Redact before persistence, before logging, and before sending to the model.",
+        "Cairn explains kindly and does not echo the value."
+      ],
+      "copy": {
+        "explanation": "You don't need to share that right now. I've removed it to keep it safe. If a task needs it later, I'll tell you exactly who needs it."
+      },
+      "acceptance_criteria": [
+        "[PRIVACY] Redaction runs server-side before any database write, log line, analytics event, or model request.",
+        "[PRIVACY] Cairn's reply never contains the redacted value or a partial of it.",
+        "Unit tests cover SSN with and without dashes, 13 to 19 digit card numbers with Luhn check, and long digit runs labeled as account numbers."
+      ]
+    },
+    {
+      "id": "UC-CASE-16",
+      "name": "Something Cairn should not guide alone",
+      "triggers": [
+        "contested or disputed will",
+        "family disagreement over arrangements",
+        "user unsure of legal authority",
+        "property in more than one state",
+        "death outside the US",
+        "state with no verified content"
+      ],
+      "main_flow": [
+        "Acknowledge.",
+        "Say plainly this is a time to talk to an estate attorney, or for unverified states, the state's own office.",
+        "Add that as a task.",
+        "Keep showing every step Cairn can safely help with."
+      ],
+      "acceptance_criteria": [
+        "The journey is never blocked by an attorney trigger.",
+        "Attorney task includes the attorney referral line."
+      ],
+      "attorney_flag": true
+    },
+    {
+      "id": "UC-CASE-17",
+      "name": "The death has not happened yet",
+      "trigger": [
+        "User indicates the person is in hospice or near death"
+      ],
+      "main_flow": [
+        "Acknowledge.",
+        "Explain that journeys start after a death.",
+        "Offer: save a draft now, or come back later.",
+        "If the user saves a draft, tell them it will be deleted automatically if it isn't opened for 28 days, and that opening it at any time keeps it."
+      ],
+      "acceptance_criteria": [
+        "Start journey is not offered.",
+        "No trial start."
+      ],
+      "open_items": [
+        "OPEN-DECISION-05: pre-need path for post-alpha roadmap (card 28)."
+      ],
+      "copy": {
+        "draft_notice": "I've saved this for you. If it isn't opened for 28 days, it will be deleted automatically to protect your privacy. Opening it any time keeps it safe."
+      }
+    },
+    {
+      "id": "UC-CASE-18",
+      "name": "Start a second case",
+      "decisions": [
+        "DEC-04"
+      ],
+      "main_flow": [
+        "Same as UC-CASE-01 with an added acknowledgment of another loss.",
+        "At Start journey, show the existing trial end date, not a new one."
+      ],
+      "alternate_flows": [
+        {
+          "name": "account_read_only",
+          "steps": [
+            "Explain kindly that a subscription is needed to start a new journey.",
+            "This is the only point outside day 29 where the subscription prompt is shown."
+          ]
+        }
+      ],
+      "copy": {
+        "confirmation_existing_trial": "Your journey has started. Your free days still end on {trial_end_date}. You don't need to enter any payment information now."
+      },
+      "acceptance_criteria": [
+        "trial_started_at and trial_ends_at are unchanged by a second Start journey.",
+        "Read-only accounts can create and edit a draft but cannot Start journey without a subscription."
+      ]
+    }
+  ],
+  "voice_samples_uc_case_05": {
+    "steady_direct": "This next question helps me show the right steps. You don't need to share details. Was the death expected, or was it sudden?",
+    "warm_patient": "Take whatever time you need with this one. It helps me to know a little about how it happened, only in general terms. Had they been ill, or was it sudden? You can also skip this.",
+    "brisk_businesslike": "One question that changes the plan: was this expected or sudden? A general answer is enough.",
+    "plain_practical": "Whether a death was expected or sudden changes who signs the death certificate and how long it can take. Which was it? You can skip this.",
+    "steady_care": "We can set all of this aside. I'm here. You don't have to do anything right now."
+  },
+  "open_decisions": [
+    {
+      "id": "OPEN-DECISION-01",
+      "topic": "Estate plan as a starting trailhead or an add-on",
+      "current_default": "add-on"
+    },
+    {
+      "id": "OPEN-DECISION-02",
+      "topic": "Days before day 29 to send the trial reminder",
+      "current_default": 3
+    },
+    {
+      "id": "OPEN-DECISION-03",
+      "topic": "POA and no-will copy wording",
+      "current_default": "draft copy above, flagged legal_review"
+    },
+    {
+      "id": "OPEN-DECISION-05",
+      "topic": "Pre-need planning path",
+      "current_default": "not built"
+    }
+  ],
+  "out_of_scope_mvp": [
+    "document upload",
+    "multi-user or shared case access",
+    "deaths outside the US",
+    "journey beyond week 4",
+    "pre-need planning"
+  ],
+  "sources": {
+    "cdc_w2w": "https://cdc.gov/nchs/w2w",
+    "cdc_w2w_2022": "https://stacks.cdc.gov/view/cdc/120499/cdc_120499_DS1.pdf",
+    "cdc_me_handbook": "https://www.cdc.gov/nchs/data/misc/hb_me.pdf",
+    "pa_srn_2019_12": "https://www.health.pa.gov/topics/Documents/Reporting-Registries/SRN%202019-12%20Follow-up%20with%20Coroners%20and%20Medical%20Examiners%20for%20Pending%20Manner%20and%20Causes%20of%20Death.pdf",
+    "ssa_faq": "https://www.ssa.gov/faqs/en/questions/KA-02077.html",
+    "ssa_721": "https://www.ssa.gov/forms/ssa-721.pdf",
+    "va_burials": "https://www.va.gov/burials-memorials/",
+    "poa_fl": "https://www.alperlaw.com/?p=9650",
+    "lifeline_988": "https://988lifeline.org",
+    "vcl": "https://www.veteranscrisisline.net",
+    "afsp": "https://afsp.org/ive-lost-someone/"
+  },
+  "policy_updates_required": [
+    "Add the 28-day draft deletion period to the retention schedule in CAIRN-POL-PRIV-01."
+  ]
+}

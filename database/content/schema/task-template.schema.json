@@ -45,6 +45,7 @@
     },
     "attorney_referral": { "type": "boolean" },
     "attorney_referral_note": { "type": "string", "minLength": 1, "maxLength": 600 },
+    "why_now": { "type": "string", "minLength": 1, "maxLength": 200 },
     "counsel_reviewed_at": {
       "type": ["string", "null"],
       "pattern": "^\\d{4}-\\d{2}-\\d{2}(T[0-9:.+\\-Z]+)?$"
