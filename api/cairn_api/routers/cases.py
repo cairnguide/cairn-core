@@ -1,5 +1,8 @@
-"""UC-CASE-01, UC-CASE-10, UC-CASE-18: start a case, find it again, and pick up where you left off."""
+"""UC-CASE-01, UC-CASE-10, UC-CASE-18: start a case, find it again, and pick up where you left off.
+Also deleting a case, now or with a 7-day hold (UC-END-13, UC-CASE-10 change), with its one confirmation (UC-CASE-21).
+"""
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Body, Depends, Request
 from psycopg import sql
@@ -10,6 +13,9 @@ from ..auth import Identity, get_identity
 from ..errors import ApiError, case_access_denied
 from ..schemas import (
     AnswerState,
+    CaseDeletionIn,
+    CaseDeletionInfo,
+    CaseDeletionResponse,
     CaseListItem,
     CaseListResponse,
     CaseResponse,
@@ -78,7 +84,8 @@ def list_cases(request: Request, identity: Identity = Depends(get_identity)) -> 
             case, answers = intake.load_case(s, case_id), intake.load_answers(s, case_id)
             out = intake.case_out(c, case, answers)
             items.append(CaseListItem(id=out.id, status=out.status, display_name=out.display_name,
-                                      last_activity_at=out.last_activity_at, draft_expires_at=out.draft_expires_at))
+                                      last_activity_at=out.last_activity_at, draft_expires_at=out.draft_expires_at,
+                                      deletion_scheduled_for=out.deletion_scheduled_for))
         return CaseListResponse(cases=items)
 
 
@@ -162,3 +169,91 @@ def patch_deceased(case_id: UUID, req: DeceasedIdentityPatch, request: Request,
                             deceased=DeceasedOut.model_validate(intake.load_deceased(s, case_id)),
                             notes=[], next_step=step,
                             read_aloud=ReadAloud(label=c.copy["read_this_to_me"], text=step.prompt))
+
+
+# ------------------------------------------------------------------ deleting a case (UC-END-13, UC-CASE-21)
+# Always free, on drafts, active, and read-only cases (D-2026-09-25-F1). Only the
+# owner can delete. The database does the deleting and queues the confirmation.
+
+def _deletion_ctx(s, request: Request, case_id: UUID) -> tuple[intake.Ctx, dict]:
+    c = intake.ctx(s, request, acct.load_account(s))
+    case = intake.load_case(s, case_id)
+    if not s.one("SELECT cairn.is_case_member(%s, ARRAY['owner']) AS ok", (case_id,))["ok"]:
+        raise case_access_denied()
+    return c, case
+
+
+@router.get(
+    "/{case_id}/deletion",
+    response_model=CaseDeletionInfo,
+    summary="What deleting this case removes, and where the confirmation goes",
+    description=(
+        "UC-END-13 and UC-CASE-21. Explains what goes, shows the masked address the one confirmation will go "
+        "to before anything is confirmed, and offers Delete it now or Delete it in 7 days. For a case already "
+        "on hold, offers Keep this case."
+    ),
+    responses=_DENIED,
+)
+def deletion_info(case_id: UUID, request: Request, identity: Identity = Depends(get_identity)) -> CaseDeletionInfo:
+    with request.app.state.db.session(identity.subject) as s:
+        s.require_user()
+        c, case = _deletion_ctx(s, request, case_id)
+        masked = acct.mask_email(c.account["email"])
+        options = [Option(value="now", label=c.copy["case_delete_now"])]
+        if case["deletion_scheduled_for"] is None:
+            options.append(Option(value="hold", label=c.copy["case_delete_hold"]))
+        else:
+            options.append(Option(value="keep", label=c.copy["case_keep"]))
+        return CaseDeletionInfo(
+            explanation=c.copy["case_deletion_explanation"], masked_email=masked,
+            confirmation_destination=c.copy["case_deletion_confirmation_destination"].format(masked_email=masked),
+            deletion_scheduled_for=case["deletion_scheduled_for"],
+            next_step=NextStep(action="confirm_case_deletion", prompt=c.copy["case_deletion_question"],
+                               options=options))
+
+
+@router.post(
+    "/{case_id}/deletion",
+    response_model=CaseDeletionResponse,
+    summary="Delete this case now, or in 7 days",
+    description=(
+        "now deletes the case and everything in it at once and queues one confirmation (case_deleted_now). "
+        "hold schedules deletion in 7 days (case_deletion_hold_days). The case stays visible until then, is "
+        "included in the data download, and the confirmation goes when it is deleted (case_deleted_after_hold). "
+        "No reason is asked."
+    ),
+    responses=_DENIED,
+)
+def delete_case(case_id: UUID, req: CaseDeletionIn, request: Request,
+                identity: Identity = Depends(get_identity)) -> CaseDeletionResponse:
+    with request.app.state.db.session(identity.subject) as s:
+        s.require_user()
+        c, _ = _deletion_ctx(s, request, case_id)
+        when = s.one("SELECT cairn.request_case_deletion(%s, %s) AS at", (case_id, req.mode))["at"]
+        if req.mode == "now":
+            ack = c.copy["case_deleted_now"]
+            return CaseDeletionResponse(deleted=True, deletion_scheduled_for=None, acknowledgment=ack,
+                                        next_step=NextStep(action="view_cases", prompt=ack))
+        local = when.astimezone(ZoneInfo(c.account.get("time_zone") or "UTC")).date()
+        ack = c.copy["case_deletion_scheduled"].format(date=acct.format_date(local))
+        return CaseDeletionResponse(
+            deleted=False, deletion_scheduled_for=when, acknowledgment=ack,
+            next_step=NextStep(action="case_deletion_scheduled", prompt=ack,
+                               options=[Option(value="keep", label=c.copy["case_keep"])]))
+
+
+@router.delete(
+    "/{case_id}/deletion",
+    response_model=CaseDeletionResponse,
+    summary="Keep a case that was set to be deleted",
+    description="Cancels a 7-day hold. Nothing was deleted, and no confirmation is sent.",
+    responses=_DENIED,
+)
+def keep_case(case_id: UUID, request: Request, identity: Identity = Depends(get_identity)) -> CaseDeletionResponse:
+    with request.app.state.db.session(identity.subject) as s:
+        s.require_user()
+        c, _ = _deletion_ctx(s, request, case_id)
+        s.one("SELECT cairn.cancel_case_deletion(%s) AS kept", (case_id,))
+        ack = c.copy["case_deletion_cancelled"]
+        return CaseDeletionResponse(deleted=False, deletion_scheduled_for=None, acknowledgment=ack,
+                                    next_step=NextStep(action="view_case", prompt=ack))

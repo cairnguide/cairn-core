@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Cairn API",
-    "description": "\nCairn walks a family through the logistics of a death, one step at a time.\n\nEvery response that moves a conversation forward carries a `next_step` with a\nsingle prompt, so clients can ask one question at a time. Errors use RFC 9457\nproblem details (`application/problem+json`) and never echo submitted values.\n\nAuthentication is an Auth0 access token. Accounts can be created with Google,\nApple, or an email magic link (see GET /v1/welcome). Onboarding follows\nUC-REG-01 to UC-REG-14, one question per screen. Case creation follows\nUC-CASE-01 to UC-CASE-18: a case starts as a draft, and the free period of 28\ndays starts only when the user taps Start journey on their first case. After\nit ends the account is read-only until subscribed. No payment information is\nasked for anywhere in case creation. Free text is redacted as it is received\nand never stored. The case is the security boundary and is enforced in the\ndatabase with row-level security.\n",
+    "description": "\nCairn walks a family through the logistics of a death, one step at a time.\n\nEvery response that moves a conversation forward carries a `next_step` with a\nsingle prompt, so clients can ask one question at a time. Errors use RFC 9457\nproblem details (`application/problem+json`) and never echo submitted values.\n\nAuthentication is an Auth0 access token. Accounts can be created with Google,\nApple, or an email magic link (see GET /v1/welcome). Onboarding follows\nUC-REG-01 to UC-REG-14, one question per screen. Case creation follows\nUC-CASE-01 to UC-CASE-18: a case starts as a draft, and the free period of 28\ndays starts only when the user taps Start journey on their first case. After\nit ends the account is read-only until subscribed. No payment information is\nasked for anywhere in case creation. Free text is redacted as it is received\nand never stored. The case is the security boundary and is enforced in the\ndatabase with row-level security.\n\nThe user decides how and how often Cairn keeps in touch, per journey\n(UC-CASE-19). With no choice, nothing is sent outside the app. Apart from that,\nCairn sends only one confirmation for a deletion the user asked for\n(UC-CASE-21). Deleting a case or the account, downloading all data, and\nchanging notifications are always free, including on a read-only account.\n",
     "version": "0.1.0"
   },
   "paths": {
@@ -479,7 +479,7 @@
           "Account"
         ],
         "summary": "What deleting the account removes",
-        "description": "UC-ACCT-01 steps 1 and 2. Explain plainly, then ask for confirmation.",
+        "description": "UC-REG-15. Says in plain words what will be deleted, says a store subscription is cancelled in the store (information only), shows the masked address the one confirmation goes to, and offers one button. No reason is asked and nothing is offered to keep the user. Available in every status.",
         "operationId": "deletion_info_v1_me_deletion_get",
         "responses": {
           "200": {
@@ -503,8 +503,8 @@
         "tags": [
           "Account"
         ],
-        "summary": "Delete the account and personal data",
-        "description": "UC-ACCT-01. Deletes the account, its consents and reminders, and every case it created, now, in one transaction. This is deletion, not deactivation. The Auth0 user is deleted, and Apple tokens are revoked through the Sign in with Apple REST API, by a job that works through the queue this adds to. Works in every status, including read-only.",
+        "summary": "Delete the account and everything in it",
+        "description": "UC-REG-15. Deletes now, in one transaction: the account, every case in any status (including cases in a 7-day hold), tasks, answers, conversation text, notification preferences, consents, and reminders. This is deletion, not deactivation. One confirmation email is queued, then its address is purged once it is sent. The Auth0 user is deleted and Apple tokens are revoked (TN3194) by the identity cleanup job. The response says the user is signed out: clear the session. Works in every status, always free.",
         "operationId": "delete_me_v1_me_deletion_post",
         "requestBody": {
           "content": {
@@ -523,6 +523,107 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AccountDeletionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/me/data-export": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "What the download includes",
+        "description": "UC-REG-16 step 1. One sentence on what is included. Available in every status.",
+        "operationId": "data_export_info_v1_me_data_export_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataExportInfo"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/me/data-export/file": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Download all my data",
+        "description": "UC-REG-16. The profile, acknowledgments, every case (drafts and cases in a 7-day hold included) with its answers, summary, tasks, notification settings, notifications sent, and conversation text, as a JSON file (GDPR Article 20 portability). Never includes Social Security number digits, account numbers, or card numbers. Always free, in every status. [OPEN QUESTION card 50, Q14] a printable page or PDF as well.",
+        "operationId": "data_export_file_v1_me_data_export_file_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataExport"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/me/messages": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Ask Cairn about the account",
+        "description": "UC-REG-15, UC-REG-16, UC-CASE-20 by chat. Delete my account and download my data lead to the same steps as Settings (deleting still needs its one button). Stop messages applies in one step, with no persuasion. Email me instead is read back and needs a yes. A risk-of-harm signal is answered with safety first and no account action in that turn. Asked again, the request goes ahead with no extra questions. Free text is redacted as it is received and never stored.",
+        "operationId": "message_v1_me_messages_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountMessageIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountMessageResponse"
                 }
               }
             }
@@ -735,6 +836,177 @@
           },
           "409": {
             "description": "The case is still a draft."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/deletion": {
+      "get": {
+        "tags": [
+          "Case creation"
+        ],
+        "summary": "What deleting this case removes, and where the confirmation goes",
+        "description": "UC-END-13 and UC-CASE-21. Explains what goes, shows the masked address the one confirmation will go to before anything is confirmed, and offers Delete it now or Delete it in 7 days. For a case already on hold, offers Keep this case.",
+        "operationId": "deletion_info_v1_cases__case_id__deletion_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseDeletionInfo"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, the case does not exist, or (for an active case) the account is read-only (code account_read_only)."
+          },
+          "409": {
+            "description": "Onboarding isn't finished, or a changed acknowledgment needs to be agreed to."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Case creation"
+        ],
+        "summary": "Delete this case now, or in 7 days",
+        "description": "now deletes the case and everything in it at once and queues one confirmation (case_deleted_now). hold schedules deletion in 7 days (case_deletion_hold_days). The case stays visible until then, is included in the data download, and the confirmation goes when it is deleted (case_deleted_after_hold). No reason is asked.",
+        "operationId": "delete_case_v1_cases__case_id__deletion_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseDeletionIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseDeletionResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, the case does not exist, or (for an active case) the account is read-only (code account_read_only)."
+          },
+          "409": {
+            "description": "Onboarding isn't finished, or a changed acknowledgment needs to be agreed to."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Case creation"
+        ],
+        "summary": "Keep a case that was set to be deleted",
+        "description": "Cancels a 7-day hold. Nothing was deleted, and no confirmation is sent.",
+        "operationId": "keep_case_v1_cases__case_id__deletion_delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseDeletionResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, the case does not exist, or (for an active case) the account is read-only (code account_read_only)."
+          },
+          "409": {
+            "description": "Onboarding isn't finished, or a changed acknowledgment needs to be agreed to."
           },
           "422": {
             "description": "Validation Error",
@@ -1608,7 +1880,7 @@
           "Journey"
         ],
         "summary": "Step back from tasks for a while",
-        "description": "UC-12. Holds all progress exactly as it is. Stores only the time the pause ends. No reason or feeling is collected or stored.",
+        "description": "UC-12. Holds all progress exactly as it is. Stores only the time the pause ends. No reason or feeling is collected or stored. Pausing doesn't stop or extend the 28 free days, and the response says so (D-2026-09-25-P1). It also offers to change how Cairn keeps in touch (UC-CASE-20).",
         "operationId": "pause_journey_v1_cases__case_id__journey_pause_post",
         "security": [
           {
@@ -1773,6 +2045,319 @@
             }
           }
         }
+      }
+    },
+    "/v1/cases/{case_id}/notification-preferences": {
+      "get": {
+        "tags": [
+          "Keeping in touch"
+        ],
+        "summary": "How Cairn keeps in touch for this journey",
+        "description": "UC-CASE-19. Explains that the user decides and can change it any time, then offers shortcuts (the same as another journey first, then Keep it simple for me) and the questions in order: channel, reasons, timing, frequency. With no choice stored, the effective choice is in_app_only.",
+        "operationId": "get_setup_v1_cases__case_id__notification_preferences_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationSetupResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, or the case does not exist."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Keeping in touch"
+        ],
+        "summary": "Save how Cairn keeps in touch for this journey",
+        "description": "UC-CASE-19 and UC-CASE-20. Send the confirmed choice or a shortcut: keep_it_simple, skip (in_app_only), or same_as another journey. Each journey keeps its own choice. Works on drafts, active, paused, closed, and read-only cases, always free.",
+        "operationId": "save_v1_cases__case_id__notification_preferences_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationSetIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationSavedResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, or the case does not exist."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/notification-preferences/readback": {
+      "post": {
+        "tags": [
+          "Keeping in touch"
+        ],
+        "summary": "Read a choice back before saving it",
+        "description": "UC-CASE-19 step 6. Says the choice in plain language and asks to confirm. Nothing is stored.",
+        "operationId": "readback_v1_cases__case_id__notification_preferences_readback_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationSetIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationReadbackResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, or the case does not exist."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/notification-preferences/push-permission": {
+      "post": {
+        "tags": [
+          "Keeping in touch"
+        ],
+        "summary": "What the OS said to the push permission prompt",
+        "description": "UC-CASE-19. Push is never required. If the user declines, push is taken off this journey's channels (and in_app_only is used when nothing else is left), so the readback never promises a message that can't arrive.",
+        "operationId": "push_permission_v1_cases__case_id__notification_preferences_push_permission_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushPermissionIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationSavedResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, or the case does not exist."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/notification-preferences": {
+      "get": {
+        "tags": [
+          "Keeping in touch"
+        ],
+        "summary": "How Cairn keeps in touch, for every journey",
+        "description": "UC-CASE-20 from Settings. One entry per journey, named by the person's display name.",
+        "operationId": "list_all_v1_me_notification_preferences_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountNotificationsResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/me/notification-preferences/changes": {
+      "post": {
+        "tags": [
+          "Keeping in touch"
+        ],
+        "summary": "Change how Cairn keeps in touch",
+        "description": "UC-CASE-20. stop_everything sets in_app_only in one step, on every journey unless a scope is given. Any other change is read back in one line and applied only with confirm=true. With more than one journey and no scope, asks which journey by the person's display name and offers All of them.",
+        "operationId": "change_v1_me_notification_preferences_changes_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationChangeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationChangeResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A journey in scope isn't one of the user's."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/v1/cases/{case_id}/tasks/{task_id}": {
@@ -2060,22 +2645,62 @@
   },
   "components": {
     "schemas": {
+      "AccountChatSession": {
+        "properties": {
+          "safety_first_shown": {
+            "type": "boolean",
+            "title": "Safety First Shown",
+            "description": "The last turn answered a risk-of-harm signal with safety first and took no account action.",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AccountChatSession",
+        "description": "Kept by the client and sent back, like IntakeSession. The server never stores it (decision 7)."
+      },
       "AccountDeletionInfo": {
         "properties": {
           "explanation": {
             "type": "string",
-            "title": "Explanation"
+            "title": "Explanation",
+            "description": "Account, every case, every task, all conversation text, and notification settings."
+          },
+          "subscription_note": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Note"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Only when there is a subscription. Information, not a question: store subscriptions are cancelled in the store."
+          },
+          "masked_email": {
+            "type": "string",
+            "title": "Masked Email",
+            "description": "The account email, masked. The one confirmation goes here."
+          },
+          "confirmation_destination": {
+            "type": "string",
+            "title": "Confirmation Destination"
           },
           "next_step": {
-            "$ref": "#/components/schemas/NextStep"
+            "$ref": "#/components/schemas/NextStep",
+            "description": "One option: Delete my account and everything in it."
           }
         },
         "type": "object",
         "required": [
           "explanation",
+          "subscription_note",
+          "masked_email",
+          "confirmation_destination",
           "next_step"
         ],
-        "title": "AccountDeletionInfo"
+        "title": "AccountDeletionInfo",
+        "description": "UC-REG-15. What will be deleted, where the confirmation goes, and one button. No reason is asked."
       },
       "AccountDeletionRequest": {
         "properties": {
@@ -2083,7 +2708,7 @@
             "type": "boolean",
             "const": true,
             "title": "Confirm",
-            "description": "Must be true. Sent only after the user confirms."
+            "description": "Must be true. Sent only after the user taps the one button."
           }
         },
         "additionalProperties": false,
@@ -2101,13 +2726,160 @@
             },
             "type": "array",
             "title": "Notes"
+          },
+          "signed_out": {
+            "type": "boolean",
+            "const": true,
+            "title": "Signed Out",
+            "description": "The account is gone. Clear the session and return the app to its signed-out state."
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
           }
         },
         "type": "object",
         "required": [
-          "notes"
+          "notes",
+          "signed_out",
+          "next_step"
         ],
         "title": "AccountDeletionResponse"
+      },
+      "AccountMessageIn": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Text"
+          },
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountChatSession"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "AccountMessageIn"
+      },
+      "AccountMessageResponse": {
+        "properties": {
+          "intent": {
+            "type": "string",
+            "enum": [
+              "delete_account",
+              "download_data",
+              "stop_notifications",
+              "change_notifications",
+              "sms_not_available",
+              "safety_first",
+              "help"
+            ],
+            "title": "Intent"
+          },
+          "acknowledgment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledgment"
+          },
+          "body": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Body",
+            "description": "Statements, never questions."
+          },
+          "support": {
+            "items": {
+              "$ref": "#/components/schemas/SupportResource"
+            },
+            "type": "array",
+            "title": "Support"
+          },
+          "proposal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotificationChoice"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A notification change to read back. Nothing is saved until confirmed."
+          },
+          "redactions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Redactions"
+          },
+          "masked_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Masked Text"
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
+          },
+          "session": {
+            "$ref": "#/components/schemas/AccountChatSession"
+          },
+          "read_aloud": {
+            "$ref": "#/components/schemas/ReadAloud"
+          }
+        },
+        "type": "object",
+        "required": [
+          "intent",
+          "acknowledgment",
+          "next_step",
+          "session",
+          "read_aloud"
+        ],
+        "title": "AccountMessageResponse"
+      },
+      "AccountNotificationsResponse": {
+        "properties": {
+          "journeys": {
+            "items": {
+              "$ref": "#/components/schemas/JourneyNotifications"
+            },
+            "type": "array",
+            "title": "Journeys"
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
+          }
+        },
+        "type": "object",
+        "required": [
+          "journeys",
+          "next_step"
+        ],
+        "title": "AccountNotificationsResponse"
       },
       "AccountOut": {
         "properties": {
@@ -2490,6 +3262,101 @@
         ],
         "title": "AttorneyTrigger"
       },
+      "CaseDeletionIn": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "now",
+              "hold"
+            ],
+            "title": "Mode",
+            "description": "Delete now, or in 7 days with a chance to keep it."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "title": "CaseDeletionIn"
+      },
+      "CaseDeletionInfo": {
+        "properties": {
+          "explanation": {
+            "type": "string",
+            "title": "Explanation"
+          },
+          "masked_email": {
+            "type": "string",
+            "title": "Masked Email"
+          },
+          "confirmation_destination": {
+            "type": "string",
+            "title": "Confirmation Destination",
+            "description": "Where the one confirmation goes, shown before the user confirms (UC-CASE-21)."
+          },
+          "deletion_scheduled_for": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deletion Scheduled For"
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
+          }
+        },
+        "type": "object",
+        "required": [
+          "explanation",
+          "masked_email",
+          "confirmation_destination",
+          "deletion_scheduled_for",
+          "next_step"
+        ],
+        "title": "CaseDeletionInfo"
+      },
+      "CaseDeletionResponse": {
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          },
+          "deletion_scheduled_for": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deletion Scheduled For"
+          },
+          "acknowledgment": {
+            "type": "string",
+            "title": "Acknowledgment"
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted",
+          "deletion_scheduled_for",
+          "acknowledgment",
+          "next_step"
+        ],
+        "title": "CaseDeletionResponse"
+      },
       "CaseHandoffRequest": {
         "properties": {
           "relationship": {
@@ -2569,6 +3436,18 @@
               }
             ],
             "title": "Draft Expires At"
+          },
+          "deletion_scheduled_for": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deletion Scheduled For"
           }
         },
         "type": "object",
@@ -2714,6 +3593,19 @@
               }
             ],
             "title": "Tasks Paused Until"
+          },
+          "deletion_scheduled_for": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deletion Scheduled For",
+            "description": "Set when the user chose to delete this case with a 7-day hold (UC-END-13)."
           },
           "created_at": {
             "type": "string",
@@ -3186,6 +4078,87 @@
         ],
         "title": "ConsentType"
       },
+      "DataExport": {
+        "properties": {
+          "format": {
+            "type": "string",
+            "const": "cairn-data-export",
+            "title": "Format"
+          },
+          "format_version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Format Version"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "profile": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Profile"
+          },
+          "acknowledgments": {
+            "items": {
+              "$ref": "#/components/schemas/ExportConsent"
+            },
+            "type": "array",
+            "title": "Acknowledgments"
+          },
+          "trial_reminders": {
+            "items": {
+              "$ref": "#/components/schemas/ExportReminder"
+            },
+            "type": "array",
+            "title": "Trial Reminders"
+          },
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/ExportCase"
+            },
+            "type": "array",
+            "title": "Cases"
+          }
+        },
+        "type": "object",
+        "required": [
+          "format",
+          "format_version",
+          "generated_at",
+          "profile",
+          "acknowledgments",
+          "trial_reminders",
+          "cases"
+        ],
+        "title": "DataExport",
+        "description": "UC-REG-16. Everything Cairn holds about the user, in a portable format (GDPR Article 20)."
+      },
+      "DataExportInfo": {
+        "properties": {
+          "explanation": {
+            "type": "string",
+            "title": "Explanation",
+            "description": "One sentence on what the download includes."
+          },
+          "format": {
+            "type": "string",
+            "const": "json",
+            "title": "Format"
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
+          }
+        },
+        "type": "object",
+        "required": [
+          "explanation",
+          "format",
+          "next_step"
+        ],
+        "title": "DataExportInfo"
+      },
       "DeathNotYetIn": {
         "properties": {
           "choice": {
@@ -3338,6 +4311,344 @@
           "date_of_birth"
         ],
         "title": "DeceasedOut"
+      },
+      "ExportAnswer": {
+        "properties": {
+          "field": {
+            "type": "string",
+            "title": "Field"
+          },
+          "answer_state": {
+            "type": "string",
+            "title": "Answer State"
+          },
+          "value": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "own_words": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Own Words"
+          }
+        },
+        "type": "object",
+        "required": [
+          "field",
+          "answer_state",
+          "value",
+          "own_words"
+        ],
+        "title": "ExportAnswer"
+      },
+      "ExportCase": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "journey_template_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journey Template Key"
+          },
+          "journey_started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journey Started At"
+          },
+          "tasks_paused_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tasks Paused Until"
+          },
+          "deletion_scheduled_for": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deletion Scheduled For"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Summary",
+            "description": "Where things stand: counts by status and the next step."
+          },
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/ExportAnswer"
+            },
+            "type": "array",
+            "title": "Answers"
+          },
+          "person_who_died": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Person Who Died",
+            "description": "Legal identity, if it was given inside a task. Never the Social Security number digits."
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/ExportTask"
+            },
+            "type": "array",
+            "title": "Tasks"
+          },
+          "notification_preferences": {
+            "$ref": "#/components/schemas/NotificationPreferencesOut"
+          },
+          "notifications_sent": {
+            "items": {
+              "$ref": "#/components/schemas/ExportNotificationSent"
+            },
+            "type": "array",
+            "title": "Notifications Sent"
+          },
+          "conversation": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Conversation",
+            "description": "Conversation text and records kept for this case."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "display_name",
+          "created_at",
+          "journey_template_key",
+          "journey_started_at",
+          "tasks_paused_until",
+          "deletion_scheduled_for",
+          "summary",
+          "answers",
+          "person_who_died",
+          "tasks",
+          "notification_preferences",
+          "notifications_sent",
+          "conversation"
+        ],
+        "title": "ExportCase"
+      },
+      "ExportConsent": {
+        "properties": {
+          "purpose": {
+            "type": "string",
+            "title": "Purpose"
+          },
+          "policy_version": {
+            "type": "string",
+            "title": "Policy Version"
+          },
+          "granted_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Granted At"
+          },
+          "auth_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Provider"
+          },
+          "client": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client"
+          }
+        },
+        "type": "object",
+        "required": [
+          "purpose",
+          "policy_version",
+          "granted_at",
+          "auth_provider",
+          "client"
+        ],
+        "title": "ExportConsent"
+      },
+      "ExportNotificationSent": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "channel": {
+            "type": "string",
+            "title": "Channel"
+          },
+          "sent_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Sent At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason",
+          "channel",
+          "sent_at"
+        ],
+        "title": "ExportNotificationSent"
+      },
+      "ExportReminder": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "due_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Due At"
+          },
+          "email_sent_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Sent At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "due_at",
+          "email_sent_at"
+        ],
+        "title": "ExportReminder"
+      },
+      "ExportTask": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "plain_summary": {
+            "type": "string",
+            "title": "Plain Summary"
+          },
+          "journey_week": {
+            "type": "integer",
+            "title": "Journey Week"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "due_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due On"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "plain_summary",
+          "journey_week",
+          "status",
+          "due_on",
+          "completed_at"
+        ],
+        "title": "ExportTask"
       },
       "FieldKey": {
         "type": "string",
@@ -3800,6 +5111,34 @@
         "title": "IntakeTurnResponse",
         "description": "One conversational turn. Acknowledgment first, at most one question, exactly one next action."
       },
+      "JourneyNotifications": {
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Case Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "preferences": {
+            "$ref": "#/components/schemas/NotificationPreferencesOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "case_id",
+          "display_name",
+          "status",
+          "preferences"
+        ],
+        "title": "JourneyNotifications"
+      },
       "JourneyPreviewResponse": {
         "properties": {
           "case": {
@@ -3854,9 +5193,14 @@
             "type": "boolean",
             "title": "Start Available"
           },
+          "notifications_chosen": {
+            "type": "boolean",
+            "title": "Notifications Chosen",
+            "description": "UC-CASE-19. False until the user makes, or skips, a notification choice for this journey. While false on a draft, next_step is choose_notifications (UC-CASE-12 step 3)."
+          },
           "next_step": {
             "$ref": "#/components/schemas/NextStep",
-            "description": "Start journey and Not yet, or why it can't start."
+            "description": "Choose notifications, then Start journey and Not yet, or why it can't start."
           },
           "read_aloud": {
             "$ref": "#/components/schemas/ReadAloud"
@@ -3873,6 +5217,7 @@
           "support",
           "pre_button_notice",
           "start_available",
+          "notifications_chosen",
           "next_step",
           "read_aloud"
         ],
@@ -4083,6 +5428,474 @@
           "text"
         ],
         "title": "Note"
+      },
+      "NotificationChangeIn": {
+        "properties": {
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "all"
+              },
+              {
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope",
+            "description": "Which journeys. Omit when there is only one. stop_everything with no scope means all of them."
+          },
+          "stop_everything": {
+            "type": "boolean",
+            "title": "Stop Everything",
+            "default": false
+          },
+          "choice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotificationChoice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "confirm": {
+            "type": "boolean",
+            "title": "Confirm",
+            "description": "true once the user said yes to the readback.",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "NotificationChangeIn",
+        "description": "UC-CASE-20. stop_everything applies in one step. A choice is read back first and applied on confirm."
+      },
+      "NotificationChangeResponse": {
+        "properties": {
+          "applied": {
+            "type": "boolean",
+            "title": "Applied"
+          },
+          "acknowledgment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledgment"
+          },
+          "readback": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Readback"
+          },
+          "journeys": {
+            "items": {
+              "$ref": "#/components/schemas/JourneyNotifications"
+            },
+            "type": "array",
+            "title": "Journeys"
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
+          }
+        },
+        "type": "object",
+        "required": [
+          "applied",
+          "acknowledgment",
+          "readback",
+          "journeys",
+          "next_step"
+        ],
+        "title": "NotificationChangeResponse"
+      },
+      "NotificationChannel": {
+        "type": "string",
+        "enum": [
+          "email",
+          "push",
+          "in_app_only"
+        ],
+        "title": "NotificationChannel"
+      },
+      "NotificationChoice": {
+        "properties": {
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationChannel"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Channels"
+          },
+          "reasons": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationReason"
+            },
+            "type": "array",
+            "maxItems": 2,
+            "title": "Reasons"
+          },
+          "due_date_lead_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "enum": [
+                  1,
+                  3,
+                  7
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date Lead Days"
+          },
+          "inactivity_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "enum": [
+                  3,
+                  7,
+                  14
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inactivity Days"
+          },
+          "frequency": {
+            "$ref": "#/components/schemas/NotificationFrequency",
+            "default": "daily_max"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "channels"
+        ],
+        "title": "NotificationChoice",
+        "description": "in_app_only stands alone. Any other channel needs at least one reason, and each reason its timing."
+      },
+      "NotificationFrequency": {
+        "type": "string",
+        "enum": [
+          "as_it_happens",
+          "daily_max",
+          "weekly_max"
+        ],
+        "title": "NotificationFrequency"
+      },
+      "NotificationPreferencesOut": {
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Case Id"
+          },
+          "stored": {
+            "type": "boolean",
+            "title": "Stored",
+            "description": "False when nothing was chosen yet. The effective choice is then in_app_only."
+          },
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationChannel"
+            },
+            "type": "array",
+            "title": "Channels"
+          },
+          "reasons": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationReason"
+            },
+            "type": "array",
+            "title": "Reasons"
+          },
+          "due_date_lead_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date Lead Days"
+          },
+          "inactivity_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inactivity Days"
+          },
+          "frequency": {
+            "$ref": "#/components/schemas/NotificationFrequency"
+          },
+          "push_permission_granted": {
+            "type": "boolean",
+            "title": "Push Permission Granted"
+          },
+          "readback": {
+            "type": "string",
+            "title": "Readback",
+            "description": "The choice in plain language, one sentence."
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "case_id",
+          "stored",
+          "channels",
+          "reasons",
+          "due_date_lead_days",
+          "inactivity_days",
+          "frequency",
+          "push_permission_granted",
+          "readback",
+          "updated_at"
+        ],
+        "title": "NotificationPreferencesOut"
+      },
+      "NotificationPreset": {
+        "type": "string",
+        "enum": [
+          "keep_it_simple",
+          "skip",
+          "same_as"
+        ],
+        "title": "NotificationPreset"
+      },
+      "NotificationQuestion": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "channels",
+              "reasons",
+              "due_date_lead_days",
+              "inactivity_days",
+              "frequency"
+            ],
+            "title": "Id"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          },
+          "multi_select": {
+            "type": "boolean",
+            "title": "Multi Select"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/Option"
+            },
+            "type": "array",
+            "title": "Options"
+          },
+          "asked_when": {
+            "type": "string",
+            "title": "Asked When",
+            "description": "When the client shows this question."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "prompt",
+          "multi_select",
+          "options",
+          "asked_when"
+        ],
+        "title": "NotificationQuestion"
+      },
+      "NotificationReadbackResponse": {
+        "properties": {
+          "preferences": {
+            "$ref": "#/components/schemas/NotificationPreferencesOut"
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
+          }
+        },
+        "type": "object",
+        "required": [
+          "preferences",
+          "next_step"
+        ],
+        "title": "NotificationReadbackResponse",
+        "description": "Read back before saving. Nothing is stored."
+      },
+      "NotificationReason": {
+        "type": "string",
+        "enum": [
+          "due_date_upcoming",
+          "inactivity"
+        ],
+        "title": "NotificationReason"
+      },
+      "NotificationSavedResponse": {
+        "properties": {
+          "preferences": {
+            "$ref": "#/components/schemas/NotificationPreferencesOut"
+          },
+          "acknowledgment": {
+            "type": "string",
+            "title": "Acknowledgment"
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep",
+            "description": "request_push_permission when push was chosen and the OS hasn't been asked, so the prompt only ever follows the user's choice."
+          }
+        },
+        "type": "object",
+        "required": [
+          "preferences",
+          "acknowledgment",
+          "next_step"
+        ],
+        "title": "NotificationSavedResponse"
+      },
+      "NotificationSetIn": {
+        "properties": {
+          "choice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotificationChoice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "preset": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotificationPreset"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "same_as_case_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Same As Case Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "NotificationSetIn",
+        "description": "Send a choice, or a shortcut. same_as copies another journey's choice (UC-CASE-18)."
+      },
+      "NotificationSetupResponse": {
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Case Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "explanation": {
+            "type": "string",
+            "title": "Explanation"
+          },
+          "preferences": {
+            "$ref": "#/components/schemas/NotificationPreferencesOut"
+          },
+          "masked_email": {
+            "type": "string",
+            "title": "Masked Email",
+            "description": "Where email goes, shown masked. Works with Apple private email relay."
+          },
+          "shortcuts": {
+            "items": {
+              "$ref": "#/components/schemas/Option"
+            },
+            "type": "array",
+            "title": "Shortcuts",
+            "description": "Use the same as another journey (when there is one), Keep it simple for me, Choose for myself, Only in the app."
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationQuestion"
+            },
+            "type": "array",
+            "title": "Questions"
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
+          },
+          "read_aloud": {
+            "$ref": "#/components/schemas/ReadAloud"
+          }
+        },
+        "type": "object",
+        "required": [
+          "case_id",
+          "display_name",
+          "explanation",
+          "preferences",
+          "masked_email",
+          "shortcuts",
+          "questions",
+          "next_step",
+          "read_aloud"
+        ],
+        "title": "NotificationSetupResponse",
+        "description": "UC-CASE-19. The explanation, the shortcuts (same as another journey first), then one question at a time."
       },
       "OnboardingResponse": {
         "properties": {
@@ -4448,6 +6261,21 @@
           "value"
         ],
         "title": "ProposedAnswerIn"
+      },
+      "PushPermissionIn": {
+        "properties": {
+          "granted": {
+            "type": "boolean",
+            "title": "Granted",
+            "description": "What the OS permission prompt returned."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "granted"
+        ],
+        "title": "PushPermissionIn"
       },
       "Question": {
         "properties": {
@@ -5710,7 +7538,7 @@
     },
     {
       "name": "Account",
-      "description": "Settings and account deletion (UC-ACCT-01)."
+      "description": "Settings, deleting the account (UC-REG-15), downloading all data (UC-REG-16), and account requests in chat."
     },
     {
       "name": "Case creation",
@@ -5723,6 +7551,10 @@
     {
       "name": "Tasks",
       "description": "UC-10, UC-11. Working through individual tasks."
+    },
+    {
+      "name": "Keeping in touch",
+      "description": "UC-CASE-19 and UC-CASE-20. How and when Cairn reaches the user outside the app, per journey."
     }
   ]
 }

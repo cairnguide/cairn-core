@@ -222,7 +222,7 @@ Existing tables were extended. Nothing was renamed or dropped (migration `0010_c
 ## Decisions to confirm with the product owner
 
 1. **Three trial reminders.** Registration UC-REG-08 asks for reminders on day 21 and day 27. This spec asks for one at `trial_ends_at` minus 3 days (day 25). All three are scheduled so both specs' criteria hold. That is three messages in one week to someone who is grieving. Should `trial_ends_soon` replace one or both of the registration reminders?
-2. **Registration trial copy.** `trial_summary` (registration spec, verbatim) says the 28 days "begin when you start your first case". Under DEC-01 they begin at Start journey. A new registration spec version could say "when you start your first journey".
+2. **Registration trial copy.** `trial_summary` (registration spec, verbatim) says the 28 days "begin when you start your first case". Under DEC-01 they begin at Start journey. A new registration spec version could say "when you start your first journey". Resolved 2026-09-25: the UC-REG-08 change says "first journey". See `account-lifecycle-gap-audit.md`.
 3. **"Come back later" in UC-CASE-17** keeps the draft (with the pause copy and its 28-day notice) rather than deleting it. Deleting on that button seemed too destructive to assume.
 4. **POA note at hand-off and in the case.** Onboarding's case hand-off still shows its own POA note (`messages.POA_ENDS_AT_DEATH`). A case then shows the spec's note once. The two have different wording, so legal review has two texts to approve. Consider using only the spec's.
 5. **Case status read_only is derived, not stored**, so a subscription restores write access without touching cases. Say if a stored value is wanted for reporting.

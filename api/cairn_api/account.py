@@ -80,6 +80,22 @@ def format_date(d: date) -> str:
     return f"{d:%B} {d.day}, {d.year}"
 
 
+def mask_email(email: str) -> str:
+    """Where a confirmation or email will go, shown masked (UC-CASE-19, UC-CASE-21).
+
+    The domain stays whole so the user can recognize it, including an Apple
+    private relay address (privaterelay.appleid.com).
+    """
+    local, _, domain = email.rpartition("@")
+    if not local:
+        return "•••"
+    return f"{local[0]}•••{local[-1] if len(local) > 3 else ''}@{domain}"
+
+
+def has_subscription(account: dict) -> bool:
+    return account["status"] == "subscribed"
+
+
 # ------------------------------------------------------------------ output
 
 def account_out(account: dict, copy: Copy) -> AccountOut:

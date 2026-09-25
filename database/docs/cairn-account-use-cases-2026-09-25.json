@@ -1,0 +1,127 @@
+{
+  "schema_version": "1.0",
+  "product": "Cairn",
+  "spec": "Account Registration, Onboarding, and Account Management (UC-REG-01 to UC-REG-16)",
+  "generated": "2026-09-25",
+  "status": "draft, pending usability testing and legal review",
+  "open_questions_card": "https://trello.com/c/DKgHH7M7",
+  "source_spec": "https://trello.com/c/nCJTOytG",
+  "decisions": [
+    {
+      "id": "D-2026-09-25-A1",
+      "decision": "Deleting the account deletes all of the user's data with it, no questions asked. No reason is requested and nothing is offered to keep the user."
+    },
+    {
+      "id": "D-2026-09-25-F1",
+      "decision": "Downloading and deleting are always free, including when the account is read-only."
+    }
+  ],
+  "new_use_cases": [
+    {
+      "id": "UC-REG-15",
+      "title": "Delete my account",
+      "actors": [
+        "User",
+        "Cairn (AI guide)"
+      ],
+      "trigger": "User taps Settings > Delete my account, or asks Cairn to delete their account.",
+      "preconditions": [
+        "User is signed in"
+      ],
+      "main_flow": [
+        "Show in plain words what will be deleted: the account, every case, every task, all conversation text, and notification settings.",
+        "If the user has an active app store subscription, state (information only, not a question) that store subscriptions are cancelled in the store, with a link to the store's instructions.",
+        "State where the confirmation will go (UC-CASE-21): the account email, masked.",
+        "One confirmation button: 'Delete my account and everything in it'.",
+        "Delete immediately: account, cases (including any in a 7-day hold), tasks, conversation text, notification preferences, stored tokens.",
+        "If Sign in with Apple was used, revoke tokens via the Sign in with Apple REST API (Apple TN3194).",
+        "Send one email confirmation, then purge the email address.",
+        "Sign the user out and return the app to an unauthenticated state."
+      ],
+      "alternate_flows": [
+        {
+          "name": "asked_in_chat_with_risk_of_harm_signal",
+          "behavior": "Cairn responds to safety first (988, Veterans Crisis Line if flagged) and takes no account action in that turn. If the user asks again, proceed with the main flow, no extra questions."
+        },
+        {
+          "name": "read_only_account",
+          "behavior": "Proceed normally. Always free."
+        }
+      ],
+      "rules": [
+        "No reason is asked. No retention offer, discount, or persuasion.",
+        "Available at any time from Settings (Apple App Review Guideline 5.1.1(v)).",
+        "Deletion is logged without deleted content."
+      ],
+      "postconditions": [
+        "All user data deleted",
+        "One confirmation email sent",
+        "User signed out"
+      ],
+      "open_questions": [
+        "Should the 7-day hold option also apply to account deletion? Draft: no (card 50, Q12)",
+        "Confirm purge of the email address immediately after the confirmation is sent (card 50, Q13)"
+      ],
+      "sources": [
+        "https://developer.apple.com/support/offering-account-deletion-in-your-app/",
+        "https://developer.apple.com/documentation/technotes/tn3194-handling-account-deletions-and-revoking-tokens-for-sign-in-with-apple",
+        "https://developer.apple.com/app-store/review/guidelines/",
+        "https://support.apple.com/en-us/HT202039",
+        "https://support.google.com/googleplay/answer/7018481",
+        "https://gdpr-info.eu/art-17-gdpr/"
+      ]
+    },
+    {
+      "id": "UC-REG-16",
+      "title": "Download all my data",
+      "actors": [
+        "User",
+        "Cairn (AI guide)"
+      ],
+      "trigger": "User taps Settings > Download my data, or asks Cairn for a copy of everything.",
+      "preconditions": [
+        "User is signed in"
+      ],
+      "main_flow": [
+        "Explain in one sentence what the download includes: profile, every case record and hand-off summary, task statuses, notification settings, and conversation text.",
+        "Generate the file and offer it for download in the app."
+      ],
+      "alternate_flows": [
+        {
+          "name": "read_only_account",
+          "behavior": "Proceed normally. Always free."
+        },
+        {
+          "name": "case_in_7_day_hold",
+          "behavior": "Included until the case is deleted."
+        }
+      ],
+      "rules": [
+        "Always free.",
+        "Never includes Social Security numbers, account numbers, or card numbers (none are stored, UC-CASE-15).",
+        "Supports GDPR Article 20 data portability as adopted in CAIRN-POL-PRIV-01."
+      ],
+      "postconditions": [
+        "User has a copy of their data"
+      ],
+      "open_questions": [
+        "File format: printable page, PDF, both, plus JSON for portability? (card 50, Q14)"
+      ],
+      "sources": [
+        "https://gdpr-info.eu/art-20-gdpr/"
+      ]
+    }
+  ],
+  "changes_to_existing": [
+    {
+      "id": "UC-REG-08",
+      "change": "Trial start wording and reminder wording updated.",
+      "copy": "Cairn is free for 28 days, and we will not ask for a card. Your 28 days begin when you start your first journey, so nothing counts down while you get settled. Once they begin, they keep counting even if you pause. After 28 days, a subscription is needed to keep adding and updating your tasks. If you do not subscribe, your account becomes read-only on day 29. Nothing is deleted and nothing is charged. You can always close, download, or delete your information for free. We will remind you in Cairn before your free time ends, and outside Cairn only in the way you choose when you start your journey.",
+      "open_question": "Does the trial reminder follow notification choices or is it always sent? (card 50, Q1)"
+    },
+    {
+      "id": "UC-REG-07",
+      "change": "No change to copy. Confirmed that notification preferences and phone numbers fall under the no-marketing promise."
+    }
+  ]
+}

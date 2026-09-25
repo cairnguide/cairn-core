@@ -59,7 +59,9 @@ SELECT c.id, c.status, c.journey_template_key, c.journey_template_version, c.jou
        c.name_fallback, c.attorney_triggers, c.shown_notices, c.tasks_paused_until, c.created_at, c.created_by,
        CASE WHEN c.status = 'draft'
             THEN c.last_activity_at + make_interval(days => cairn.setting_int('draft_retention_days')) END
-         AS draft_expires_at
+         AS draft_expires_at,
+       c.deletion_requested_at + make_interval(days => cairn.setting_int('case_deletion_hold_days'))
+         AS deletion_scheduled_for
 FROM cairn.cases c WHERE c.id = %s
 """
 
@@ -119,7 +121,8 @@ def case_out(c: Ctx, case: dict, answers: dict) -> CaseOut:
     return CaseOut(
         **{k: case[k] for k in ("id", "journey_template_key", "journey_template_version", "journey_started_at",
                                 "journey_started_on", "last_intake_step", "last_activity_at", "draft_expires_at",
-                                "death_not_yet_occurred", "skip_explainers", "tasks_paused_until", "created_at")},
+                                "death_not_yet_occurred", "skip_explainers", "tasks_paused_until",
+                                "deletion_scheduled_for", "created_at")},
         status=effective_status(case, c.account),
         display_name=display_name(case, answers, c.copy),
     )

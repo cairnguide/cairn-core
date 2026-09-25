@@ -380,16 +380,25 @@ class CaseHandoffResponse(ResponseModel):
 
 
 class AccountDeletionInfo(ResponseModel):
-    explanation: str
-    next_step: NextStep
+    """UC-REG-15. What will be deleted, where the confirmation goes, and one button. No reason is asked."""
+    explanation: str = Field(description="Account, every case, every task, all conversation text, and "
+                                         "notification settings.")
+    subscription_note: Note | None = Field(description="Only when there is a subscription. Information, not a "
+                                                       "question: store subscriptions are cancelled in the store.")
+    masked_email: str = Field(description="The account email, masked. The one confirmation goes here.")
+    confirmation_destination: str
+    next_step: NextStep = Field(description="One option: Delete my account and everything in it.")
 
 
 class AccountDeletionRequest(RequestModel):
-    confirm: Literal[True] = Field(description="Must be true. Sent only after the user confirms.")
+    confirm: Literal[True] = Field(description="Must be true. Sent only after the user taps the one button.")
 
 
 class AccountDeletionResponse(ResponseModel):
     notes: list[Note]
+    signed_out: Literal[True] = Field(description="The account is gone. Clear the session and return the app "
+                                                  "to its signed-out state.")
+    next_step: NextStep
 
 
 class PolicyVersions(ResponseModel):
@@ -726,6 +735,8 @@ class CaseOut(ResponseModel):
     death_not_yet_occurred: bool
     skip_explainers: bool
     tasks_paused_until: datetime | None
+    deletion_scheduled_for: datetime | None = Field(
+        default=None, description="Set when the user chose to delete this case with a 7-day hold (UC-END-13).")
     created_at: datetime
 
 
@@ -755,6 +766,7 @@ class CaseListItem(ResponseModel):
     display_name: str
     last_activity_at: datetime
     draft_expires_at: datetime | None
+    deletion_scheduled_for: datetime | None = None
 
 
 class CaseListResponse(ResponseModel):
@@ -936,7 +948,11 @@ class JourneyPreviewResponse(ResponseModel):
     pre_button_notice: PreButtonNotice | None = Field(description="Shown above the buttons. None when the "
                                                                   "journey can't start (the death hasn't happened).")
     start_available: bool
-    next_step: NextStep = Field(description="Start journey and Not yet, or why it can't start.")
+    notifications_chosen: bool = Field(
+        description="UC-CASE-19. False until the user makes, or skips, a notification choice for this journey. "
+                    "While false on a draft, next_step is choose_notifications (UC-CASE-12 step 3).")
+    next_step: NextStep = Field(description="Choose notifications, then Start journey and Not yet, or why it "
+                                            "can't start.")
     read_aloud: ReadAloud
 
 
@@ -1047,3 +1063,289 @@ class CaseStatusResponse(ResponseModel):
     categories: list[CategoryStatus]
     certificate_order: CertificateOrderRecord | None
     institution_notices: list[InstitutionNotice]
+
+
+# ------------------------------------------------------------------ keeping in touch (UC-CASE-19, UC-CASE-20)
+#
+# Per journey (one journey per case). No choice, or skipping, means in_app_only:
+# nothing is sent outside the app (D-2026-09-25-N2). SMS is not offered: it is an
+# open question for the MVP and needs legal review (card 50).
+
+class NotificationChannel(str, Enum):
+    email = "email"
+    push = "push"
+    in_app_only = "in_app_only"
+
+
+class NotificationReason(str, Enum):
+    due_date_upcoming = "due_date_upcoming"
+    inactivity = "inactivity"
+
+
+class NotificationFrequency(str, Enum):
+    as_it_happens = "as_it_happens"
+    daily_max = "daily_max"
+    weekly_max = "weekly_max"
+
+
+class NotificationChoice(RequestModel):
+    """in_app_only stands alone. Any other channel needs at least one reason, and each reason its timing."""
+    channels: list[NotificationChannel] = Field(min_length=1, max_length=3)
+    reasons: list[NotificationReason] = Field(default_factory=list, max_length=2)
+    due_date_lead_days: Literal[1, 3, 7] | None = None
+    inactivity_days: Literal[3, 7, 14] | None = None
+    frequency: NotificationFrequency = NotificationFrequency.daily_max
+
+    @model_validator(mode="after")
+    def _shape(self):
+        if len(set(self.channels)) != len(self.channels) or len(set(self.reasons)) != len(self.reasons):
+            raise ValueError("choose each channel and reason once")
+        if NotificationChannel.in_app_only in self.channels:
+            if len(self.channels) > 1:
+                raise ValueError("in_app_only can't be combined with another channel")
+            if self.reasons or self.due_date_lead_days or self.inactivity_days:
+                raise ValueError("in_app_only has no reasons or timing")
+            return self
+        if not self.reasons:
+            raise ValueError("choose at least one reason for Cairn to reach out")
+        for reason, days, name in ((NotificationReason.due_date_upcoming, self.due_date_lead_days,
+                                    "due_date_lead_days"),
+                                   (NotificationReason.inactivity, self.inactivity_days, "inactivity_days")):
+            if (reason in self.reasons) != (days is not None):
+                raise ValueError(f"{name} goes with the {reason.value} reason, and only with it")
+        return self
+
+
+class NotificationPreset(str, Enum):
+    keep_it_simple = "keep_it_simple"
+    skip = "skip"
+    same_as = "same_as"
+
+
+class NotificationSetIn(RequestModel):
+    """Send a choice, or a shortcut. same_as copies another journey's choice (UC-CASE-18)."""
+    choice: NotificationChoice | None = None
+    preset: NotificationPreset | None = None
+    same_as_case_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def _one(self):
+        if (self.choice is None) == (self.preset is None):
+            raise ValueError("send a choice or a preset, not both")
+        if (self.preset == NotificationPreset.same_as) != (self.same_as_case_id is not None):
+            raise ValueError("same_as_case_id goes with the same_as preset, and only with it")
+        return self
+
+
+class NotificationPreferencesOut(ResponseModel):
+    case_id: UUID
+    stored: bool = Field(description="False when nothing was chosen yet. The effective choice is then in_app_only.")
+    channels: list[NotificationChannel]
+    reasons: list[NotificationReason]
+    due_date_lead_days: int | None
+    inactivity_days: int | None
+    frequency: NotificationFrequency
+    push_permission_granted: bool
+    readback: str = Field(description="The choice in plain language, one sentence.")
+    updated_at: datetime | None
+
+
+class NotificationQuestion(ResponseModel):
+    id: Literal["channels", "reasons", "due_date_lead_days", "inactivity_days", "frequency"]
+    prompt: str
+    multi_select: bool
+    options: list[Option]
+    asked_when: str = Field(description="When the client shows this question.")
+
+
+class NotificationSetupResponse(ResponseModel):
+    """UC-CASE-19. The explanation, the shortcuts (same as another journey first), then one question at a time."""
+    case_id: UUID
+    display_name: str
+    explanation: str
+    preferences: NotificationPreferencesOut
+    masked_email: str = Field(description="Where email goes, shown masked. Works with Apple private email relay.")
+    shortcuts: list[Option] = Field(description="Use the same as another journey (when there is one), Keep it "
+                                                "simple for me, Choose for myself, Only in the app.")
+    questions: list[NotificationQuestion]
+    next_step: NextStep
+    read_aloud: ReadAloud
+
+
+class NotificationReadbackResponse(ResponseModel):
+    """Read back before saving. Nothing is stored."""
+    preferences: NotificationPreferencesOut
+    next_step: NextStep
+
+
+class NotificationSavedResponse(ResponseModel):
+    preferences: NotificationPreferencesOut
+    acknowledgment: str
+    next_step: NextStep = Field(description="request_push_permission when push was chosen and the OS hasn't "
+                                            "been asked, so the prompt only ever follows the user's choice.")
+
+
+class PushPermissionIn(RequestModel):
+    granted: bool = Field(description="What the OS permission prompt returned.")
+
+
+class JourneyNotifications(ResponseModel):
+    case_id: UUID
+    display_name: str
+    status: str
+    preferences: NotificationPreferencesOut
+
+
+class AccountNotificationsResponse(ResponseModel):
+    journeys: list[JourneyNotifications]
+    next_step: NextStep
+
+
+class NotificationChangeIn(RequestModel):
+    """UC-CASE-20. stop_everything applies in one step. A choice is read back first and applied on confirm."""
+    scope: Literal["all"] | list[UUID] | None = Field(
+        default=None, description="Which journeys. Omit when there is only one. stop_everything with no scope "
+                                  "means all of them.")
+    stop_everything: bool = False
+    choice: NotificationChoice | None = None
+    confirm: bool = Field(default=False, description="true once the user said yes to the readback.")
+
+    @model_validator(mode="after")
+    def _what(self):
+        if self.stop_everything == (self.choice is not None):
+            raise ValueError("send stop_everything or a choice")
+        if isinstance(self.scope, list) and not self.scope:
+            raise ValueError("scope needs at least one journey")
+        return self
+
+
+class NotificationChangeResponse(ResponseModel):
+    applied: bool
+    acknowledgment: str | None
+    readback: str | None
+    journeys: list[JourneyNotifications]
+    next_step: NextStep
+
+
+# ------------------------------------------------------------------ case deletion (UC-END-13, UC-CASE-21)
+
+class CaseDeletionInfo(ResponseModel):
+    explanation: str
+    masked_email: str
+    confirmation_destination: str = Field(description="Where the one confirmation goes, shown before the user "
+                                                       "confirms (UC-CASE-21).")
+    deletion_scheduled_for: datetime | None
+    next_step: NextStep
+
+
+class CaseDeletionIn(RequestModel):
+    mode: Literal["now", "hold"] = Field(description="Delete now, or in 7 days with a chance to keep it.")
+
+
+class CaseDeletionResponse(ResponseModel):
+    deleted: bool
+    deletion_scheduled_for: datetime | None
+    acknowledgment: str
+    next_step: NextStep
+
+
+# ------------------------------------------------------------------ download my data (UC-REG-16)
+
+class DataExportInfo(ResponseModel):
+    explanation: str = Field(description="One sentence on what the download includes.")
+    format: Literal["json"]
+    next_step: NextStep
+
+
+class ExportConsent(ResponseModel):
+    purpose: str
+    policy_version: str
+    granted_at: datetime
+    auth_provider: str | None
+    client: str | None
+
+
+class ExportReminder(ResponseModel):
+    kind: str
+    due_at: datetime
+    email_sent_at: datetime | None
+
+
+class ExportAnswer(ResponseModel):
+    field: str
+    answer_state: str
+    value: object | None
+    own_words: str | None
+
+
+class ExportTask(ResponseModel):
+    title: str
+    plain_summary: str
+    journey_week: int
+    status: str
+    due_on: date | None
+    completed_at: datetime | None
+
+
+class ExportNotificationSent(ResponseModel):
+    reason: str
+    channel: str
+    sent_at: datetime
+
+
+class ExportCase(ResponseModel):
+    id: UUID
+    status: str
+    display_name: str
+    created_at: datetime
+    journey_template_key: str | None
+    journey_started_at: datetime | None
+    tasks_paused_until: datetime | None
+    deletion_scheduled_for: datetime | None
+    summary: dict = Field(description="Where things stand: counts by status and the next step.")
+    answers: list[ExportAnswer]
+    person_who_died: dict | None = Field(description="Legal identity, if it was given inside a task. Never the "
+                                                     "Social Security number digits.")
+    tasks: list[ExportTask]
+    notification_preferences: NotificationPreferencesOut
+    notifications_sent: list[ExportNotificationSent]
+    conversation: list[dict] = Field(description="Conversation text and records kept for this case.")
+
+
+class DataExport(ResponseModel):
+    """UC-REG-16. Everything Cairn holds about the user, in a portable format (GDPR Article 20)."""
+    format: Literal["cairn-data-export"]
+    format_version: Literal[1]
+    generated_at: datetime
+    profile: dict
+    acknowledgments: list[ExportConsent]
+    trial_reminders: list[ExportReminder]
+    cases: list[ExportCase]
+
+
+# ------------------------------------------------------------------ account requests in chat
+
+class AccountChatSession(RequestModel):
+    """Kept by the client and sent back, like IntakeSession. The server never stores it (decision 7)."""
+    safety_first_shown: bool = Field(default=False, description="The last turn answered a risk-of-harm signal "
+                                                                "with safety first and took no account action.")
+
+
+class AccountMessageIn(RequestModel):
+    text: RedactedText
+    session: AccountChatSession | None = None
+
+
+class AccountMessageResponse(ResponseModel):
+    intent: Literal["delete_account", "download_data", "stop_notifications", "change_notifications",
+                    "sms_not_available", "safety_first", "help"]
+    acknowledgment: str | None
+    body: list[str] = Field(default_factory=list, description="Statements, never questions.")
+    support: list[SupportResource] = Field(default_factory=list)
+    proposal: NotificationChoice | None = Field(default=None, description="A notification change to read back. "
+                                                                          "Nothing is saved until confirmed.")
+    redactions: list[str] = Field(default_factory=list)
+    masked_text: str | None = None
+    next_step: NextStep
+    session: AccountChatSession
+    read_aloud: ReadAloud

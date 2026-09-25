@@ -25,6 +25,9 @@ from cairn_api.schemas import FieldKey, IntakeMessageIn, IntakeSession, SafetyMo
 from .conftest import REPO
 
 SPEC = json.loads((REPO / "database" / "docs" / "cairn-case-creation-use-cases.json").read_text())
+# Draft 0.4 changes to the 0.3.0 spec (UC-CASE-19 to UC-CASE-21 and changes to UC-CASE-10, 12, 18).
+CHANGES = json.loads((REPO / "database" / "docs" / "cairn-case-creation-use-cases-2026-09-25.json").read_text())
+CHANGED = {c["id"]: c for c in CHANGES["changes_to_existing"]}
 DEFINITION = json.loads((REPO / "database" / "content" / "journeys" / "journey-selection.json").read_text())
 COPY = load_case_copy()
 UC = {u["id"]: u for u in SPEC["use_cases"]}
@@ -52,8 +55,12 @@ def test_spec_copy_is_verbatim():
         "place_unknown": UC["UC-CASE-04"]["alternate_flows"][0]["copy"],
         "pause": UC["UC-CASE-10"]["copy"]["pause"],
         "resume_question": UC["UC-CASE-10"]["copy"]["resume_question"],
-        "pre_button_notice": UC["UC-CASE-12"]["copy"]["pre_button_notice"],
-        "confirmation_first_case": UC["UC-CASE-12"]["copy"]["confirmation_first_case"],
+        # Draft 0.4: the new pre-button notice, and the reminder sentence that follows the user's channel.
+        "pre_button_notice": CHANGED["UC-CASE-12"]["copy"]["before_button"],
+        "confirmation_first_case": UC["UC-CASE-12"]["copy"]["confirmation_first_case"].replace(
+            "We'll remind you a few days before your free time ends.", "{reminder_sentence}"),
+        "reminder_sentence_with_channel": CHANGED["UC-CASE-12"]["copy"]["reminder_sentence_with_channel"],
+        "reminder_sentence_in_app_only": CHANGED["UC-CASE-12"]["copy"]["reminder_sentence_in_app_only"],
         "not_today": UC["UC-CASE-13"]["alternate_flows"][0]["copy"],
         "small_task_example": UC["UC-CASE-13"]["copy"]["small_task_example"],
         "steady_care_example": UC["UC-CASE-14"]["copy"]["steady_care_example"],
@@ -62,8 +69,13 @@ def test_spec_copy_is_verbatim():
         "confirmation_existing_trial": UC["UC-CASE-18"]["copy"]["confirmation_existing_trial"],
     })
     expected.update({f"circumstance_question_{v}": t for v, t in SPEC["voice_samples_uc_case_05"].items()})
+    expected["notification_example"] = "You have a step coming up in Cairn."
+    uc19 = next(u for u in CHANGES["new_use_cases"] if u["id"] == "UC-CASE-19")
+    assert f"Example: '{expected['notification_example']}'" in uc19["rules"][0]
     assert COPY.spec == expected
-    assert COPY.version == SPEC["spec_version"]
+    assert COPY["confirmation_first_case"].endswith("{reminder_sentence}")
+    assert COPY["keep_it_simple"] == uc19["shortcut"]["label"]
+    assert COPY.version == "0.4.0" and CHANGES["spec"].endswith("draft 0.4")
 
 
 def test_case_copy_follows_house_style():
