@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cairn.guide/schemas/support-policy.schema.json",
+  "title": "Cairn support policy",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "version",
+    "status",
+    "modes",
+    "source_ids"
+  ],
+  "properties": {
+    "modes": {
+      "type": "object",
+      "required": [
+        "normal",
+        "overwhelm",
+        "acute_distress",
+        "risk_of_harm"
+      ]
+    },
+    "source_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^SRC-[A-Z0-9-]+$"
+      },
+      "uniqueItems": true
+    }
+  }
+}

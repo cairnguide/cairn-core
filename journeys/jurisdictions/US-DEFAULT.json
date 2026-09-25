@@ -1,0 +1,103 @@
+{
+  "schema_version": "1.0.0",
+  "id": "US-DEFAULT",
+  "name": "Any state without verified content",
+  "version": 1,
+  "legal_review": "pending",
+  "legal_review_card": "https://trello.com/c/ljqleuFz",
+  "last_researched": "2026-09-25",
+  "keys": {
+    "vital_records": {
+      "status": "general_only",
+      "summary": "Certified copies come from the vital records office in the state where the death happened. The CDC keeps a directory with a link to every state office.",
+      "fields": {
+        "directory_url": "https://www.cdc.gov/nchs/w2w/index.htm"
+      },
+      "source_ids": [
+        "SRC-CDC-W2W"
+      ]
+    },
+    "death_investigation": {
+      "status": "general_only",
+      "summary": "State law decides which deaths a medical examiner or coroner reviews and how the office works.",
+      "fields": {},
+      "source_ids": [
+        "SRC-CDC-DEATH-INVESTIGATION"
+      ]
+    },
+    "probate": {
+      "status": "not_verified",
+      "summary": "I do not have verified probate steps for this state yet. The state's court website and an estate attorney are the best next sources.",
+      "fields": {},
+      "source_ids": [],
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "No verified state content."
+      }
+    },
+    "intestacy": {
+      "status": "not_verified",
+      "summary": "I do not have verified guidance for this state yet. An estate attorney can confirm who inherits.",
+      "fields": {},
+      "source_ids": [],
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "Heirship is set by state law."
+      }
+    },
+    "vehicle_transfer": {
+      "status": "not_verified",
+      "summary": "I do not have verified vehicle steps for this state yet. The state motor vehicle agency's website lists the forms it accepts.",
+      "fields": {},
+      "source_ids": []
+    },
+    "dmv_notification": {
+      "status": "not_verified",
+      "summary": "I do not have verified steps for this state yet. The state motor vehicle agency's website explains how to report a deceased driver.",
+      "fields": {},
+      "source_ids": []
+    },
+    "cremation_authorization": {
+      "status": "not_verified",
+      "summary": "Your cremation provider will explain who must sign under this state's law.",
+      "fields": {},
+      "source_ids": []
+    },
+    "real_estate_transfer": {
+      "status": "not_verified",
+      "summary": "Real estate transfer depends on state law and the deed. Talk with an attorney.",
+      "fields": {},
+      "source_ids": [],
+      "attorney_flag": {
+        "level": "required",
+        "reason": "Real property transfer is a legal process."
+      }
+    },
+    "trust_administration": {
+      "status": "not_verified",
+      "summary": "Trustee duties are set by state law and the trust document. Talk with an attorney.",
+      "fields": {},
+      "source_ids": [],
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "No verified state content."
+      }
+    },
+    "state_tax": {
+      "status": "not_verified",
+      "summary": "I do not have verified state tax guidance yet. A tax professional can confirm what this state requires.",
+      "fields": {},
+      "source_ids": []
+    },
+    "grief_support": {
+      "status": "general_only",
+      "summary": "If you ever feel unsafe or in crisis, you can call or text 988, or chat at 988lifeline.org, any time.",
+      "fields": {
+        "crisis_line": "988"
+      },
+      "source_ids": [
+        "SRC-SAMHSA-988"
+      ]
+    }
+  }
+}

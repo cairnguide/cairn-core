@@ -1,0 +1,239 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cairn.guide/schemas/modules.schema.json",
+  "title": "Cairn journey modules",
+  "$defs": {
+    "condition": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "all"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "all": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/condition"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "any"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "any": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/condition"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "not"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "not": {
+              "$ref": "#/$defs/condition"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "fact",
+            "op"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "fact": {
+              "type": "string",
+              "minLength": 1
+            },
+            "op": {
+              "enum": [
+                "eq",
+                "ne",
+                "in",
+                "not_in",
+                "exists",
+                "ne_fact",
+                "eq_fact"
+              ]
+            },
+            "value": {}
+          }
+        }
+      ]
+    }
+  },
+  "type": "object",
+  "required": [
+    "schema_version",
+    "modules"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "modules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "version",
+          "title",
+          "applies_when",
+          "when_unknown",
+          "add_steps",
+          "remove_steps",
+          "step_overrides",
+          "support_resources",
+          "citations"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^M-[A-Z0-9-]+$"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "trailhead_hint": {
+            "type": "string",
+            "minLength": 1
+          },
+          "applies_when": {
+            "$ref": "#/$defs/condition"
+          },
+          "when_unknown": {
+            "enum": [
+              "ask",
+              "ask_if",
+              "include",
+              "exclude"
+            ]
+          },
+          "ask_if": {
+            "$ref": "#/$defs/condition"
+          },
+          "qualifying_question": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "flags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "add_steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "step_id",
+                "phase"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "step_id": {
+                  "type": "string",
+                  "pattern": "^S-[A-Z0-9-]+$"
+                },
+                "phase": {
+                  "enum": [
+                    "W0",
+                    "W1",
+                    "W2",
+                    "W3",
+                    "W4",
+                    "W5",
+                    "W6",
+                    "W7",
+                    "W8"
+                  ]
+                },
+                "after": {
+                  "type": "string",
+                  "pattern": "^S-[A-Z0-9-]+$"
+                },
+                "position": {
+                  "enum": [
+                    "first",
+                    "last"
+                  ]
+                }
+              }
+            }
+          },
+          "remove_steps": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^S-[A-Z0-9-]+$"
+            }
+          },
+          "step_overrides": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "note": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "priority": {
+                  "enum": [
+                    "normal",
+                    "high",
+                    "urgent"
+                  ]
+                },
+                "timing_shift_days": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "support_resources": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^SRC-[A-Z0-9-]+$"
+            },
+            "uniqueItems": true
+          },
+          "citations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^SRC-[A-Z0-9-]+$"
+            },
+            "uniqueItems": true
+          }
+        }
+      }
+    }
+  }
+}

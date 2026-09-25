@@ -1,0 +1,244 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cairn.guide/schemas/journey.schema.json",
+  "title": "Cairn base journey template",
+  "$defs": {
+    "condition": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "all"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "all": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/condition"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "any"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "any": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/condition"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "not"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "not": {
+              "$ref": "#/$defs/condition"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "fact",
+            "op"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "fact": {
+              "type": "string",
+              "minLength": 1
+            },
+            "op": {
+              "enum": [
+                "eq",
+                "ne",
+                "in",
+                "not_in",
+                "exists",
+                "ne_fact",
+                "eq_fact"
+              ]
+            },
+            "value": {}
+          }
+        }
+      ]
+    }
+  },
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "version",
+    "status",
+    "title",
+    "description",
+    "applies_when",
+    "phases",
+    "step_overrides",
+    "support_touchpoints",
+    "citations"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^J-[A-Z0-9-]+$"
+    },
+    "version": {
+      "type": "integer"
+    },
+    "status": {
+      "enum": [
+        "draft_pending_legal_review",
+        "legal_reviewed",
+        "retired"
+      ]
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "trailhead": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "applies_when": {
+      "$ref": "#/$defs/condition"
+    },
+    "phases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "phase",
+          "steps"
+        ],
+        "properties": {
+          "phase": {
+            "enum": [
+              "W0",
+              "W1",
+              "W2",
+              "W3",
+              "W4",
+              "W5",
+              "W6",
+              "W7",
+              "W8"
+            ]
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^S-[A-Z0-9-]+$"
+            }
+          }
+        }
+      }
+    },
+    "step_overrides": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "type": "string",
+            "minLength": 1
+          },
+          "priority": {
+            "enum": [
+              "normal",
+              "high",
+              "urgent"
+            ]
+          },
+          "timing_shift_days": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "dependency_substitutions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^S-[A-Z0-9-]+$"
+      }
+    },
+    "support_touchpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "after_phase",
+          "type",
+          "resource_ids",
+          "copy"
+        ],
+        "properties": {
+          "after_phase": {
+            "enum": [
+              "W0",
+              "W1",
+              "W2",
+              "W3",
+              "W4",
+              "W5",
+              "W6",
+              "W7",
+              "W8"
+            ]
+          },
+          "type": {
+            "enum": [
+              "gentle_check_in",
+              "bereavement_support"
+            ]
+          },
+          "resource_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^SRC-[A-Z0-9-]+$"
+            },
+            "uniqueItems": true
+          },
+          "copy": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "citations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^SRC-[A-Z0-9-]+$"
+      },
+      "uniqueItems": true
+    }
+  }
+}

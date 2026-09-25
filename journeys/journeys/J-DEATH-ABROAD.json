@@ -1,0 +1,143 @@
+{
+  "schema_version": "1.0.0",
+  "id": "J-DEATH-ABROAD",
+  "version": 1,
+  "status": "draft_pending_legal_review",
+  "title": "A U.S. citizen who died outside the United States",
+  "trailhead": "C_sudden",
+  "description": "For a death abroad. The U.S. embassy or consulate helps, and a Consular Report of Death Abroad is used in place of a U.S. state death certificate for estate matters.",
+  "applies_when": {
+    "all": [
+      {
+        "fact": "death_country",
+        "op": "ne",
+        "value": "US"
+      },
+      {
+        "any": [
+          {
+            "fact": "citizenship_status",
+            "op": "eq",
+            "value": "us_citizen"
+          },
+          {
+            "not": {
+              "fact": "citizenship_status",
+              "op": "exists"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "dependency_substitutions": {
+    "S-W1-ORDER-DC": "S-W1-CRODA",
+    "S-W1-HOW-DC-IS-MADE": "S-W1-CRODA"
+  },
+  "phases": [
+    {
+      "phase": "W0",
+      "steps": [
+        "S-W0-ABROAD-CONSULATE",
+        "S-W0-TELL-FAMILY",
+        "S-W0-SECURE-HOME",
+        "S-W0-FIND-WISHES"
+      ]
+    },
+    {
+      "phase": "W1",
+      "steps": [
+        "S-W1-CRODA",
+        "S-W1-CHECK-DC"
+      ]
+    },
+    {
+      "phase": "W2",
+      "steps": [
+        "S-W2-REPATRIATION",
+        "S-W2-CHOOSE-DISPOSITION",
+        "S-W2-COMPARE-FUNERAL-HOMES",
+        "S-W2-PLAN-SERVICE",
+        "S-W2-OBITUARY"
+      ]
+    },
+    {
+      "phase": "W3",
+      "steps": [
+        "S-W3-SSA-REPORT",
+        "S-W3-SSA-SURVIVOR",
+        "S-W3-CREDIT-BUREAUS",
+        "S-W3-DMV-LICENSE"
+      ]
+    },
+    {
+      "phase": "W4",
+      "steps": [
+        "S-W4-BANKS",
+        "S-W4-DEBTS",
+        "S-W4-LIFE-INSURANCE",
+        "S-W4-OTHER-INSURANCE",
+        "S-W4-UTILITIES"
+      ]
+    },
+    {
+      "phase": "W5",
+      "steps": [
+        "S-W5-FIND-WILL",
+        "S-W5-PROBATE-NEEDED",
+        "S-W5-GET-AUTHORITY",
+        "S-W5-IRS-FORM-56"
+      ]
+    },
+    {
+      "phase": "W6",
+      "steps": [
+        "S-W6-INVENTORY",
+        "S-W6-UNCLAIMED",
+        "S-W6-RETIREMENT-INVEST",
+        "S-W6-BELONGINGS",
+        "S-W6-DIGITAL"
+      ]
+    },
+    {
+      "phase": "W7",
+      "steps": [
+        "S-W7-FINAL-1040",
+        "S-W7-ESTATE-1041",
+        "S-W7-STATE-TAX"
+      ]
+    },
+    {
+      "phase": "W8",
+      "steps": [
+        "S-W8-CLOSE-ESTATE",
+        "S-W8-KEEP-RECORDS",
+        "S-W8-GRIEF-SUPPORT"
+      ]
+    }
+  ],
+  "step_overrides": {
+    "S-W1-CHECK-DC": {
+      "note": "Check the Consular Report of Death Abroad the same way you would a U.S. certificate."
+    }
+  },
+  "support_touchpoints": [
+    {
+      "after_phase": "W0",
+      "type": "gentle_check_in",
+      "resource_ids": [
+        "SRC-SAMHSA-988"
+      ],
+      "copy": "That was a lot to take in. Before we go on, how are you doing right now?"
+    },
+    {
+      "after_phase": "W6",
+      "type": "bereavement_support",
+      "resource_ids": [],
+      "copy": "Going through their things can bring grief to the surface. Would it help to talk about support options?"
+    }
+  ],
+  "citations": [
+    "SRC-STATE-DEATH-ABROAD"
+  ]
+}

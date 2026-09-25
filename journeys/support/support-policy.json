@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0.0",
+  "id": "SUPPORT-POLICY",
+  "version": 1,
+  "status": "draft_pending_card_26",
+  "purpose": "Defines how journey templates behave in each safety mode. Detection of the mode belongs to the crisis fallback plan (Trello card 26) and the voice eval set (card 48). Templates only carry emotional weight and check-in flags.",
+  "source_ids": [
+    "SRC-CAIRN-CARD-26",
+    "SRC-CAIRN-CARD-48",
+    "SRC-SAMHSA-988",
+    "SRC-VCL-988"
+  ],
+  "modes": {
+    "normal": {
+      "show_next_steps": 1,
+      "show_task_list": true,
+      "surface_deadlines": true,
+      "check_in_before_high_weight_steps": true,
+      "assistant_behavior": "Acknowledge, ask one question, offer the next action."
+    },
+    "overwhelm": {
+      "show_next_steps": 1,
+      "show_task_list": false,
+      "surface_deadlines": "hard_within_14_days_only",
+      "check_in_before_high_weight_steps": true,
+      "offer_pause": true,
+      "offer_delegate": true,
+      "assistant_behavior": "Shrink the view to one step. Offer to pause, or to hand a task to a helper. Never add new tasks in this mode."
+    },
+    "acute_distress": {
+      "show_next_steps": 0,
+      "show_task_list": false,
+      "surface_deadlines": false,
+      "suspend_task_mode": true,
+      "resume_requires_user_request": true,
+      "resources": [
+        "SRC-SAMHSA-988"
+      ],
+      "assistant_behavior": "Step back from logistics entirely. Acknowledge and stay with the person. Gently offer 988. Resume tasks only when the person asks."
+    },
+    "risk_of_harm": {
+      "show_next_steps": 0,
+      "show_task_list": false,
+      "surface_deadlines": false,
+      "suspend_task_mode": true,
+      "resume_requires_user_request": true,
+      "resources": [
+        "SRC-SAMHSA-988"
+      ],
+      "resources_if_veteran_case": [
+        "SRC-VCL-988"
+      ],
+      "emergency_instruction": "If someone is in immediate danger, call 911.",
+      "assistant_behavior": "Stop all logistics. Share 988 (call, text, or chat) directly and clearly. For veteran cases, also share the Veterans Crisis Line (dial 988 then press 1). Do not return to tasks in the same turn."
+    }
+  },
+  "deadline_rule": "Deadlines are never shown in acute_distress or risk_of_harm. In overwhelm, only hard deadlines inside 14 days are shown, framed as something that can be handed to a helper.",
+  "high_weight_rule": "Before a step with emotional_weight high and check_in_before true, the assistant asks how the person is doing and offers to wait."
+}

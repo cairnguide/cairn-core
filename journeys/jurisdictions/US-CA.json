@@ -1,0 +1,74 @@
+{
+  "schema_version": "1.0.0",
+  "id": "US-CA",
+  "name": "California",
+  "version": 1,
+  "legal_review": "pending",
+  "legal_review_card": "https://trello.com/c/ljqleuFz",
+  "last_researched": "2026-09-25",
+  "keys": {
+    "vital_records": {
+      "status": "researched",
+      "summary": "California issues authorized copies and informational copies. Only certain people, such as a spouse, domestic partner, parent, child, grandparent, grandchild, sibling, or someone with a court order, can get an authorized copy. Ordering an authorized copy by mail requires a notarized sworn statement. Copies can be ordered from the state or from the county recorder where the death happened, and the county is often faster.",
+      "fields": {
+        "issuing_offices": [
+          "California Department of Public Health, Vital Records",
+          "County recorder in the county where the death occurred"
+        ],
+        "copy_types": [
+          "authorized",
+          "informational"
+        ],
+        "authorized_eligible": [
+          "parent or legal guardian",
+          "child",
+          "grandparent",
+          "grandchild",
+          "sibling",
+          "spouse",
+          "domestic partner",
+          "party with a court order",
+          "funeral director ordering for an eligible person"
+        ],
+        "sworn_statement_required_for_authorized_by_mail": true,
+        "fees": [
+          {
+            "label": "CDPH fee per copy",
+            "amount_usd": 26,
+            "as_of": "2026-01"
+          }
+        ],
+        "fee_notes": "County recorder fees can differ. Online vendors add their own fee."
+      },
+      "source_ids": [
+        "SRC-CA-VS112",
+        "SRC-CA-VS112-2024",
+        "SRC-CA-SLO-DEATH-APP"
+      ]
+    },
+    "probate": {
+      "status": "researched",
+      "summary": "California lets a rightful heir collect personal property, like bank accounts, without probate by signing a small estate affidavit, if the California property that counts is worth $208,850 or less and at least 40 days have passed since the death. This limit applies to deaths on or after April 1, 2025. Real estate uses separate procedures.",
+      "fields": {
+        "simplified_path": {
+          "name": "Small estate affidavit (Probate Code 13100)",
+          "value_limit_usd": 208850,
+          "applies_to_deaths_from": "2025-04-01",
+          "waiting_period_days": 40,
+          "next_adjustment": "2028-04-01",
+          "attachment": "Judicial Council form DE-300"
+        },
+        "real_property_note": "Real property is handled through separate procedures. Talk with an attorney."
+      },
+      "source_ids": [
+        "SRC-CA-SD-SMALL-ESTATE",
+        "SRC-CA-SACLAW-DE300",
+        "SRC-SSA-POMS-CA-13100"
+      ],
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "Which assets count toward the limit is a legal question. An attorney or the court self-help center can confirm."
+      }
+    }
+  }
+}

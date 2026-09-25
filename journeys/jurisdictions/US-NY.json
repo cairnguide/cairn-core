@@ -1,0 +1,84 @@
+{
+  "schema_version": "1.0.0",
+  "id": "US-NY",
+  "name": "New York",
+  "version": 1,
+  "legal_review": "pending",
+  "legal_review_card": "https://trello.com/c/ljqleuFz",
+  "last_researched": "2026-09-25",
+  "keys": {
+    "vital_records": {
+      "status": "researched",
+      "summary": "New York has two separate systems. For a death anywhere in the five boroughs of New York City, certificates come from the NYC Health Department. For a death elsewhere in New York State, they come from the State Department of Health or the local registrar where the death happened. The state issues copies to a spouse, parent, child, or sibling, or to others who document a lawful right or claim.",
+      "fields": {
+        "issuing_offices": [
+          "NYC Department of Health and Mental Hygiene (deaths in the five boroughs)",
+          "NYS Department of Health, Vital Records, Albany (rest of state)",
+          "Local registrar where the death occurred (rest of state)"
+        ],
+        "state_eligible": [
+          "spouse",
+          "parent",
+          "child",
+          "sibling",
+          "person with a documented lawful right or claim",
+          "person with a New York State court order"
+        ],
+        "fees": [
+          {
+            "label": "NYS mail order, per copy",
+            "amount_usd": 30,
+            "as_of": "2026-09-25"
+          },
+          {
+            "label": "NYS online or phone order, per copy, plus vendor fee",
+            "amount_usd": 45,
+            "as_of": "2026-09-25"
+          }
+        ],
+        "nyc_note": "NYC certificates have two parts: the standard certificate and a confidential medical report of cause of death."
+      },
+      "source_ids": [
+        "SRC-NY-DOH-DEATH",
+        "SRC-NYC-DOH-DEATH"
+      ]
+    },
+    "dmv_notification": {
+      "status": "researched",
+      "summary": "New York DMV asks families to send notice of the death to prevent mail and identity theft. Plates and registration must be surrendered before the vehicle's liability insurance is cancelled. The estate may be able to get a registration refund after surrendering the plates.",
+      "fields": {
+        "insurance_rule": "Surrender plates and registration before cancelling liability insurance.",
+        "refund_form": "MV-215"
+      },
+      "source_ids": [
+        "SRC-NY-DMV-DECEASED",
+        "SRC-NY-DMV-DECEASED-2",
+        "SRC-NY-DMV-SURRENDER"
+      ]
+    },
+    "vehicle_transfer": {
+      "status": "researched",
+      "summary": "In New York, one vehicle worth $25,000 or less passes to the surviving spouse, or to children under 21 if there is no spouse. The spouse or guardian uses the Affidavit for Transfer of Motor Vehicle (MV-349.1). If there is more than one vehicle, or the vehicle is worth more, it becomes part of the estate and the executor or administrator handles the transfer.",
+      "fields": {
+        "forms": [
+          {
+            "number": "MV-349.1",
+            "name": "Affidavit for Transfer of Motor Vehicle"
+          },
+          {
+            "number": "MV-843",
+            "name": "Checklist for transferring a deceased owner's vehicle"
+          }
+        ],
+        "spouse_threshold_usd": 25000
+      },
+      "source_ids": [
+        "SRC-NY-DMV-DECEASED"
+      ],
+      "attorney_flag": {
+        "level": "suggest",
+        "reason": "Vehicles above the threshold are handled through the estate."
+      }
+    }
+  }
+}

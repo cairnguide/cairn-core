@@ -1,0 +1,437 @@
+{
+  "schema_version": "1.0.0",
+  "modules": [
+    {
+      "id": "M-VETERAN",
+      "version": 1,
+      "title": "Veteran",
+      "applies_when": {
+        "fact": "is_veteran",
+        "op": "eq",
+        "value": true
+      },
+      "when_unknown": "ask",
+      "qualifying_question": "Did your loved one ever serve in the military?",
+      "add_steps": [
+        {
+          "step_id": "S-W3-VA-NOTIFY",
+          "phase": "W3"
+        },
+        {
+          "step_id": "S-W2-VA-MEMORIAL-BENEFITS",
+          "phase": "W2",
+          "after": "S-W2-COMPARE-FUNERAL-HOMES"
+        },
+        {
+          "step_id": "S-W3-VA-BURIAL-ALLOWANCE",
+          "phase": "W3"
+        }
+      ],
+      "remove_steps": [],
+      "step_overrides": {
+        "S-W2-HEADSTONE": {
+          "note": "Eligible veterans can receive a government headstone, marker, or medallion at no cost. See the VA memorial benefits step before ordering a private marker."
+        }
+      },
+      "support_resources": [
+        "SRC-VCL-988"
+      ],
+      "citations": [
+        "SRC-VA-QSG-BURIAL",
+        "SRC-VCL-988"
+      ]
+    },
+    {
+      "id": "M-SSA-BENEFICIARY",
+      "version": 1,
+      "title": "Received Social Security",
+      "applies_when": {
+        "fact": "received_ssa_benefits",
+        "op": "eq",
+        "value": true
+      },
+      "when_unknown": "include",
+      "qualifying_question": "Was your loved one receiving Social Security payments?",
+      "add_steps": [
+        {
+          "step_id": "S-W3-SSA-RETURN-PAYMENT",
+          "phase": "W3",
+          "after": "S-W3-SSA-REPORT"
+        }
+      ],
+      "remove_steps": [],
+      "step_overrides": {},
+      "support_resources": [],
+      "citations": [
+        "SRC-USAGOV-SSA-REPORT"
+      ]
+    },
+    {
+      "id": "M-SURVIVING-SPOUSE",
+      "version": 1,
+      "title": "User is the surviving spouse",
+      "applies_when": {
+        "fact": "user_role",
+        "op": "eq",
+        "value": "surviving_spouse"
+      },
+      "when_unknown": "exclude",
+      "qualifying_question": null,
+      "add_steps": [],
+      "remove_steps": [],
+      "step_overrides": {
+        "S-W3-SSA-SURVIVOR": {
+          "priority": "high",
+          "note": "As the surviving spouse, you may be the first in line for the one-time payment."
+        },
+        "S-W7-FINAL-1040": {
+          "note": "The IRS treats a surviving spouse as married for the whole year of death if they do not remarry that year."
+        }
+      },
+      "support_resources": [],
+      "citations": [
+        "SRC-SSA-CFR-404-390",
+        "SRC-IRS-FINAL-RETURN"
+      ]
+    },
+    {
+      "id": "M-EMPLOYED",
+      "version": 1,
+      "title": "Was working or had an employer plan",
+      "applies_when": {
+        "any": [
+          {
+            "fact": "was_employed",
+            "op": "eq",
+            "value": true
+          },
+          {
+            "fact": "had_employer_plan",
+            "op": "eq",
+            "value": true
+          }
+        ]
+      },
+      "when_unknown": "ask",
+      "qualifying_question": "Was your loved one working, or did they have a pension or retirement plan from a job?",
+      "add_steps": [
+        {
+          "step_id": "S-W4-EMPLOYER",
+          "phase": "W4",
+          "after": "S-W4-LIFE-INSURANCE"
+        }
+      ],
+      "remove_steps": [],
+      "step_overrides": {},
+      "support_resources": [],
+      "citations": [
+        "SRC-IRS-RETIREMENT-DEATH"
+      ]
+    },
+    {
+      "id": "M-IMMIGRATION",
+      "version": 1,
+      "title": "Pending immigration case",
+      "applies_when": {
+        "fact": "pending_immigration_case",
+        "op": "eq",
+        "value": true
+      },
+      "when_unknown": "ask_if",
+      "ask_if": {
+        "fact": "citizenship_status",
+        "op": "ne",
+        "value": "us_citizen"
+      },
+      "qualifying_question": "Was your loved one part of any immigration petition or application that was still in progress?",
+      "add_steps": [
+        {
+          "step_id": "S-W3-USCIS",
+          "phase": "W3"
+        }
+      ],
+      "remove_steps": [],
+      "step_overrides": {},
+      "support_resources": [],
+      "citations": [
+        "SRC-USCIS-PM-V7A9"
+      ]
+    },
+    {
+      "id": "M-NO-WILL",
+      "version": 1,
+      "title": "No will",
+      "trailhead_hint": "not_A",
+      "applies_when": {
+        "fact": "has_will",
+        "op": "eq",
+        "value": false
+      },
+      "when_unknown": "exclude",
+      "qualifying_question": "Do you know if they had a will?",
+      "add_steps": [
+        {
+          "step_id": "S-W5-NO-WILL",
+          "phase": "W5",
+          "after": "S-W5-FIND-WILL"
+        }
+      ],
+      "remove_steps": [],
+      "step_overrides": {},
+      "support_resources": [],
+      "citations": []
+    },
+    {
+      "id": "M-HAS-TRUST",
+      "version": 1,
+      "title": "Living trust",
+      "trailhead_hint": "A_estate_plan_in_place",
+      "applies_when": {
+        "fact": "has_trust",
+        "op": "eq",
+        "value": true
+      },
+      "when_unknown": "ask",
+      "qualifying_question": "Did they set up a living trust?",
+      "add_steps": [
+        {
+          "step_id": "S-W5-TRUST",
+          "phase": "W5",
+          "after": "S-W5-FIND-WILL"
+        }
+      ],
+      "remove_steps": [],
+      "step_overrides": {},
+      "support_resources": [],
+      "citations": []
+    },
+    {
+      "id": "M-BURIAL",
+      "version": 1,
+      "title": "Burial",
+      "applies_when": {
+        "fact": "disposition",
+        "op": "in",
+        "value": [
+          "burial",
+          "green_burial"
+        ]
+      },
+      "when_unknown": "exclude",
+      "qualifying_question": null,
+      "add_steps": [
+        {
+          "step_id": "S-W2-CEMETERY",
+          "phase": "W2",
+          "after": "S-W2-COMPARE-FUNERAL-HOMES"
+        },
+        {
+          "step_id": "S-W2-HEADSTONE",
+          "phase": "W2"
+        }
+      ],
+      "remove_steps": [],
+      "step_overrides": {},
+      "support_resources": [],
+      "citations": []
+    },
+    {
+      "id": "M-CREMATION",
+      "version": 1,
+      "title": "Cremation",
+      "applies_when": {
+        "fact": "disposition",
+        "op": "eq",
+        "value": "cremation"
+      },
+      "when_unknown": "exclude",
+      "qualifying_question": null,
+      "add_steps": [
+        {
+          "step_id": "S-W2-CREMATION-AUTH",
+          "phase": "W2",
+          "after": "S-W2-COMPARE-FUNERAL-HOMES"
+        },
+        {
+          "step_id": "S-W2-REMAINS-PLAN",
+          "phase": "W2"
+        }
+      ],
+      "remove_steps": [],
+      "step_overrides": {},
+      "support_resources": [],
+      "citations": []
+    },
+    {
+      "id": "M-FAITH-COMMUNITY",
+      "version": 1,
+      "title": "Faith community",
+      "applies_when": {
+        "fact": "faith_tradition",
+        "op": "not_in",
+        "value": [
+          "none",
+          "prefer_not_to_say"
+        ]
+      },
+      "when_unknown": "exclude",
+      "qualifying_question": "Is there a faith or cultural tradition you would like the arrangements to honor?",
+      "add_steps": [
+        {
+          "step_id": "S-W2-CONTACT-FAITH",
+          "phase": "W2",
+          "position": "first"
+        }
+      ],
+      "remove_steps": [],
+      "step_overrides": {},
+      "support_resources": [],
+      "citations": []
+    },
+    {
+      "id": "M-FAITH-JEWISH",
+      "version": 1,
+      "title": "Jewish tradition",
+      "applies_when": {
+        "fact": "faith_tradition",
+        "op": "eq",
+        "value": "jewish"
+      },
+      "when_unknown": "exclude",
+      "qualifying_question": null,
+      "add_steps": [],
+      "remove_steps": [],
+      "flags": [
+        "time_sensitive_disposition"
+      ],
+      "step_overrides": {
+        "S-W2-CONTACT-FAITH": {
+          "priority": "urgent",
+          "note": "Jewish tradition calls for burial as soon as possible after death. Families are encouraged to contact the rabbi first, and many communities have a chevra kadisha (burial society) that helps."
+        },
+        "S-W2-COMPARE-FUNERAL-HOMES": {
+          "note": "Ask whether the funeral home observes Jewish customs. Jewish funerals traditionally avoid embalming and viewing. Your rabbi can advise on which providers to use."
+        },
+        "S-W2-CHOOSE-DISPOSITION": {
+          "note": "Ask your rabbi about cremation, since many Jewish communities do not practice it."
+        }
+      },
+      "support_resources": [],
+      "citations": [
+        "SRC-RA-JEWISH-FUNERAL",
+        "SRC-URJ-JEWISH-FUNERAL"
+      ]
+    },
+    {
+      "id": "M-FAITH-MUSLIM",
+      "version": 1,
+      "title": "Muslim tradition",
+      "applies_when": {
+        "fact": "faith_tradition",
+        "op": "eq",
+        "value": "muslim"
+      },
+      "when_unknown": "exclude",
+      "qualifying_question": null,
+      "add_steps": [],
+      "remove_steps": [],
+      "flags": [
+        "time_sensitive_disposition"
+      ],
+      "step_overrides": {
+        "S-W2-CONTACT-FAITH": {
+          "priority": "urgent",
+          "note": "Islamic practice calls for burial as soon as possible, often within 24 hours, with ritual washing (ghusl) and shrouding first. Many mosques help families with these steps. Contact the mosque or imam right away."
+        },
+        "S-W2-COMPARE-FUNERAL-HOMES": {
+          "note": "Ask the mosque which funeral homes they work with, and tell the funeral home about the timing need at the first call."
+        }
+      },
+      "support_resources": [],
+      "citations": [
+        "SRC-MASJID-JANAZAH"
+      ]
+    },
+    {
+      "id": "M-DIED-OUT-OF-STATE",
+      "version": 1,
+      "title": "Died in a different state than home",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "death_country",
+            "op": "eq",
+            "value": "US"
+          },
+          {
+            "fact": "death_state",
+            "op": "ne_fact",
+            "value": "residence_state"
+          }
+        ]
+      },
+      "when_unknown": "exclude",
+      "qualifying_question": null,
+      "add_steps": [],
+      "remove_steps": [],
+      "step_overrides": {
+        "S-W1-HOW-DC-IS-MADE": {
+          "note": "Because the death happened in a different state than where they lived, certified copies come from the state where the death happened."
+        },
+        "S-W2-COMPARE-FUNERAL-HOMES": {
+          "note": "If you want them brought home, ask each funeral home how they handle transfers between states and what it costs."
+        }
+      },
+      "support_resources": [],
+      "citations": [
+        "SRC-CDC-W2W"
+      ]
+    },
+    {
+      "id": "M-OWNS-VEHICLE",
+      "version": 1,
+      "title": "Owned a vehicle",
+      "applies_when": {
+        "fact": "owned_vehicle",
+        "op": "eq",
+        "value": true
+      },
+      "when_unknown": "ask",
+      "qualifying_question": "Did they own a car or other vehicle?",
+      "add_steps": [
+        {
+          "step_id": "S-W6-VEHICLES",
+          "phase": "W6",
+          "after": "S-W6-INVENTORY"
+        }
+      ],
+      "remove_steps": [],
+      "step_overrides": {},
+      "support_resources": [],
+      "citations": []
+    },
+    {
+      "id": "M-OWNS-REAL-ESTATE",
+      "version": 1,
+      "title": "Owned real estate",
+      "applies_when": {
+        "fact": "owned_real_estate",
+        "op": "eq",
+        "value": true
+      },
+      "when_unknown": "ask",
+      "qualifying_question": "Did they own a home or any land?",
+      "add_steps": [
+        {
+          "step_id": "S-W6-REAL-ESTATE",
+          "phase": "W6",
+          "after": "S-W6-INVENTORY"
+        }
+      ],
+      "remove_steps": [],
+      "step_overrides": {},
+      "support_resources": [],
+      "citations": []
+    }
+  ]
+}

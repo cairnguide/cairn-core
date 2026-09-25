@@ -1,0 +1,1738 @@
+{
+  "plan_type": "mvp_first_28_days",
+  "journey": {
+    "id": "J-EXPECTED-HOME-HOSPICE",
+    "version": 1,
+    "title": "An expected death at home with hospice",
+    "status": "draft_pending_legal_review"
+  },
+  "modules_applied": [
+    "M-VETERAN",
+    "M-SSA-BENEFICIARY",
+    "M-SURVIVING-SPOUSE",
+    "M-EMPLOYED",
+    "M-BURIAL",
+    "M-FAITH-COMMUNITY",
+    "M-FAITH-JEWISH",
+    "M-OWNS-VEHICLE",
+    "M-OWNS-REAL-ESTATE"
+  ],
+  "flags": [
+    "time_sensitive_disposition"
+  ],
+  "qualifying_questions": [],
+  "question_policy": "Ask one qualifying question at a time, only when the related phase is near, and never in overwhelm, acute_distress, or risk_of_harm modes.",
+  "estimated_certified_copies": 7,
+  "phases": [
+    {
+      "phase": "W0",
+      "title": "The first hours",
+      "steps": [
+        {
+          "step_id": "S-W0-HOSPICE-CALL",
+          "version": 1,
+          "title": "Call the hospice team",
+          "copy": {
+            "summary": "When someone dies at home in hospice care, the hospice agency is usually the first call. They will explain who confirms the death and what happens next.",
+            "acknowledge": "You do not have to do anything quickly right now. Taking a few minutes to sit with them is okay.",
+            "ask": "Do you have the hospice agency's phone number nearby?",
+            "offer_next": "When you are ready, I can help you think about which funeral home to call."
+          },
+          "how_to": [
+            "Find the hospice agency's 24-hour number, often on paperwork in the home.",
+            "Tell them the time you noticed they had died.",
+            "Ask what they need from you and what they will handle."
+          ],
+          "notes": [],
+          "priority": "normal",
+          "window": "first_24_hours",
+          "mvp_first_28_days": true,
+          "target_date": "2026-09-20",
+          "deadlines": [],
+          "certified_copy_needed": false,
+          "depends_on": [],
+          "sensitive_data": {
+            "fields": [],
+            "chat_capture": "allowed"
+          },
+          "attorney_flag": {
+            "level": "none",
+            "reason": null
+          },
+          "support": {
+            "emotional_weight": "high",
+            "check_in_before": true
+          },
+          "tracker": {
+            "type": "task",
+            "repeatable_per": null
+          },
+          "citations": [],
+          "citation_status": "general_guidance",
+          "jurisdiction": [],
+          "status": "not_started"
+        },
+        {
+          "step_id": "S-W0-TELL-FAMILY",
+          "version": 1,
+          "title": "Tell close family and friends",
+          "copy": {
+            "summary": "You do not have to make every call yourself. Many families ask one or two people to help spread the news.",
+            "acknowledge": "Telling people can reopen the hurt each time. It is okay to share this job.",
+            "ask": "Is there one person you trust who could make some of these calls for you?",
+            "offer_next": "I can help you make a short list of who needs to hear from you personally."
+          },
+          "how_to": [
+            "Write down the few people who should hear from you directly.",
+            "Ask a helper to reach everyone else.",
+            "If they had an employer, a helper can note that for later. You do not need to call today."
+          ],
+          "notes": [],
+          "priority": "normal",
+          "window": "first_24_hours",
+          "mvp_first_28_days": true,
+          "target_date": "2026-09-20",
+          "deadlines": [],
+          "certified_copy_needed": false,
+          "depends_on": [],
+          "sensitive_data": {
+            "fields": [],
+            "chat_capture": "allowed"
+          },
+          "attorney_flag": {
+            "level": "none",
+            "reason": null
+          },
+          "support": {
+            "emotional_weight": "high",
+            "check_in_before": false
+          },
+          "tracker": {
+            "type": "task",
+            "repeatable_per": null
+          },
+          "citations": [],
+          "citation_status": "general_guidance",
+          "jurisdiction": [],
+          "status": "not_started"
+        },
+        {
+          "step_id": "S-W0-SECURE-HOME",
+          "version": 1,
+          "title": "Look after the home, pets, and car",
+          "copy": {
+            "summary": "If your loved one lived alone, someone should check on pets, lock the home, and collect mail.",
+            "acknowledge": "Small practical things can wait a day, but pets and an empty home cannot wait long.",
+            "ask": "Did they have any pets that need care right now?",
+            "offer_next": "I can add a reminder to check on the home and mail each week."
+          },
+          "how_to": [
+            "Arrange care for any pets.",
+            "Lock doors and windows and keep keys in one place.",
+            "Collect mail and packages.",
+            "Keep valuables and important papers somewhere safe."
+          ],
+          "notes": [],
+          "priority": "normal",
+          "window": "first_week",
+          "mvp_first_28_days": true,
+          "target_date": "2026-09-21",
+          "deadlines": [],
+          "certified_copy_needed": false,
+          "depends_on": [],
+          "sensitive_data": {
+            "fields": [],
+            "chat_capture": "allowed"
+          },
+          "attorney_flag": {
+            "level": "none",
+            "reason": null
+          },
+          "support": {
+            "emotional_weight": "low",
+            "check_in_before": false
+          },
+          "tracker": {
+            "type": "task",
+            "repeatable_per": null
+          },
+          "citations": [],
+          "citation_status": "general_guidance",
+          "jurisdiction": [],
+          "status": "not_started"
+        },
+        {
+          "step_id": "S-W0-FIND-WISHES",
+          "version": 1,
+          "title": "Look for written wishes or a prepaid plan",
+          "copy": {
+            "summary": "Your loved one may have left written wishes about their funeral, or paid ahead for services. Finding these early can save money and hard decisions.",
+            "acknowledge": "It can be comforting to know what they wanted.",
+            "ask": "Do you know if they ever spoke about or wrote down their wishes?",
+            "offer_next": "If you find a prepaid plan, I can help you make sure the funeral home honors it."
+          },
+          "how_to": [
+            "Check a desk, file box, or safe for a letter of wishes or a funeral contract.",
+            "Ask close family if they know of any plans.",
+            "If there is a prepaid funeral contract, note the provider's name."
+          ],
+          "notes": [],
+          "priority": "normal",
+          "window": "first_24_hours",
+          "mvp_first_28_days": true,
+          "target_date": "2026-09-20",
+          "deadlines": [],
+          "certified_copy_needed": false,
+          "depends_on": [],
+          "sensitive_data": {
+            "fields": [],
+            "chat_capture": "allowed"
+          },
+          "attorney_flag": {
+            "level": "none",
+            "reason": null
+          },
+          "support": {
+            "emotional_weight": "medium",
+            "check_in_before": false
+          },
+          "tracker": {
+            "type": "task",
+            "repeatable_per": null
+          },
+          "citations": [],
+          "citation_status": "general_guidance",
+          "jurisdiction": [],
+          "status": "not_started"
+        }
+      ]
+    },
+    {
+      "phase": "W1",
+      "title": "The death certificate",
+      "steps": [
+        {
+          "step_id": "S-W1-HOW-DC-IS-MADE",
+          "version": 1,
+          "title": "Know how the death certificate gets made",
+          "copy": {
+            "summary": "The funeral home usually prepares and files the death certificate with a doctor or medical examiner. Certified copies come from the vital records office in the state where the death happened, which may not be the state where your loved one lived.",
+            "acknowledge": "Paperwork is the last thing anyone wants to think about now.",
+            "ask": "Which state did the death happen in?",
+            "offer_next": "Once I know the state, I can show you exactly where to order copies."
+          },
+          "how_to": [
+            "Ask the funeral home when they expect the certificate to be filed.",
+            "Give the funeral home accurate details for the certificate, like full legal name and parents' names."
+          ],
+          "notes": [],
+          "priority": "normal",
+          "window": "first_week",
+          "mvp_first_28_days": true,
+          "target_date": "2026-09-22",
+          "deadlines": [],
+          "certified_copy_needed": false,
+          "depends_on": [],
+          "sensitive_data": {
+            "fields": [],
+            "chat_capture": "allowed"
+          },
+          "attorney_flag": {
+            "level": "none",
+            "reason": null
+          },
+          "support": {
+            "emotional_weight": "medium",
+            "check_in_before": false
+          },
+          "tracker": {
+            "type": "task",
+            "repeatable_per": null
+          },
+          "citations": [
+            "SRC-CDC-W2W"
+          ],
+          "citation_status": "cited",
+          "jurisdiction": [
+            {
+              "key": "vital_records",
+              "resolved_by": "death_state",
+              "state": "NH",
+              "overlay": "US-NH",
+              "status": "researched",
+              "legal_review": "pending",
+              "summary": "In New Hampshire, certified copies come from the state Division of Vital Records Administration or any city or town clerk. You must have a direct and tangible interest, such as being immediate family or the legal representative, and show photo ID.",
+              "fields": {
+                "issuing_offices": [
+                  "NH Division of Vital Records Administration, 9 Ratification Way, Concord, NH 03301-2455",
+                  "Any New Hampshire city or town clerk"
+                ],
+                "eligibility": "Applicant must have a direct and tangible interest in the record.",
+                "id_required": true,
+                "application_must_include": [
+                  "full name of the deceased",
+                  "date and place of death",
+                  "purpose of the request",
+                  "applicant's relationship to the deceased",
+                  "applicant's name, address, phone, and signature"
+                ],
+                "fees": [
+                  {
+                    "label": "Search fee, includes first certified copy, charged even if no record is found",
+                    "amount_usd": 15,
+                    "as_of": "2026-09-25"
+                  },
+                  {
+                    "label": "Each additional copy of the same record ordered at the same time",
+                    "amount_usd": 10,
+                    "as_of": "2026-09-25"
+                  }
+                ],
+                "fee_notes": "Card processing fees may be added.",
+                "order_url": "https://www.sos.nh.gov/vital-records/request-certificates"
+              },
+              "source_ids": [
+                "SRC-NH-DVRA-CERTS",
+                "SRC-NH-RSA-5C-82",
+                "SRC-NH-RSA-5C-83"
+              ],
+              "attorney_flag": null,
+              "assistant_must_say_unverified": false
+            }
+          ],
+          "status": "not_started"
+        },
+        {
+          "step_id": "S-W1-ORDER-DC",
+          "version": 1,
+          "title": "Order certified copies of the death certificate",
+          "copy": {
+            "summary": "Most banks, insurers, and government offices need to see a certified copy. Ordering enough at once usually costs less than ordering more later.",
+            "acknowledge": "This is one of the most useful things you can do this week, and I can do the counting for you.",
+            "ask": "Would you like me to estimate how many copies you need from the accounts you know about so far?",
+            "offer_next": "After you order, I will track when the copies arrive."
+          },
+          "how_to": [
+            "Decide how many copies you need. Cairn estimates this from your list of banks, insurers, and agencies.",
+            "Order through the funeral home, or directly from the state or local vital records office.",
+            "Bring or send photo ID. Many states require it."
+          ],
+          "notes": [],
+          "priority": "normal",
+          "window": "first_2_weeks",
+          "mvp_first_28_days": true,
+          "target_date": "2026-09-27",
+          "deadlines": [],
+          "certified_copy_needed": false,
+          "depends_on": [
+            "S-W1-HOW-DC-IS-MADE"
+          ],
+          "sensitive_data": {
+            "fields": [],
+            "chat_capture": "allowed"
+          },
+          "attorney_flag": {
+            "level": "none",
+            "reason": null
+          },
+          "support": {
+            "emotional_weight": "low",
+            "check_in_before": false
+          },
+          "tracker": {
+            "type": "task",
+            "repeatable_per": null
+          },
+          "citations": [
+            "SRC-CDC-W2W"
+          ],
+          "citation_status": "cited",
+          "jurisdiction": [
+            {
+              "key": "vital_records",
+              "resolved_by": "death_state",
+              "state": "NH",
+              "overlay": "US-NH",
+              "status": "researched",
+              "legal_review": "pending",
+              "summary": "In New Hampshire, certified copies come from the state Division of Vital Records Administration or any city or town clerk. You must have a direct and tangible interest, such as being immediate family or the legal representative, and show photo ID.",
+              "fields": {
+                "issuing_offices": [
+                  "NH Division of Vital Records Administration, 9 Ratification Way, Concord, NH 03301-2455",
+                  "Any New Hampshire city or town clerk"
+                ],
+                "eligibility": "Applicant must have a direct and tangible interest in the record.",
+                "id_required": true,
+                "application_must_include": [
+                  "full name of the deceased",
+                  "date and place of death",
+                  "purpose of the request",
+                  "applicant's relationship to the deceased",
+                  "applicant's name, address, phone, and signature"
+                ],
+                "fees": [
+                  {
+                    "label": "Search fee, includes first certified copy, charged even if no record is found",
+                    "amount_usd": 15,
+                    "as_of": "2026-09-25"
+                  },
+                  {
+                    "label": "Each additional copy of the same record ordered at the same time",
+                    "amount_usd": 10,
+                    "as_of": "2026-09-25"
+                  }
+                ],
+                "fee_notes": "Card processing fees may be added.",
+                "order_url": "https://www.sos.nh.gov/vital-records/request-certificates"
+              },
+              "source_ids": [
+                "SRC-NH-DVRA-CERTS",
+                "SRC-NH-RSA-5C-82",
+                "SRC-NH-RSA-5C-83"
+              ],
+              "attorney_flag": null,
+              "assistant_must_say_unverified": false
+            }
+          ],
+          "status": "not_started"
+        },
+        {
+          "step_id": "S-W1-CHECK-DC",
+          "version": 1,
+          "title": "Check each copy for mistakes",
+          "copy": {
+            "summary": "A spelling error or wrong date can cause banks and agencies to reject a certificate. It is easier to fix early.",
+            "acknowledge": "It helps to read it slowly, maybe with someone beside you.",
+            "ask": "When your copies arrive, would you like a short checklist of what to look at?",
+            "offer_next": "If something is wrong, I can help you find out how to ask for a correction."
+          },
+          "how_to": [
+            "Check the full name, date of birth, date of death, and Social Security number field.",
+            "Check marital status and the name of any spouse.",
+            "Tell the funeral home right away if anything is wrong."
+          ],
+          "notes": [],
+          "priority": "normal",
+          "window": "first_month",
+          "mvp_first_28_days": true,
+          "target_date": "2026-10-04",
+          "deadlines": [],
+          "certified_copy_needed": false,
+          "depends_on": [
+            "S-W1-ORDER-DC"
+          ],
+          "sensitive_data": {
+            "fields": [],
+            "chat_capture": "allowed"
+          },
+          "attorney_flag": {
+            "level": "none",
+            "reason": null
+          },
+          "support": {
+            "emotional_weight": "high",
+            "check_in_before": true
+          },
+          "tracker": {
+            "type": "task",
+            "repeatable_per": null
+          },
+          "citations": [],
+          "citation_status": "general_guidance",
+          "jurisdiction": [
+            {
+              "key": "vital_records",
+              "resolved_by": "death_state",
+              "state": "NH",
+              "overlay": "US-NH",
+              "status": "researched",
+              "legal_review": "pending",
+              "summary": "In New Hampshire, certified copies come from the state Division of Vital Records Administration or any city or town clerk. You must have a direct and tangible interest, such as being immediate family or the legal representative, and show photo ID.",
+              "fields": {
+                "issuing_offices": [
+                  "NH Division of Vital Records Administration, 9 Ratification Way, Concord, NH 03301-2455",
+                  "Any New Hampshire city or town clerk"
+                ],
+                "eligibility": "Applicant must have a direct and tangible interest in the record.",
+                "id_required": true,
+                "application_must_include": [
+                  "full name of the deceased",
+                  "date and place of death",
+                  "purpose of the request",
+                  "applicant's relationship to the deceased",
+                  "applicant's name, address, phone, and signature"
+                ],
+                "fees": [
+                  {
+                    "label": "Search fee, includes first certified copy, charged even if no record is found",
+                    "amount_usd": 15,
+                    "as_of": "2026-09-25"
+                  },
+                  {
+                    "label": "Each additional copy of the same record ordered at the same time",
+                    "amount_usd": 10,
+                    "as_of": "2026-09-25"
+                  }
+                ],
+                "fee_notes": "Card processing fees may be added.",
+                "order_url": "https://www.sos.nh.gov/vital-records/request-certificates"
+              },
+              "source_ids": [
+                "SRC-NH-DVRA-CERTS",
+                "SRC-NH-RSA-5C-82",
+                "SRC-NH-RSA-5C-83"
+              ],
+              "attorney_flag": null,
+              "assistant_must_say_unverified": false
+            }
+          ],
+          "status": "not_started"
+        }
+      ]
+    },
+    {
+      "phase": "W2",
+      "title": "Funeral, burial, or cremation",
+      "steps": [
+        {
+          "step_id": "S-W2-CONTACT-FAITH",
+          "version": 1,
+          "title": "Contact your place of worship or faith leader",
+          "copy": {
+            "summary": "If your loved one belonged to a church, mosque, temple, synagogue, or other community, their leader can guide the service and any customs that affect timing.",
+            "acknowledge": "Your community may want to help carry some of this with you.",
+            "ask": "Would you like to reach out to their faith leader today, or wait until tomorrow?",
+            "offer_next": "I can note any timing needs they mention, so the funeral home hears them too."
+          },
+          "how_to": [
+            "Call the office or leader and share the news.",
+            "Ask about customs that affect timing or preparation.",
+            "Share what they tell you with the funeral home."
+          ],
+          "notes": [
+            "Jewish tradition calls for burial as soon as possible after death. Families are encouraged to contact the rabbi first, and many communities have a chevra kadisha (burial society) that helps."
+          ],
+          "priority": "urgent",
+          "window": "first_24_hours",
+          "mvp_first_28_days": true,
+          "target_date": "2026-09-20",
+          "deadlines": [],
+          "certified_copy_needed": false,
+          "depends_on": [],
+          "sensitive_data": {
+            "fields": [],
+            "chat_capture": "allowed"
+          },
+          "attorney_flag": {
+            "level": "none",
+            "reason": null
+          },
+          "support": {
+            "emotional_weight": "medium",
+            "check_in_before": false
+          },
+          "tracker": {
+            "type": "task",
+            "repeatable_per": null
+          },
+          "citations": [],
+          "citation_status": "general_guidance",
+          "jurisdiction": [],
+          "status": "not_started"
+        },
+        {
+          "step_id": "S-W2-CHOOSE-DISPOSITION",
+          "version": 1,
+          "title": "Decide on burial, cremation, or another choice",
+          "copy": {
+            "summary": "Families choose burial, cremation, or other options. If the body is cremated without a viewing, a casket is not required. Cremation providers must offer a lower-cost alternative container.",
+            "acknowledge": "There is no wrong choice here. What matters is what feels right for them and for you.",
+            "ask": "Do you already know whether they wanted burial or cremation?",
+            "offer_next": "If you are not sure yet, I can lay out the options side by side in plain words."
+          },
+          "how_to": [
+            "Check for written wishes first.",
+            "Talk with close family if they want a say.",
+            "If faith or culture guides this choice, contact your faith leader early."
+          ],
+          "notes": [
+            "Ask your rabbi about cremation, since many Jewish communities do not practice it."
+          ],
+          "priority": "normal",
+          "window": "first_week",
+          "mvp_first_28_days": true,
+          "target_date": "2026-09-21",
+          "deadlines": [],
+          "certified_copy_needed": false,
+          "depends_on": [],
+          "sensitive_data": {
+            "fields": [],
+            "chat_capture": "allowed"
+          },
+          "attorney_flag": {
+            "level": "none",
+            "reason": null
+          },
+          "support": {
+            "emotional_weight": "high",
+            "check_in_before": true
+          },
+          "tracker": {
+            "type": "task",
+            "repeatable_per": null
+          },
+          "citations": [
+            "SRC-FTC-FUNERAL-RULE",
+            "SRC-FTC-SHOPPING-FUNERAL"
+          ],
+          "citation_status": "cited",
+          "jurisdiction": [],
+          "status": "not_started"
+        },
+        {
+          "step_id": "S-W2-COMPARE-FUNERAL-HOMES",
+          "version": 1,
+          "title": "Compare funeral homes and prices",
+          "copy": {
+            "summary": "Under the FTC Funeral Rule, funeral homes must give you an itemized price list when you ask in person, and must give prices over the phone if you ask. You can choose only the items you want, and a funeral home cannot refuse or charge a fee to use a casket you bought elsewhere.",
+            "acknowledge": "Choosing a funeral home while grieving is hard. You are allowed to ask about prices.",
+            "ask": "Would you like me to find a few funeral homes near you and compare their prices?",
+            "offer_next": "Once you pick one, I can keep their contact details and your appointment in one place."
+          },
+          "how_to": [
+            "Ask each funeral home for its general price list.",
+            "Compare the same items across homes.",
+            "Ask what is included in any package, and what you can remove."
+          ],
+          "notes": [
+            "Ask whether the funeral home observes Jewish customs. Jewish funerals traditionally avoid embalming and viewing. Your rabbi can advise on which providers to use."
+          ],
+          "priority": "normal",
+          "window": "first_week",
+          "mvp_first_28_days": true,
+          "target_date": "2026-09-21",
+          "deadlines": [],
+          "certified_copy_needed": false,
+          "depends_on": [],
+          "sensitive_data": {
+            "fields": [],
+            "chat_capture": "allowed"
+          },
+          "attorney_flag": {
+            "level": "none",
+            "reason": null
+          },
+          "support": {
+            "emotional_weight": "medium",
+            "check_in_before": false
+          },
+          "tracker": {
+            "type": "task",
+            "repeatable_per": null
+          },
+          "citations": [
+            "SRC-FTC-FUNERAL-RULE",
+            "SRC-FTC-PHONE-PRICES",
+            "SRC-FTC-SHOPPING-FUNERAL"
+          ],
+          "citation_status": "cited",
+          "jurisdiction": [],
+          "status": "not_started"
+        },
+        {
+          "step_id": "S-W2-CEMETERY",
+          "version": 1,
+          "title": "Arrange a cemetery plot",
+          "copy": {
+            "summary": "If you choose burial, you will need a plot. Your loved one may already own one, or share a family plot.",
+            "acknowledge": "Choosing a resting place is a meaningful decision.",
+            "ask": "Do you know if they already had a plot or a family plot?",
+            "offer_next": "I can help you compare cemeteries and note each one's rules."
+          },
+          "how_to": [
+            "Look for a deed or receipt for an existing plot.",
+            "Ask the cemetery about fees for opening and closing the grave.",
+            "Ask about any rules for vaults, liners, or markers."
+          ],
+          "notes": [],
+          "priority": "normal",
+          "window": "first_week",
+          "mvp_first_28_days": true,
+          "target_date": "2026-09-22",
+          "deadlines": [],
+          "certified_copy_needed": false,
+          "depends_on": [],
+          "sensitive_data": {
+            "fields": [],
+            "chat_capture": "allowed"
+          },
+          "attorney_flag": {
+            "level": "none",
+            "reason": null
+          },
+          "support": {
+            "emotional_weight": "high",
+            "check_in_before": false
+          },
+          "tracker": {
+            "type": "task",
+            "repeatable_per": null
+          },
+          "citations": [],
+          "citation_status": "general_guidance",
+          "jurisdiction": [],
+          "status": "not_started"
+        },
+        {
+          "step_id": "S-W2-VA-MEMORIAL-BENEFITS",
+          "version": 1,
+          "title": "Apply for veteran burial and memorial benefits",
+          "copy": {
+            "summary": "Eligible veterans can receive burial in a VA national cemetery, a government headstone, marker, or medallion, a burial flag, and a Presidential Memorial Certificate. The funeral home can often help with the forms.",
+            "acknowledge": "These honors can mean a great deal to families.",
+            "ask": "Do you know where they will be buried, a VA national cemetery or a private cemetery?",
+            "offer_next": "Based on your answer, I will show the right form and phone number."
+          },
+          "how_to": [
+            "For a VA national cemetery, call the National Cemetery Scheduling Office at 800-535-1117.",
+            "For a headstone or marker in a private cemetery, use VA Form 40-1330. For a medallion, use VA Form 40-1330M.",
+            "For a Presidential Memorial Certificate, use VA Form 40-0247.",
+            "For a burial flag, use VA Form 27-2008."
+          ],
+          "notes": [],
+          "priority": "normal",
+          "window": "first_week",
+          "mvp_first_28_days": true,
+          "target_date": "2026-09-23",
+          "deadlines": [],
+          "certified_copy_needed": false,
+          "depends_on": [],
+          "sensitive_data": {
+            "fields": [],
+            "chat_capture": "allowed"
+          },
+          "attorney_flag": {
+            "level": "none",
+            "reason": null
+          },
+          "support": {
+            "emotional_weight": "medium",
+            "check_in_before": false
+          },
+          "tracker": {
+            "type": "claim",
+            "repeatable_per": null
+          },
+          "citations": [
+            "SRC-VA-QSG-BURIAL",
+            "SRC-VA-PRIVATE-CEMETERY"
+          ],
+          "citation_status": "cited",
+          "jurisdiction": [],
+          "status": "not_started"
+        },
+        {
+          "step_id": "S-W2-PLAN-SERVICE",
+          "version": 1,
+          "title": "Plan a service or gathering",
+          "copy": {
+            "summary": "A funeral, memorial, or informal gathering can happen soon or weeks later. There is no single right way.",
+            "acknowledge": "You can make this as simple or as full as feels right.",
+            "ask": "Do you want a service soon, or would a later memorial give you more breathing room?",
+            "offer_next": "I can keep a short list of the decisions and who is helping with each."
+          },
+          "how_to": [
+            "Choose a date and place.",
+            "Ask someone to lead or speak.",
+            "Ask helpers to handle food, flowers, or music."
+          ],
+          "notes": [],
+          "priority": "normal",
+          "window": "first_month",
+          "mvp_first_28_days": true,
+          "target_date": "2026-09-27",
+          "deadlines": [],
+          "certified_copy_needed": false,
+          "depends_on": [],
+          "sensitive_data": {
+            "fields": [],
+            "chat_capture": "allowed"
+          },
+          "attorney_flag": {
+            "level": "none",
+            "reason": null
+          },
+          "support": {
+            "emotional_weight": "high",
+            "check_in_before": true
+          },
+          "tracker": {
+            "type": "task",
+            "repeatable_per": null
+          },
+          "citations": [],
+          "citation_status": "general_guidance",
+          "jurisdiction": [],
+          "status": "not_started"
+        },
+        {
+          "step_id": "S-W2-OBITUARY",
+          "version": 1,
+          "title": "Write a death notice or obituary",
+          "copy": {
+            "summary": "An obituary tells your community about the death and the service. Some families keep it short to protect privacy.",
+            "acknowledge": "Writing about someone you love can be tender. You can keep it brief.",
+            "ask": "Would you like help drafting a short notice?",
+            "offer_next": "I can draft a few lines for you to change however you like."
+          },
+          "how_to": [
+            "Decide where it will run, such as the funeral home's site or a newspaper.",
+            "Consider leaving out full birth date, home address, and mother's maiden name to reduce identity theft risk."
+          ],
+          "notes": [],
+          "priority": "normal",
+          "window": "first_2_weeks",
+          "mvp_first_28_days": true,
+          "target_date": "2026-09-25",
+          "deadlines": [],
+          "certified_copy_needed": false,
+          "depends_on": [],
+          "sensitive_data": {
+            "fields": [],
+            "chat_capture": "allowed"
+          },
+          "attorney_flag": {
+            "level": "none",
+            "reason": null
+          },
+          "support": {
+            "emotional_weight": "high",
+            "check_in_before": false
+          },
+          "tracker": {
+            "type": "task",
+            "repeatable_per": null
+          },
+          "citations": [],
+          "citation_status": "general_guidance",
+          "jurisdiction": [],
+          "status": "not_started"
+        }
+      ]
+    },
+    {
+      "phase": "W3",
+      "title": "Telling government agencies",
+      "steps": [
+        {
+          "step_id": "S-W3-SSA-REPORT",
+          "version": 1,
+          "title": "Make sure Social Security knows",
+          "copy": {
+            "summary": "The funeral director usually reports the death to Social Security if you give them the Social Security number. Social Security handles the report for Medicare too. If you report it yourself, it must be by phone at 1-800-772-1213 (TTY 1-800-325-0778) or in person. They do not take reports online or by email.",
+            "acknowledge": "This is one of the calls people most often worry about, and it is usually simpler than it sounds.",
+            "ask": "Has the funeral home said they will report the death to Social Security?",
+            "offer_next": "If they have, I will mark this done. If not, I can help you prepare for the call."
+          },
+          "how_to": [
+            "Ask the funeral home if they report deaths to Social Security.",
+            "If they do not, call Social Security or visit a local office.",
+            "Give the Social Security number to the funeral home or to Social Security directly. Do not type it into this chat."
+          ],
+          "notes": [],
+          "priority": "normal",
+          "window": "first_week",
+          "mvp_first_28_days": true,
+          "target_date": "2026-09-23",
+          "deadlines": [],
+          "certified_copy_needed": false,
+          "depends_on": [],
+          "sensitive_data": {
+            "fields": [
+              "decedent_ssn"
+            ],
+            "chat_capture": "never"
+          },
+          "attorney_flag": {
+            "level": "none",
+            "reason": null
+          },
+          "support": {
+            "emotional_weight": "low",
+            "check_in_before": false
+          },
+          "tracker": {
+            "type": "notification",
+            "repeatable_per": null
+          },
+          "citations": [
+            "SRC-USAGOV-SSA-REPORT"
+          ],
+          "citation_status": "cited",
+          "jurisdiction": [],
+          "status": "not_started"
+        },
+        {
+          "step_id": "S-W3-SSA-RETURN-PAYMENT",
+          "version": 1,
+          "title": "Return any Social Security payment for the month of death",
+          "copy": {
+            "summary": "Social Security cannot pay benefits for the month a person dies. The payment that arrives the next month must go back. For example, if they died in July, the August payment is returned.",
+            "acknowledge": "It can feel strange to give money back. This rule applies to everyone.",
+            "ask": "Were their Social Security payments deposited directly into a bank account?",
+            "offer_next": "If they were, the next step is asking that bank to return the payment. I can add that to the bank's checklist."
+          },
+          "how_to": [
+            "If paid by direct deposit, ask the bank to return the payment for the month of death and any later payments.",
+            "If paid by paper check, do not cash it. Return it to Social Security."
+          ],
+          "notes": [],
+          "priority": "normal",
+          "window": "first_month",
+          "mvp_first_28_days": true,
+          "target_date": "2026-10-04",
+          "deadlines": [],
+          "certified_copy_needed": false,
+          "depends_on": [
+            "S-W3-SSA-REPORT"
+          ],
+          "sensitive_data": {
+            "fields": [],
+            "chat_capture": "allowed"
+          },
+          "attorney_flag": {
+            "level": "none",
+            "reason": null
+          },
+          "support": {
+            "emotional_weight": "low",
+            "check_in_before": false
+          },
+          "tracker": {
+            "type": "task",
+            "repeatable_per": null
+          },
+          "citations": [
+            "SRC-USAGOV-SSA-REPORT"
+          ],
+          "citation_status": "cited",
+          "jurisdiction": [],
+          "status": "not_started"
+        },
+        {
+          "step_id": "S-W3-SSA-SURVIVOR",
+          "version": 1,
+          "title": "Ask about Social Security survivor benefits",
+          "copy": {
+            "summary": "A one-time payment of $255 may be available to a surviving spouse, or to certain children if there is no spouse. Monthly survivor benefits may also be available. You must apply, and there are time limits, so it is best to ask early.",
+            "acknowledge": "You may be owed support that no one will tell you about unless you ask.",
+            "ask": "Would you like to set up a reminder to call Social Security about survivor benefits?",
+            "offer_next": "I can list the things to have ready before you call."
+          },
+          "how_to": [
+            "Call Social Security at 1-800-772-1213 to ask about survivor benefits.",
+            "Have their death certificate, your ID, and your marriage or birth certificate ready if you are a spouse or child."
+          ],
+          "notes": [
+            "As the surviving spouse, you may be the first in line for the one-time payment."
+          ],
+          "priority": "high",
+          "window": "first_month",
+          "mvp_first_28_days": true,
+          "target_date": "2026-10-11",
+          "deadlines": [],
+          "certified_copy_needed": true,
+          "depends_on": [
+            "S-W3-SSA-REPORT"
+          ],
+          "sensitive_data": {
+            "fields": [],
+            "chat_capture": "allowed"
+          },
+          "attorney_flag": {
+            "level": "none",
+            "reason": null
+          },
+          "support": {
+            "emotional_weight": "medium",
+            "check_in_before": false
+          },
+          "tracker": {
+            "type": "claim",
+            "repeatable_per": null
+          },
+          "citations": [
+            "SRC-SSA-HANDBOOK-428",
+            "SRC-SSA-CFR-404-390",
+            "SRC-USAGOV-SSA-REPORT"
+          ],
+          "citation_status": "cited",
+          "jurisdiction": [],
+          "status": "not_started"
+        },
+        {
+          "step_id": "S-W3-CREDIT-BUREAUS",
+          "version": 1,
+          "title": "Tell the credit bureaus",
+          "copy": {
+            "summary": "Marking their credit file as deceased helps prevent identity theft. A surviving spouse or executor writes to the credit bureaus with a copy of the death certificate and proof of marriage or executorship. TransUnion says it notifies the other two bureaus when it receives a report.",
+            "acknowledge": "Protecting their name is a real way of caring for them.",
+            "ask": "Would you like me to prepare a short letter you can print and mail?",
+            "offer_next": "Once it is mailed, I will remind you to check that the file shows deceased."
+          },
+          "how_to": [
+            "Mail a letter with the death certificate copy and proof of your authority.",
+            "Ask that the file be marked deceased and request a copy of the credit report.",
+            "Use the report to find accounts you may not know about."
+          ],
+          "notes": [],
+          "priority": "normal",
+          "window": "first_month",
+          "mvp_first_28_days": true,
+          "target_date": "2026-10-11",
+          "deadlines": [],
+          "certified_copy_needed": false,
+          "depends_on": [
+            "S-W1-ORDER-DC"
+          ],
+          "sensitive_data": {
+            "fields": [
+              "decedent_ssn"
+            ],
+            "chat_capture": "never"
+          },
+          "attorney_flag": {
+            "level": "none",
+            "reason": null
+          },
+          "support": {
+            "emotional_weight": "low",
+            "check_in_before": false
+          },
+          "tracker": {
+            "type": "notification",
+            "repeatable_per": null
+          },
+          "citations": [
+            "SRC-CA-AG-DECEASED-IDTHEFT",
+            "SRC-TRANSUNION-DEATH"
+          ],
+          "citation_status": "cited",
+          "jurisdiction": [],
+          "status": "not_started"
+        },
+        {
+          "step_id": "S-W3-DMV-LICENSE",
+          "version": 1,
+          "title": "Cancel their driver's license or state ID",
+          "copy": {
+            "summary": "Cancelling a driver's license or state ID helps prevent misuse. How to do it depends on the state.",
+            "acknowledge": "This is a quick one for most families.",
+            "ask": "Which state issued their driver's license?",
+            "offer_next": "I will show you that state's steps, or tell you if I do not have verified steps for it yet."
+          },
+          "how_to": [
+            "Follow the state motor vehicle agency's process for a deceased driver."
+          ],
+          "notes": [],
+          "priority": "normal",
+          "window": "first_month",
+          "mvp_first_28_days": true,
+          "target_date": "2026-10-11",
+          "deadlines": [],
+          "certified_copy_needed": false,
+          "depends_on": [
+            "S-W1-ORDER-DC"
+          ],
+          "sensitive_data": {
+            "fields": [],
+            "chat_capture": "allowed"
+          },
+          "attorney_flag": {
+            "level": "none",
+            "reason": null
+          },
+          "support": {
+            "emotional_weight": "low",
+            "check_in_before": false
+          },
+          "tracker": {
+            "type": "notification",
+            "repeatable_per": null
+          },
+          "citations": [],
+          "citation_status": "general_guidance",
+          "jurisdiction": [
+            {
+              "key": "dmv_notification",
+              "resolved_by": "residence_state",
+              "state": "NH",
+              "overlay": "US-DEFAULT",
+              "status": "not_verified",
+              "legal_review": "pending",
+              "summary": "I do not have verified steps for this state yet. The state motor vehicle agency's website explains how to report a deceased driver.",
+              "fields": {},
+              "source_ids": [],
+              "attorney_flag": null,
+              "assistant_must_say_unverified": true
+            }
+          ],
+          "status": "not_started"
+        },
+        {
+          "step_id": "S-W3-VA-NOTIFY",
+          "version": 1,
+          "title": "Tell the VA and ask about benefits",
+          "copy": {
+            "summary": "If your loved one was a veteran or received VA benefits, call the VA. They can explain burial benefits and any payments that must stop.",
+            "acknowledge": "Their service is part of their story, and there are benefits meant to honor it.",
+            "ask": "Did they receive any payments from the VA?",
+            "offer_next": "I can help you gather their discharge papers before you call."
+          },
+          "how_to": [
+            "Call the VA at 800-827-1000.",
+            "Have their discharge papers (DD214) ready if you can find them."
+          ],
+          "notes": [],
+          "priority": "normal",
+          "window": "first_month",
+          "mvp_first_28_days": true,
+          "target_date": "2026-09-30",
+          "deadlines": [],
+          "certified_copy_needed": false,
+          "depends_on": [],
+          "sensitive_data": {
+            "fields": [],
+            "chat_capture": "allowed"
+          },
+          "attorney_flag": {
+            "level": "none",
+            "reason": null
+          },
+          "support": {
+            "emotional_weight": "medium",
+            "check_in_before": false
+          },
+          "tracker": {
+            "type": "notification",
+            "repeatable_per": null
+          },
+          "citations": [
+            "SRC-VA-21P530-INSTR",
+            "SRC-VA-BURIAL-ALLOWANCE"
+          ],
+          "citation_status": "cited",
+          "jurisdiction": [],
+          "status": "not_started"
+        }
+      ]
+    },
+    {
+      "phase": "W4",
+      "title": "Banks, insurers, and employers",
+      "steps": [
+        {
+          "step_id": "S-W4-BANKS",
+          "version": 1,
+          "title": "Notify each bank or credit union",
+          "copy": {
+            "summary": "Each bank has its own process. They usually need a certified death certificate and proof that you have authority, such as court papers naming the executor.",
+            "acknowledge": "One account at a time is plenty.",
+            "ask": "Which bank would you like to start with?",
+            "offer_next": "After each call, I will note what they asked for and what is still open."
+          },
+          "how_to": [
+            "Ask the bank for its bereavement or estate services team.",
+            "Ask what documents they need and whether joint accounts change hands automatically.",
+            "Do not close an account that may receive a Social Security return until that is settled."
+          ],
+          "notes": [],
+          "priority": "normal",
+          "window": "first_month",
+          "mvp_first_28_days": true,
+          "target_date": "2026-10-04",
+          "deadlines": [],
+          "certified_copy_needed": true,
+          "depends_on": [
+            "S-W1-ORDER-DC"
+          ],
+          "sensitive_data": {
+            "fields": [],
+            "chat_capture": "allowed"
+          },
+          "attorney_flag": {
+            "level": "suggest",
+            "reason": "If a bank refuses to work with you, or you are unsure whether you have authority, talk with an attorney."
+          },
+          "support": {
+            "emotional_weight": "low",
+            "check_in_before": false
+          },
+          "tracker": {
+            "type": "notification",
+            "repeatable_per": "financial_account"
+          },
+          "citations": [],
+          "citation_status": "general_guidance",
+          "jurisdiction": [],
+          "status": "not_started"
+        },
+        {
+          "step_id": "S-W4-DEBTS",
+          "version": 1,
+          "title": "Notify credit card companies and lenders",
+          "copy": {
+            "summary": "Credit card companies, mortgage lenders, and other lenders need to know about the death. Before you pay any debt with your own money, find out whether you are responsible for it.",
+            "acknowledge": "Bills can keep arriving for a while. Seeing them does not mean you owe them.",
+            "ask": "Would you like to list their credit cards and loans so we can track each one?",
+            "offer_next": "I will keep each lender's status in one place."
+          },
+          "how_to": [
+            "Notify each lender and ask them to note the death on the account.",
+            "Ask for a statement of the balance at the date of death.",
+            "Do not pay from your own money until you know who is responsible."
+          ],
+          "notes": [],
+          "priority": "normal",
+          "window": "first_month",
+          "mvp_first_28_days": true,
+          "target_date": "2026-10-11",
+          "deadlines": [],
+          "certified_copy_needed": true,
+          "depends_on": [
+            "S-W1-ORDER-DC"
+          ],
+          "sensitive_data": {
+            "fields": [],
+            "chat_capture": "allowed"
+          },
+          "attorney_flag": {
+            "level": "suggest",
+            "reason": "Whether a family member must pay a debt depends on state law and the account. Talk with an attorney before paying debts personally."
+          },
+          "support": {
+            "emotional_weight": "medium",
+            "check_in_before": false
+          },
+          "tracker": {
+            "type": "notification",
+            "repeatable_per": "debt_account"
+          },
+          "citations": [],
+          "citation_status": "general_guidance",
+          "jurisdiction": [],
+          "status": "not_started"
+        },
+        {
+          "step_id": "S-W4-LIFE-INSURANCE",
+          "version": 1,
+          "title": "Find and claim life insurance",
+          "copy": {
+            "summary": "If you are not sure whether they had life insurance, the free NAIC Life Insurance Policy Locator searches participating insurers. If a policy is found, the insurer contacts the beneficiary.",
+            "acknowledge": "Some families find policies they never knew existed.",
+            "ask": "Do you know of any life insurance policies, or should we search?",
+            "offer_next": "I can walk you through the locator, and track any claims you file."
+          },
+          "how_to": [
+            "Contact known insurers to start a claim.",
+            "Use the NAIC Life Insurance Policy Locator if you are unsure.",
+            "Check old employer benefits and bank statements for premium payments."
+          ],
+          "notes": [],
+          "priority": "normal",
+          "window": "first_month",
+          "mvp_first_28_days": true,
+          "target_date": "2026-10-11",
+          "deadlines": [],
+          "certified_copy_needed": true,
+          "depends_on": [
+            "S-W1-ORDER-DC"
+          ],
+          "sensitive_data": {
+            "fields": [
+              "decedent_ssn"
+            ],
+            "chat_capture": "never"
+          },
+          "attorney_flag": {
+            "level": "none",
+            "reason": null
+          },
+          "support": {
+            "emotional_weight": "medium",
+            "check_in_before": false
+          },
+          "tracker": {
+            "type": "claim",
+            "repeatable_per": "insurance_policy"
+          },
+          "citations": [
+            "SRC-CT-LIPL"
+          ],
+          "citation_status": "cited",
+          "jurisdiction": [],
+          "status": "not_started"
+        },
+        {
+          "step_id": "S-W4-EMPLOYER",
+          "version": 1,
+          "title": "Contact their employer or former employer",
+          "copy": {
+            "summary": "If they were working, or had a pension or retirement plan from a past job, contact the employer or plan administrator. Retirement benefits are usually paid to the named beneficiary under the plan's terms. The plan will likely ask for a death certificate.",
+            "acknowledge": "Reaching out to their workplace can bring up a lot. You can keep the call short.",
+            "ask": "Were they working, or did they have a pension or retirement plan from an employer?",
+            "offer_next": "I can list the questions to ask about final pay, group life insurance, and retirement plans."
+          },
+          "how_to": [
+            "Ask human resources about final pay and unused leave.",
+            "Ask about group life insurance and retirement plan beneficiaries.",
+            "Ask about health coverage continuation for any family on their plan."
+          ],
+          "notes": [],
+          "priority": "normal",
+          "window": "first_month",
+          "mvp_first_28_days": true,
+          "target_date": "2026-10-04",
+          "deadlines": [],
+          "certified_copy_needed": true,
+          "depends_on": [
+            "S-W1-ORDER-DC"
+          ],
+          "sensitive_data": {
+            "fields": [],
+            "chat_capture": "allowed"
+          },
+          "attorney_flag": {
+            "level": "none",
+            "reason": null
+          },
+          "support": {
+            "emotional_weight": "medium",
+            "check_in_before": false
+          },
+          "tracker": {
+            "type": "notification",
+            "repeatable_per": null
+          },
+          "citations": [
+            "SRC-IRS-RETIREMENT-DEATH"
+          ],
+          "citation_status": "cited",
+          "jurisdiction": [],
+          "status": "not_started"
+        },
+        {
+          "step_id": "S-W4-OTHER-INSURANCE",
+          "version": 1,
+          "title": "Update health, home, and car insurance",
+          "copy": {
+            "summary": "Health insurance can usually be cancelled. Do not cancel home or car insurance on property that still exists until someone else has coverage in place.",
+            "acknowledge": "Letting property go uninsured is a common and costly mistake, so this one is worth a careful look.",
+            "ask": "Did they own a home or car that is still insured in their name?",
+            "offer_next": "I can help you list each policy and what should happen to it."
+          },
+          "how_to": [
+            "Cancel health and dental plans after final claims are settled.",
+            "Keep home and car coverage active until ownership changes."
+          ],
+          "notes": [],
+          "priority": "normal",
+          "window": "first_month",
+          "mvp_first_28_days": true,
+          "target_date": "2026-10-11",
+          "deadlines": [],
+          "certified_copy_needed": false,
+          "depends_on": [],
+          "sensitive_data": {
+            "fields": [],
+            "chat_capture": "allowed"
+          },
+          "attorney_flag": {
+            "level": "none",
+            "reason": null
+          },
+          "support": {
+            "emotional_weight": "low",
+            "check_in_before": false
+          },
+          "tracker": {
+            "type": "notification",
+            "repeatable_per": "insurance_policy"
+          },
+          "citations": [],
+          "citation_status": "general_guidance",
+          "jurisdiction": [
+            {
+              "key": "dmv_notification",
+              "resolved_by": "residence_state",
+              "state": "NH",
+              "overlay": "US-DEFAULT",
+              "status": "not_verified",
+              "legal_review": "pending",
+              "summary": "I do not have verified steps for this state yet. The state motor vehicle agency's website explains how to report a deceased driver.",
+              "fields": {},
+              "source_ids": [],
+              "attorney_flag": null,
+              "assistant_must_say_unverified": true
+            }
+          ],
+          "status": "not_started"
+        }
+      ]
+    },
+    {
+      "phase": "W5",
+      "title": "Papers, the will, and probate",
+      "steps": [
+        {
+          "step_id": "S-W5-FIND-WILL",
+          "version": 1,
+          "title": "Find the will and other estate papers",
+          "copy": {
+            "summary": "Look for the original will, any trust papers, deeds, and account statements. The original will is important, not just a copy.",
+            "acknowledge": "Going through their papers can be emotional. Short sessions are okay.",
+            "ask": "Do you know where they kept important papers?",
+            "offer_next": "I can give you a short list of places people often keep these."
+          },
+          "how_to": [
+            "Check home files, a safe, or a safe deposit box.",
+            "Ask their attorney or financial advisor if they had one.",
+            "Keep the original will safe and unaltered."
+          ],
+          "notes": [],
+          "priority": "normal",
+          "window": "first_month",
+          "mvp_first_28_days": true,
+          "target_date": "2026-10-04",
+          "deadlines": [],
+          "certified_copy_needed": false,
+          "depends_on": [],
+          "sensitive_data": {
+            "fields": [],
+            "chat_capture": "allowed"
+          },
+          "attorney_flag": {
+            "level": "suggest",
+            "reason": "If you find more than one will, or a will seems changed, talk with an attorney."
+          },
+          "support": {
+            "emotional_weight": "high",
+            "check_in_before": true
+          },
+          "tracker": {
+            "type": "task",
+            "repeatable_per": null
+          },
+          "citations": [],
+          "citation_status": "general_guidance",
+          "jurisdiction": [],
+          "status": "not_started"
+        },
+        {
+          "step_id": "S-W5-PROBATE-NEEDED",
+          "version": 1,
+          "title": "Find out whether probate is needed",
+          "copy": {
+            "summary": "Probate is the court process for settling an estate. Whether you need it, and which version, depends on state law, what they owned, and how it was titled.",
+            "acknowledge": "This is where many families first talk with an attorney, and that is a good thing.",
+            "ask": "Did they own real estate, or accounts with no named beneficiary?",
+            "offer_next": "I will show your state's court information, and I can help you prepare questions for an attorney."
+          },
+          "how_to": [
+            "List assets and how each is titled or who is named as beneficiary.",
+            "Look at your state's probate court information.",
+            "Consider a consultation with an estate attorney."
+          ],
+          "notes": [],
+          "priority": "normal",
+          "window": "first_month",
+          "mvp_first_28_days": true,
+          "target_date": "2026-10-11",
+          "deadlines": [],
+          "certified_copy_needed": false,
+          "depends_on": [
+            "S-W5-FIND-WILL"
+          ],
+          "sensitive_data": {
+            "fields": [],
+            "chat_capture": "allowed"
+          },
+          "attorney_flag": {
+            "level": "suggest",
+            "reason": "Probate rules vary by state and by estate. An estate attorney can confirm what applies."
+          },
+          "support": {
+            "emotional_weight": "medium",
+            "check_in_before": false
+          },
+          "tracker": {
+            "type": "task",
+            "repeatable_per": null
+          },
+          "citations": [],
+          "citation_status": "general_guidance",
+          "jurisdiction": [
+            {
+              "key": "probate",
+              "resolved_by": "residence_state",
+              "state": "NH",
+              "overlay": "US-NH",
+              "status": "researched",
+              "legal_review": "pending",
+              "summary": "Estates are handled by the NH Circuit Court, Probate Division, starting with a Petition for Estate Administration. A simpler path called Waiver of Administration may be available in some families' situations. If approved, the waiver statement is filed no sooner than 6 months and no later than 1 year after the executor or administrator is appointed, and there can be no unpaid debts or unresolved claims.",
+              "fields": {
+                "court": "NH Circuit Court, Probate Division",
+                "opening_form": {
+                  "name": "Petition for Estate Administration",
+                  "number": "NHJB-2145-Pe"
+                },
+                "simplified_path": {
+                  "name": "Waiver of Administration",
+                  "conditions_summary": "All beneficially interested parties must sign an assent. There can be no outstanding debts or unresolved claims.",
+                  "closing_window": "Waiver statement filed 6 to 12 months after appointment."
+                }
+              },
+              "source_ids": [
+                "SRC-NH-COURTS-ESTATE-NO-WILL",
+                "SRC-NH-PETITION-2145"
+              ],
+              "attorney_flag": {
+                "level": "suggest",
+                "reason": "Whether Waiver of Administration fits a given family is a legal judgment."
+              },
+              "assistant_must_say_unverified": false
+            }
+          ],
+          "status": "not_started"
+        }
+      ]
+    }
+  ],
+  "support_touchpoints": [
+    {
+      "after_phase": "W0",
+      "type": "gentle_check_in",
+      "resource_ids": [
+        "SRC-SAMHSA-988"
+      ],
+      "copy": "That was a lot to take in. Before we go on, how are you doing right now?"
+    },
+    {
+      "after_phase": "W6",
+      "type": "bereavement_support",
+      "resource_ids": [],
+      "copy": "Going through their things can bring grief to the surface. Would it help to talk about support options?"
+    }
+  ],
+  "support_resources": [
+    "SRC-VCL-988"
+  ],
+  "support_policy_ref": "SUPPORT-POLICY",
+  "step_count": 27,
+  "sources": [
+    {
+      "id": "SRC-CA-AG-DECEASED-IDTHEFT",
+      "title": "Identity Theft and the Deceased",
+      "publisher": "California Attorney General",
+      "authority_level": "primary_state",
+      "url": "https://www.oag.ca.gov/idtheft/facts/deceased",
+      "retrieved": "2026-09-25",
+      "notes": "Surviving spouse or executor notifies bureaus in writing with a death certificate copy and proof of executorship or marriage."
+    },
+    {
+      "id": "SRC-CAIRN-CARD-26",
+      "title": "Build support and crisis resource fallback plan (Trello card 26)",
+      "publisher": "Cairn Guide, LLC",
+      "authority_level": "internal",
+      "url": "https://trello.com/c/PAA01d2O",
+      "retrieved": "2026-09-25"
+    },
+    {
+      "id": "SRC-CAIRN-CARD-48",
+      "title": "Build voice eval set for the four Cairn personas (Trello card 48)",
+      "publisher": "Cairn Guide, LLC",
+      "authority_level": "internal",
+      "url": "https://trello.com/c/np61DtxY",
+      "retrieved": "2026-09-25"
+    },
+    {
+      "id": "SRC-CDC-W2W",
+      "title": "Where to Write for Vital Records",
+      "publisher": "CDC National Center for Health Statistics",
+      "authority_level": "primary_federal",
+      "url": "https://www.cdc.gov/nchs/w2w/index.htm",
+      "retrieved": "2026-09-25",
+      "notes": "Certified copies come from the vital statistics office in the state or area where the death occurred. Links to every state office."
+    },
+    {
+      "id": "SRC-CT-LIPL",
+      "title": "Life Insurance Policy Locator (NAIC tool)",
+      "publisher": "Connecticut Insurance Department",
+      "authority_level": "primary_state",
+      "url": "https://portal.ct.gov/cid/consumer-information-center/life-insurance-locator",
+      "retrieved": "2026-09-25",
+      "notes": "Free NAIC tool. Insurers contact beneficiaries directly if a match is found."
+    },
+    {
+      "id": "SRC-FTC-FUNERAL-RULE",
+      "title": "The FTC's Funeral Rule: Helping Consumers Make Informed Decisions During Difficult Times",
+      "publisher": "Federal Trade Commission",
+      "authority_level": "primary_federal",
+      "url": "https://www.ftc.gov/node/28265",
+      "retrieved": "2026-09-25",
+      "notes": "Right to a general price list, right to choose only wanted items, providers may not refuse or charge to handle a casket bought elsewhere, cremation providers must offer alternative containers."
+    },
+    {
+      "id": "SRC-FTC-PHONE-PRICES",
+      "title": "FTC consumer blog on the Funeral Rule review",
+      "publisher": "Federal Trade Commission",
+      "authority_level": "primary_federal",
+      "url": "https://consumer.ftc.gov/node/76449",
+      "retrieved": "2026-09-25",
+      "notes": "Funeral homes must give price information over the phone if asked."
+    },
+    {
+      "id": "SRC-FTC-SHOPPING-FUNERAL",
+      "title": "Shopping for Funeral Services (consumer guide)",
+      "publisher": "Federal Trade Commission",
+      "authority_level": "primary_federal",
+      "url": "https://www.bulkorder.ftc.gov/system/files/publications/541a_shopping_for_funeral_services.pdf",
+      "retrieved": "2026-09-25"
+    },
+    {
+      "id": "SRC-IRS-RETIREMENT-DEATH",
+      "title": "Retirement topics: Death",
+      "publisher": "Internal Revenue Service",
+      "authority_level": "primary_federal",
+      "url": "https://www.irs.gov/retirement-plans/plan-participant-employee/retirement-topics-death",
+      "retrieved": "2026-09-25"
+    },
+    {
+      "id": "SRC-NH-COURTS-ESTATE-NO-WILL",
+      "title": "Estate without a will (NH Circuit Court Probate Division guide)",
+      "publisher": "New Hampshire Judicial Branch",
+      "authority_level": "primary_state",
+      "url": "https://www.courts.state.nh.us/nh-e-court-project/docs/EstateWithoutwill.pdf",
+      "retrieved": "2026-09-25"
+    },
+    {
+      "id": "SRC-NH-DVRA-CERTS",
+      "title": "Request for Certificates",
+      "publisher": "NH Department of State, Division of Vital Records Administration",
+      "authority_level": "primary_state",
+      "url": "https://www.sos.nh.gov/vital-records/request-certificates",
+      "retrieved": "2026-09-25"
+    },
+    {
+      "id": "SRC-NH-PETITION-2145",
+      "title": "Petition for Estate Administration (NHJB-2145-Pe)",
+      "publisher": "New Hampshire Judicial Branch",
+      "authority_level": "primary_state",
+      "url": "https://www.courts.nh.gov/sites/g/files/ehbemt471/files/documents/2021-05/nhjb-2145-pe-petitionforestateadministration.pdf",
+      "retrieved": "2026-09-25"
+    },
+    {
+      "id": "SRC-NH-RSA-5C-82",
+      "title": "RSA 5-C:82 Application for and Preparation of a Certified Copy of a Death Certificate",
+      "publisher": "NH General Court",
+      "authority_level": "statute",
+      "url": "https://gc.nh.gov/rsa/html/I/5-C/5-C-82.htm",
+      "retrieved": "2026-09-25"
+    },
+    {
+      "id": "SRC-NH-RSA-5C-83",
+      "title": "RSA 5-C:83 Issuance of Death Certificate Copies",
+      "publisher": "NH General Court",
+      "authority_level": "statute",
+      "url": "https://gc.nh.gov/rsa/html/I/5-C/5-C-83.htm",
+      "retrieved": "2026-09-25"
+    },
+    {
+      "id": "SRC-SAMHSA-988",
+      "title": "988 Suicide and Crisis Lifeline",
+      "publisher": "SAMHSA",
+      "authority_level": "primary_federal",
+      "url": "https://samhsa.gov/988",
+      "retrieved": "2026-09-25"
+    },
+    {
+      "id": "SRC-SSA-CFR-404-390",
+      "title": "20 CFR 404.390 Lump-Sum Death Payment, General",
+      "publisher": "Social Security Administration",
+      "authority_level": "regulation",
+      "url": "https://www.ssa.gov/OP_Home/cfr20/404/404-0390.htm",
+      "retrieved": "2026-09-25"
+    },
+    {
+      "id": "SRC-SSA-HANDBOOK-428",
+      "title": "Social Security Handbook 428: When is a lump-sum death payment paid?",
+      "publisher": "Social Security Administration",
+      "authority_level": "primary_federal",
+      "url": "https://www.ssa.gov/OP_Home/handbook/handbook.04/handbook-0428.html",
+      "retrieved": "2026-09-25"
+    },
+    {
+      "id": "SRC-TRANSUNION-DEATH",
+      "title": "Reporting a Death of a Loved One to TransUnion",
+      "publisher": "TransUnion",
+      "authority_level": "issuing_institution",
+      "url": "https://www.transunion.com/blog/credit-advice/reporting-a-death-to-tu",
+      "retrieved": "2026-09-25",
+      "notes": "Notifying one bureau by letter with a death certificate copy. TransUnion states it notifies the other two bureaus."
+    },
+    {
+      "id": "SRC-USAGOV-SSA-REPORT",
+      "title": "Report the death of a Social Security or Medicare beneficiary",
+      "publisher": "USA.gov (GSA)",
+      "authority_level": "primary_federal",
+      "url": "https://www.usa.gov/social-security-report-a-death",
+      "retrieved": "2026-09-25",
+      "notes": "SSA handles death reports for Social Security and Medicare. Reports accepted by phone or in person only. Payment for the month of death must be returned."
+    },
+    {
+      "id": "SRC-VA-21P530-INSTR",
+      "title": "VA Form 21P-530 instructions (copy hosted by Orange County Veterans Service Office)",
+      "publisher": "U.S. Department of Veterans Affairs",
+      "authority_level": "primary_federal",
+      "url": "https://www.veterans.ocgov.com/sites/veterans/files/2020-06/VBA-21P-530-ARE%20%28a%29.pdf",
+      "retrieved": "2026-09-25",
+      "notes": "States a 2-year filing limit for the non-service-connected burial allowance, counted from permanent burial or cremation.",
+      "verification_note": "Form edition is JUN 2014. Confirm the time limit against the current VA Form 21P-530EZ before launch."
+    },
+    {
+      "id": "SRC-VA-BURIAL-ALLOWANCE",
+      "title": "Veterans burial allowance and transportation benefits",
+      "publisher": "U.S. Department of Veterans Affairs",
+      "authority_level": "primary_federal",
+      "url": "https://www.va.gov/burials-memorials/veterans-burial-allowance/",
+      "retrieved": "2026-09-25",
+      "notes": "Apply online or by mail with VA Form 21P-530EZ. Some eligible surviving spouses are paid automatically."
+    },
+    {
+      "id": "SRC-VA-PRIVATE-CEMETERY",
+      "title": "Burial in a private cemetery",
+      "publisher": "U.S. Department of Veterans Affairs",
+      "authority_level": "primary_federal",
+      "url": "https://www.va.gov/burials-memorials/eligibility/burial-in-private-cemetery/",
+      "retrieved": "2026-09-25"
+    },
+    {
+      "id": "SRC-VA-QSG-BURIAL",
+      "title": "Apply for Burial in a VA National Cemetery and for Memorial Products (Quick Start Guide)",
+      "publisher": "U.S. Department of Veterans Affairs",
+      "authority_level": "primary_federal",
+      "url": "https://www.va.gov/files/2025-06/vawelcomekit-qsg-burial-benefits.pdf",
+      "retrieved": "2026-09-25",
+      "notes": "Lists VA Forms 40-1330, 40-1330M, 40-0247, 27-2008 and the National Cemetery Scheduling Office at 800-535-1117."
+    },
+    {
+      "id": "SRC-VCL-988",
+      "title": "What is 988? (Veterans Crisis Line)",
+      "publisher": "U.S. Department of Veterans Affairs",
+      "authority_level": "primary_federal",
+      "url": "https://veteranscrisisline.net/about/what-is-988/",
+      "retrieved": "2026-09-25",
+      "notes": "Dial 988 then press 1, text 838255, or chat online."
+    }
+  ]
+}

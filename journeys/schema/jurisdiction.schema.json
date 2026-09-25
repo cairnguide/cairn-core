@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cairn.guide/schemas/jurisdiction.schema.json",
+  "title": "Cairn jurisdiction overlay",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "name",
+    "version",
+    "legal_review",
+    "last_researched",
+    "keys"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^US-([A-Z]{2}|DEFAULT)$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "integer"
+    },
+    "legal_review": {
+      "enum": [
+        "pending",
+        "reviewed"
+      ]
+    },
+    "legal_review_card": {
+      "type": "string",
+      "minLength": 1
+    },
+    "last_researched": {
+      "type": "string",
+      "format": "date"
+    },
+    "keys": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "status",
+          "summary",
+          "fields",
+          "source_ids"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "enum": [
+              "researched",
+              "general_only",
+              "not_verified"
+            ]
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1
+          },
+          "fields": {
+            "type": "object"
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^SRC-[A-Z0-9-]+$"
+            },
+            "uniqueItems": true
+          },
+          "attorney_flag": {
+            "type": "object",
+            "required": [
+              "level"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "level": {
+                "enum": [
+                  "none",
+                  "suggest",
+                  "required"
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "internal_notes": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}
