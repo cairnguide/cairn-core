@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, Request
 
 from .. import account as acct
-from .. import journey, messages
+from .. import intake, journey, journey_selection, messages
 from ..auth import Identity, get_identity
 from ..db import Session
 from ..errors import ApiError, case_access_denied
@@ -36,14 +36,15 @@ def _task_response(s: Session, case_id: UUID, task_id: UUID, notes=None) -> Task
     summary = journey.task_summary(row)
     citations = s.all("SELECT authority_name, url, jurisdiction, last_verified_on FROM cairn.template_citations "
                       "WHERE template_id = %s ORDER BY jurisdiction <> 'US', authority_name", (row["template_id"],))
-    death_state = s.one("SELECT death_state FROM cairn.deceased WHERE case_id = %s", (case_id,))
+    # UC-CASE-04 and DEC-05. The certificate office comes from where the death happened, never residence.
+    death_state = journey_selection.certificate_office_state(intake.load_answers(s, case_id))
     reviewed = row["counsel_reviewed_at"] is not None
     detail = TaskDetail(
         **summary.model_dump(),
         attorney_referral_note=row["attorney_referral_note"],
         content_reviewed_by_counsel=reviewed,
         jurisdiction=row["jurisdiction"],
-        death_state=death_state["death_state"] if death_state else None,
+        death_state=death_state,
         citations=[CitationOut.model_validate(c) for c in citations],
         certificate_order=(journey.certificate_order(s, case_id)
                            if summary.kind == TaskKind.certificate_order else None),

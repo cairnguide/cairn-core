@@ -1,0 +1,23 @@
+{
+  "task_key": "confirm_named_executor",
+  "version": 1,
+  "title": "Confirm who the will names as executor",
+  "plain_summary": "A will usually names an executor, the person who handles the estate. The IRS calls this person a personal representative. Check the will to see who is named.",
+  "journey_week": 3,
+  "sort_order": 40,
+  "due_offset_days": 17,
+  "jurisdiction": "US",
+  "applies_when": {
+    "always": true
+  },
+  "attorney_referral": false,
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "Internal Revenue Service, Publication 559, Survivors, Executors, and Administrators",
+      "url": "https://www.irs.gov/publications/p559",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

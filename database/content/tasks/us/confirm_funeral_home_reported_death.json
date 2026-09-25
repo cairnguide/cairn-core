@@ -1,0 +1,29 @@
+{
+  "task_key": "confirm_funeral_home_reported_death",
+  "version": 1,
+  "title": "Confirm the funeral home reported the death",
+  "plain_summary": "In most cases the funeral director reports the death to Social Security using the Social Security number the family provides. Ask the funeral home to confirm they have done it.",
+  "journey_week": 2,
+  "sort_order": 10,
+  "due_offset_days": 10,
+  "jurisdiction": "US",
+  "applies_when": {
+    "always": true
+  },
+  "attorney_referral": false,
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "Social Security Administration, How do I report a death",
+      "url": "https://www.ssa.gov/faqs/en/questions/KA-02077.html",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    },
+    {
+      "authority_name": "Social Security Administration, Form SSA-721 Statement of Death by Funeral Director",
+      "url": "https://www.ssa.gov/forms/ssa-721.pdf",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

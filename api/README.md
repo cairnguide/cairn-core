@@ -1,6 +1,6 @@
 # Cairn API (MVP)
 
-HTTP API for the MVP use cases in `database/docs/cairn-mvp-use-cases.md` and the registration use cases in `database/docs/cairn-registration-use-cases.json`, built on the schema in `database/db/migrations`. FastAPI generates the contract from the request and response models, which are the only way data enters or leaves the service.
+HTTP API for the MVP use cases in `database/docs/cairn-mvp-use-cases.md`, the registration use cases in `database/docs/cairn-registration-use-cases.json`, and the case creation use cases in `database/docs/cairn-case-creation-use-cases.json`, built on the schema in `database/db/migrations`. FastAPI generates the contract from the request and response models, which are the only way data enters or leaves the service.
 
 - Swagger UI: `/docs` when running. Static contract: [`openapi.json`](openapi.json) (OpenAPI 3.1).
 - Requests reject unknown fields, trim whitespace, and validate against the same rules as the database (state codes, date order, lengths, allowed values).
@@ -21,11 +21,21 @@ HTTP API for the MVP use cases in `database/docs/cairn-mvp-use-cases.md` and the
 | UC-REG-14, I need a moment | `GET /v1/onboarding/need-a-moment`. Every onboarding response carries `support` |
 | Settings | `GET` and `PATCH /v1/me` |
 | UC-ACCT-01, delete account | `GET /v1/me/deletion`, then `POST /v1/me/deletion` |
-| UC-5, start a case and record identity | `POST /v1/cases`, then `PATCH /v1/cases/{id}/deceased` for edits |
-| UC-6, death event | `PUT /v1/cases/{id}/death-event` |
-| UC-7, veteran and will status | `PATCH /v1/cases/{id}/estate-flags` (one answer at a time, `skip` saves `unknown`) |
-| UC-8, fiduciary single session | `POST /v1/cases` with `death_event`, `estate_flags`, and `start_journey` |
-| UC-9, the four-week journey | `POST` and `GET /v1/cases/{id}/journey` |
+| UC-CASE-01, start a new case (a draft) | `POST /v1/cases`, then `POST .../intake/continue` (one question at a time) or `POST .../intake/messages` (own words) |
+| UC-CASE-01, own words read back | `POST /v1/cases/{id}/intake/messages`, then `POST .../intake/confirmations` |
+| UC-CASE-02 to UC-CASE-09, answer, skip, not sure, change | `PUT /v1/cases/{id}/intake/answers/{field}` |
+| UC-CASE-02 and UC-CASE-03 preferences | `PUT /v1/cases/{id}/intake/preferences` |
+| UC-CASE-10, pause and come back | `POST .../intake/pause`, then `GET /v1/cases/{id}` (resume) and `GET /v1/cases` |
+| UC-CASE-11, review | `GET /v1/cases/{id}/review` |
+| UC-CASE-12, the journey that fits | `GET .../journey/preview`, `POST .../journey/start`, `POST .../journey/not-yet` |
+| UC-CASE-13, first task | `POST .../journey/first-task` |
+| UC-CASE-14, distress | Every intake turn. The client keeps `session` and sends it back. `POST .../intake/continue` resumes |
+| UC-CASE-15, sensitive numbers | Every free-text field is redacted as it is parsed |
+| UC-CASE-16, attorney referral | `POST .../intake/attorney-referrals`, or detected in `intake/messages` |
+| UC-CASE-17, the death hasn't happened yet | `POST .../intake/death-not-yet`, or detected in `intake/messages` |
+| UC-CASE-18, second case | `POST /v1/cases` again. Start keeps the existing trial |
+| Legal identity, just in time | `PATCH /v1/cases/{id}/deceased`, only once the journey has started |
+| UC-9, the four-week journey | `GET /v1/cases/{id}/journey` |
 | UC-10, order death certificates | `GET /v1/cases/{id}/tasks/{task_id}`, `POST .../certificate-order` |
 | UC-11, notify a bank | `POST .../tasks/{task_id}/institution-notices` |
 | UC-12, step back from tasks | `POST /v1/cases/{id}/journey/pause` and `/resume` |
@@ -43,10 +53,14 @@ export CAIRN_PRIVACY_POLICY_URL=... CAIRN_TERMS_URL=... CAIRN_JOURNEY_MAP_URL=..
 export CAIRN_AI_PROVIDER_NAME=...          # named on the privacy step (UC-REG-07)
 export CAIRN_REGISTRATION_COPY=...         # optional: a replacement copy file after legal review
 export CAIRN_VOICES_DIR=...                # optional: the voices folder. Defaults to the repository's voices/
+export CAIRN_CASE_COPY=...                 # optional: a replacement case creation copy file after legal review
+export CAIRN_ESTATE_PLAN_MODE=add_on       # optional: OPEN-DECISION-01. Only add_on is built
+export CAIRN_PRE_NEED_PATH=not_built       # optional: OPEN-DECISION-05. Only not_built is built
+export CAIRN_OVERWHELM_SKIP_THRESHOLD=3    # optional: skips in a row that slow a session down (UC-CASE-14)
 .venv/bin/uvicorn cairn_api.main:app --app-dir api
 ```
 
-The database needs migrations 0001 to 0009 **and** the optional `context_items_jsonb` and `context_items_read_only` migrations, in that order (`db/apply.sh context_items_jsonb context_items_read_only`). UC-10 and UC-11 store their records in `context_items` (`CERT_ORDER` and `BANK_NOTICES`).
+The database needs migrations 0001 to 0010 **and** the optional `context_items_jsonb` and `context_items_read_only` migrations, in that order (`db/apply.sh context_items_jsonb context_items_read_only`). UC-10 and UC-11 store their records in `context_items` (`CERT_ORDER` and `BANK_NOTICES`).
 
 ## Tests
 
@@ -62,6 +76,19 @@ The use case suite creates a scratch database, applies the migrations, loads the
 
 Sign-up and onboarding copy lives in [`cairn_api/content/registration-copy.json`](cairn_api/content/registration-copy.json). `spec_copy` is the spec's copy, verbatim, and a test fails if it drifts. `draft_copy` holds strings the spec doesn't supply (personality samples, deletion wording, link labels). Those need product and legal review. To replace copy after legal review, point `CAIRN_REGISTRATION_COPY` at a new file. Acknowledgment versions come from a hash of the exact text, so changed wording is acknowledged again on next sign-in.
 
+## Case creation
+
+Case creation follows `database/docs/cairn-case-creation-use-cases.json` (spec 0.3.0). `database/docs/case-creation-gap-audit.md` maps every acceptance criterion to its test.
+
+- A new case is a draft. The 28 free days start only at the first `POST .../journey/start` (DEC-01), inside `cairn.start_journey`. No payment information is asked for anywhere (DEC-02).
+- Nothing about the person who died is collected at creation beyond the spec's data_fields. Legal names, dates of birth, SSNs, account numbers, and medical details never are. Free text is redacted as it is parsed (`RedactedText`), never stored, and only confirmed field values are saved.
+- Journey selection rules are template data in `database/content/journeys/journey-selection.json`, loaded into `journey_templates`. `cairn_api/journey_selection.py` only evaluates them.
+- Every turn acknowledges first, asks at most one question, and has one `next_step`. Every question offers Skip for now and I'm not sure, and every response carries `read_aloud`.
+- Safety modes (UC-CASE-14) are in a client-held `session` and never stored. In acute_distress and risk_of_harm the voice is steady_care and no question is asked until the user continues.
+- Free-text extraction (`extraction.py`) and distress signals (`safety.py`) are rule-based stand-ins until a model and the Trello card 26 crisis plan replace them.
+
+Copy lives in [`cairn_api/content/case-creation-copy.json`](cairn_api/content/case-creation-copy.json), with the same `spec_copy`, `flow_copy`, and `draft_copy` sections as the registration copy, and a test that keeps `spec_copy` verbatim. Point `CAIRN_CASE_COPY` at a reviewed file to replace it.
+
 ## Voices
 
 The personality step (UC-REG-12) offers the voices in [`voices/manifest.yaml`](../voices/manifest.yaml). The label, tagline, and sample reply on that screen come from the manifest and each voice's reference response. The choice is stored as `users.voice` and can be changed with `PATCH /v1/me`. "Choose for me" saves the manifest's `default_voice`.
@@ -75,7 +102,8 @@ Adding a voice means a new voice file and manifest entry, a new value in `schema
 | Job | Function | Notes |
 |---|---|---|
 | Trial status | `cairn.expire_trials()` | Reporting only. Read-only is enforced from `trial_ends_at` directly |
-| Trial reminder email | `cairn.claim_due_trial_reminders(limit)` | Returns due day-21 and day-27 reminders and marks them sent. Render with `account.reminder_text`. No email sender yet |
+| Trial reminder email | `cairn.claim_due_trial_reminders(limit)` | Returns due reminders (day 21, day 27, and `trial_ends_soon`) and marks them sent. Render with `account.reminder_text`. No email sender yet |
+| Draft cleanup (DEC-07) | `cairn.purge_inactive_drafts()` | At least daily. Deletes drafts idle for `app_settings.draft_retention_days` (28), with their answers and context. Never touches active cases |
 | Identity cleanup | `python api/scripts/identity_cleanup.py` | Deletes Auth0 users and revokes Apple tokens after account deletion |
 | Stale accounts | `cairn.purge_stale_accounts(pending, no_case)` | Periods come from the retention schedule [LEGAL REVIEW REQUIRED] |
 

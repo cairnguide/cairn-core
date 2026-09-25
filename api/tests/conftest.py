@@ -94,8 +94,10 @@ def scratch_db_url():
         sys.path.insert(0, str(DB_DIR / "tools"))
         import load_templates
         templates, errors = load_templates.load_and_validate(DB_DIR / "content", allow_unreviewed=True)
-        assert not errors, errors
-        load_templates.load_into_db(templates, "api-test", url)
+        journeys, journey_errors = load_templates.load_and_validate_journeys(
+            DB_DIR / "content", {doc["task_key"] for _, doc in templates}, allow_unreviewed=True)
+        assert not errors and not journey_errors, errors + journey_errors
+        load_templates.load_into_db(templates, "api-test", url, journeys)
         yield url
     finally:
         with psycopg.connect(admin_url, autocommit=True) as admin:
@@ -135,3 +137,56 @@ def onboard(api, subject: str, method: str = "email", preferred_name: str = "Pat
 def as_user(subject: str, email: str | None = None, verified: bool = True, method: str = "email") -> dict:
     return {"X-Test-Subject": subject, "X-Test-Email": email or f"{subject}@example.test",
             "X-Test-Email-Verified": "true" if verified else "false", "X-Test-Method": method}
+
+
+# ------------------------------------------------------------------ case creation helpers
+
+def register(api, subject: str, time_zone: str = "America/New_York", voice: str = "choose_for_me") -> dict:
+    """Create the account and finish onboarding, so the user can start a case."""
+    r = api.post("/v1/registrations", json={"time_zone": time_zone}, headers=as_user(subject))
+    assert r.status_code in (200, 201), r.text
+    return onboard(api, subject, voice=voice)
+
+
+def new_draft(api, subject: str, **body) -> dict:
+    r = api.post("/v1/cases", json=body or None, headers=as_user(subject))
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def answer(api, subject: str, case_id: str, field: str, value=None, state: str = "answered", **extra) -> dict:
+    body = {"state": state, **extra}
+    if value is not None:
+        body["value"] = value
+    r = api.put(f"/v1/cases/{case_id}/intake/answers/{field}", json=body, headers=as_user(subject))
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def start_journey(api, subject: str, case_id: str) -> dict:
+    preview = api.get(f"/v1/cases/{case_id}/journey/preview", headers=as_user(subject))
+    assert preview.status_code == 200, preview.text
+    version = preview.json()["pre_button_notice"]["version"]
+    r = api.post(f"/v1/cases/{case_id}/journey/start", json={"pre_button_notice_version": version},
+                 headers=as_user(subject))
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def active_case(api, subject: str, answers: dict | None = None) -> tuple[str, dict]:
+    """A started journey. answers maps field to value. Returns the case id and GET /journey."""
+    case_id = new_draft(api, subject)["case"]["id"]
+    for field, value in (answers or {"place_of_death": {"state": "NH"}}).items():
+        answer(api, subject, case_id, field, value)
+    start_journey(api, subject, case_id)
+    r = api.get(f"/v1/cases/{case_id}/journey", headers=as_user(subject))
+    assert r.status_code == 200, r.text
+    return case_id, r.json()
+
+
+def task_keys(journey: dict) -> set[str]:
+    return {t["task_key"] for w in journey["weeks"] for t in w["tasks"]}
+
+
+def find_task(journey: dict, key: str) -> dict:
+    return next(t for w in journey["weeks"] for t in w["tasks"] if t["task_key"] == key)

@@ -9,6 +9,7 @@ The data involved is highly sensitive (identity of a deceased person, place of d
 - `docs/cairn-mvp-data-model.md`: the MVP conceptual model, decision log, release gate rules, and example template.
 - `docs/cairn-conceptual-data-model.md`: the full future model. The MVP is a strict subset plus a few flag columns.
 - `docs/cairn-registration-use-cases.json`: registration and onboarding (UC-REG-01 to UC-REG-14, UC-ACCT-01), spec 1.1.0. Replaces the registration part of UC-1 to UC-13. `docs/registration-gap-audit.md` records what is built and what is open. UC-REG-06 (age confirmation) is not built, by product decision: Cairn does not ask for or store the user's age.
+- `docs/cairn-case-creation-use-cases.json`: case creation (UC-CASE-01 to UC-CASE-18), spec 0.3.0. Replaces UC-5 to UC-9. `docs/case-creation-gap-audit.md` maps every acceptance criterion to its test and lists what is open.
 
 ## Decisions already made (ask the product owner before changing)
 
@@ -30,6 +31,7 @@ db/apply.sh        migration runner (uses DATABASE_URL, owner role)
 db/tests/          verify.sql (security and behavior checks) and run.sh
 content/schema/    JSON Schema for template files
 content/tasks/     template files, one folder per jurisdiction (us, nh, ...)
+content/journeys/  journey selection rules: base paths, add-ons, completed items (case creation spec)
 tools/             load_templates.py (validate and load templates)
 docs/              data model documents
 ```
@@ -58,12 +60,16 @@ Install loader dependencies with `pip install -r tools/requirements.txt`.
 - Per transaction, set the caller with `SELECT set_config('app.user_id', '<uuid>', true)`. Use the transaction-local form. An unset user matches no rows.
 - Also run `SET search_path = cairn, pg_temp` on each connection. Role-level settings are not inherited through membership.
 - `cairn_app` has column-level grants only and no direct INSERT on `users`. Sign up and sign in go through `cairn.create_account` and `cairn.resolve_user`. The app cannot write `onboarding_step`, `status`, or the trial columns. Onboarding moves only through `cairn.advance_onboarding`, one step at a time.
-- The trial starts in a trigger on `cases`, so it is always in the same transaction as the first case. `trial_started_at` is set once and a trigger refuses any change, the owner included.
-- Read-only after the trial and "no case before onboarding" are restrictive RLS policies calling `cairn.account_can_write()`. Keep them on every new case-scoped table (INSERT and UPDATE), and never on DELETE, so data can always be deleted.
+- The trial starts in `cairn.start_journey`, in the same transaction that moves the account's first case from draft to active (DEC-01, migration 0010). Creating or editing a draft never starts it. `trial_started_at` is set once and a trigger refuses any change, the owner included.
+- Only `cairn.start_journey` moves a case out of draft. The app has no grant on `cases.status` or the journey start columns, and `cases_guard` refuses going back to draft or changing `journey_started_at`.
+- Read-only after the trial and "no case before onboarding" are restrictive RLS policies. Active cases use `cairn.account_can_write()`. Drafts stay editable on a read-only account (UC-CASE-18), so case-scoped tables use `cairn.case_writable(case_id)`. Keep one of them on every new case-scoped table (INSERT and UPDATE), and never on DELETE, so data can always be deleted.
+- Legal identity is never collected on a draft. Restrictive policies refuse `deceased` inserts and updates while the case is a draft.
+- `case_intake_answers` holds only the spec's data_fields, and `cairn.intake_value_valid` checks each value's shape. Never add a free-text column to it. Circumstance stores the enum only.
+- Nothing about a user's distress is stored. Safety modes live in the client-held session (decision 7).
 - `consents` is append-only. Rows go only through the cascade from deleting the account (`cairn.delete_my_account`, `cairn.purge_stale_accounts`).
 - `audit_events` is append-only and write-only for the app. Do not use `INSERT ... RETURNING` on it because that needs a SELECT policy.
 - Template and citation rows cannot be updated or deleted (only the `active` flag can flip). Audit rows cannot be updated, deleted, or truncated.
-- `purge_expired_cases()`, `expire_trials()`, `claim_due_trial_reminders()`, and `purge_stale_accounts()` are not granted to the app. Run them from a scheduled job as the owner. `identity_deletion_requests` has no app grants.
+- `purge_expired_cases()`, `expire_trials()`, `claim_due_trial_reminders()`, `purge_stale_accounts()`, and `purge_inactive_drafts()` are not granted to the app. Run them from a scheduled job as the owner. `identity_deletion_requests` has no app grants. `app_settings` is read-only for the app.
 - Never log names, dates of birth, SSN digits, or free-text fields. Audit rows hold opaque IDs only.
 - Never commit credentials. Logins, passwords, and network rules are provisioned outside these scripts.
 - Never edit an applied migration. `apply.sh` fails on a checksum change. Add a new migration.
@@ -89,6 +95,7 @@ Install loader dependencies with `pip install -r tools/requirements.txt`.
 7. Templates with `domicile_state` rules do not match when `domicile_state` is null. Is that the intended behavior?
 8. UC-REG-14 must match the crisis plan on Trello card 26, which has no written plan yet.
 9. Subscriptions and billing are not designed. `users.status = 'subscribed'` is owner-only until they are.
+10. Case creation decisions to confirm are listed in `docs/case-creation-gap-audit.md`: three trial reminders in one week, registration trial copy that still says the days begin with the first case, and whether to wire the `journeys/` package into the loader.
 
 Resolved: `date_of_death` before `date_of_birth` is now rejected by the database directly (`death_not_before_birth` check constraint on `deceased`), now that the two dates live on one row.
 
@@ -112,6 +119,10 @@ Adds the account fields from the registration spec to `users`, makes `consents` 
 ## Migration 0009 (voices)
 
 Replaces `users.personality` (gentle, steady, straightforward) with `users.voice`, one of the four voices in `voices/manifest.yaml`: `steady_direct` (the default), `warm_patient`, `brisk_businesslike`, and `plain_practical`. The `users_voice_known` check constraint lists the ids. Existing rows keep the closest voice: gentle becomes `warm_patient`, steady becomes `steady_direct`, and straightforward becomes `plain_practical`. The app keeps its column-level UPDATE grant, now on `voice`. Adding a voice needs a new migration that replaces the constraint. Spec 1.2.0 records the change to UC-REG-12.
+
+## Migration 0010 (case creation)
+
+From `docs/cairn-case-creation-use-cases.json` spec 0.3.0. A case starts as a `draft` (the new default). `cairn.start_journey` moves it to `active`, pins `journey_template_key` and `journey_template_version`, sets `journey_started_at`, and on the account's first journey starts the trial and schedules the `trial_day_21`, `trial_day_27`, and `trial_ends_soon` reminders. The 0008 trigger that started the trial on the first case is dropped. Intake answers go in `case_intake_answers` (one row per data_fields key, with `answer_state` answered, skipped, or unsure). Journey selection rules are content (`content/journeys/journey-selection.json`), loaded into the immutable `journey_templates` table. `case_tasks` gains `selected` (whether the rules include the task, separate from the user's status) and the `check_on_this` and `not_today` statuses. `task_templates` gains `why_now`. `deceased` legal names become nullable because they are collected just in time, not at case creation. `case_members.relationship` becomes nullable because the role is an intake answer. `app_settings` holds `draft_retention_days` (28, DEC-07) and `trial_reminder_days_before` (3, OPEN-DECISION-02). `cairn.purge_inactive_drafts()` deletes drafts idle that long and must run at least daily as the owner. Existing cases keep `active` and get `journey_started_at = created_at`.
 
 ## Conventions
 

@@ -1,0 +1,23 @@
+{
+  "task_key": "find_the_will",
+  "version": 1,
+  "title": "Find the will",
+  "plain_summary": "Look for the original will and any trust papers. The original is important, not just a copy. Their attorney, a safe deposit box, or a home file are common places to look.",
+  "journey_week": 3,
+  "sort_order": 30,
+  "due_offset_days": 15,
+  "jurisdiction": "US",
+  "applies_when": {
+    "always": true
+  },
+  "attorney_referral": false,
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "Internal Revenue Service, Publication 559, Survivors, Executors, and Administrators",
+      "url": "https://www.irs.gov/publications/p559",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

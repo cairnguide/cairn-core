@@ -39,6 +39,16 @@ _ORDER = {409: {"description": "An earlier step isn't finished yet. next_step sa
 
 CONSENT_STEP = acct.CONSENT_STEP
 
+# The hand-off relationship as a case creation user_role (UC-CASE-02), so it isn't asked twice.
+HANDOFF_USER_ROLE = {
+    Relationship.spouse: "spouse_partner",
+    Relationship.child: "child",
+    Relationship.sibling: "other_family",
+    Relationship.other_family: "other_family",
+    Relationship.power_of_attorney: "power_of_attorney",
+    Relationship.fiduciary: "professional_fiduciary",
+}
+
 
 def _at_screen(s: Session, request: Request, target: ScreenId) -> OnboardingResponse | None:
     """None if target is the current screen. The unchanged current screen if target was already passed."""
@@ -192,7 +202,7 @@ def need_a_moment(request: Request) -> PauseResponse:
     summary="Start toward case creation",
     description=(
         "After UC-REG-12. The relationship shapes the wording of case creation. A power of attorney is told "
-        "that authority generally ends at death. Not stored here. It's saved on the case when the case is created."
+        "that authority generally ends at death. Not stored here. Send user_role to POST /v1/cases to save it."
     ),
     responses={409: {"description": "Onboarding isn't finished, or an acknowledgment changed."}},
 )
@@ -206,5 +216,6 @@ def case_handoff(req: CaseHandoffRequest, request: Request,
     if rel == Relationship.power_of_attorney:
         notes.append(messages.POA_ENDS_AT_DEATH)
     return CaseHandoffResponse(language_profile="professional" if rel == Relationship.fiduciary else "family",
-                               notes=notes, next_step=messages.registration_next_step(rel))
+                               user_role=HANDOFF_USER_ROLE[rel], notes=notes,
+                               next_step=messages.registration_next_step(rel))
 

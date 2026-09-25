@@ -61,6 +61,9 @@ UPDATE cairn.task_templates SET active = false WHERE task_key = 't_old' AND vers
 UPDATE cairn.task_templates SET active = false WHERE git_release <> 'test';
 INSERT INTO cairn.template_citations (template_id, authority_name, url, jurisdiction)
 SELECT id, 'Test Authority', 'https://example.test/a', 'US' FROM cairn.task_templates WHERE task_key = 't_always';
+-- Journey selection rules (0010). start_journey only accepts an active version with the named path.
+INSERT INTO cairn.journey_templates (version, definition, content_hash, git_release)
+VALUES (9001, '{"paths": {"general": {"tasks": []}}}', repeat('7', 64), 'test');
 
 -- ------------------------------------------------------------ template_applies unit checks
 SELECT pg_temp.expect_true('always applies', cairn.template_applies('{"always": true}', 'no','no','NH','NH'));
@@ -139,11 +142,62 @@ SELECT pg_temp.expect_fail($q$DELETE FROM cairn.consents$q$);
 SELECT set_config('app.user_id', :'bob', true);
 SELECT pg_temp.onboard();
 
--- Alice creates a case, becomes owner, records the deceased and the death, gets tasks.
+-- Alice creates a case. It starts as a draft (0010) and does not start the trial (DEC-01).
 SELECT set_config('app.user_id', :'alice', true);
 INSERT INTO cairn.cases (created_by) VALUES (:'alice'::uuid) RETURNING id AS case_a \gset
 INSERT INTO cairn.case_members (case_id, user_id, relationship, role)
   VALUES (:'case_a'::uuid, :'alice'::uuid, 'spouse', 'owner');
+SELECT pg_temp.expect_true('a new case is a draft with no journey',
+  (SELECT status = 'draft' AND journey_started_at IS NULL AND journey_started_on IS NULL
+   FROM cairn.cases WHERE id = :'case_a'::uuid));
+SELECT pg_temp.expect_true('a draft does not start the trial',
+  (SELECT trial_started_at IS NULL FROM cairn.users WHERE id = :'alice'::uuid));
+SELECT pg_temp.expect_count('SELECT 1 FROM cairn.trial_reminders', 0);
+
+-- ------------------------------------------------------------ case creation (0010)
+-- Only cairn.start_journey moves a case out of draft. The app can't write status or journey fields.
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.cases SET status = 'active' WHERE id = %L$q$, :'case_a'));
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.cases SET journey_started_at = now() WHERE id = %L$q$, :'case_a'));
+SELECT pg_temp.expect_fail(format($q$INSERT INTO cairn.cases (created_by, status) VALUES (%L, 'active')$q$, :'alice'));
+SELECT pg_temp.expect_fail($q$UPDATE cairn.app_settings SET value = '1'$q$);
+SELECT pg_temp.expect_fail($q$SELECT cairn.purge_inactive_drafts()$q$);
+-- Legal identity is never collected on a draft (never_collect_at_case_creation).
+SELECT pg_temp.expect_fail(format($q$INSERT INTO cairn.deceased (case_id, legal_first_name, legal_last_name) VALUES (%L,'E','V')$q$, :'case_a'));
+-- Intake answers: only the spec's fields and shapes. Nothing else, and no free text for circumstance.
+INSERT INTO cairn.case_intake_answers (case_id, field_key, answer_state, value, own_words) VALUES
+  (:'case_a'::uuid, 'display_name', 'answered', '"Dan"', 'Dan'),
+  (:'case_a'::uuid, 'circumstance', 'answered', '"sudden_natural"', NULL),
+  (:'case_a'::uuid, 'veteran_status', 'skipped', NULL, NULL),
+  (:'case_a'::uuid, 'date_of_death', 'answered', '{"precision": "this_week", "date": null}', NULL),
+  (:'case_a'::uuid, 'place_of_death', 'answered', '{"state": "NH", "county_or_city": null, "outside_us": false}', NULL),
+  (:'case_a'::uuid, 'completed_items', 'answered', '["funeral_provider_chosen", "bank_notified"]', NULL);
+SELECT pg_temp.expect_fail(format($q$INSERT INTO cairn.case_intake_answers (case_id, field_key, answer_state, value) VALUES (%L, 'cause_of_death', 'answered', '"x"')$q$, :'case_a'));
+SELECT pg_temp.expect_fail(format($q$INSERT INTO cairn.case_intake_answers (case_id, field_key, answer_state, value) VALUES (%L, 'user_role', 'answered', '"cousin"')$q$, :'case_a'));
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.case_intake_answers SET value = '"he had cancer"' WHERE case_id = %L AND field_key = 'circumstance'$q$, :'case_a'));
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.case_intake_answers SET own_words = 'a heart attack' WHERE case_id = %L AND field_key = 'circumstance'$q$, :'case_a'));
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.case_intake_answers SET value = '{"precision": "exact", "date": null}' WHERE case_id = %L AND field_key = 'date_of_death'$q$, :'case_a'));
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.case_intake_answers SET value = '{"state": "NH", "county_or_city": null, "outside_us": false, "ssn": "1"}' WHERE case_id = %L AND field_key = 'place_of_death'$q$, :'case_a'));
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.case_intake_answers SET value = '{"state": "NH", "county_or_city": null, "outside_us": true}' WHERE case_id = %L AND field_key = 'place_of_death'$q$, :'case_a'));
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.case_intake_answers SET value = '["none_or_unsure", "bank_notified"]' WHERE case_id = %L AND field_key = 'completed_items'$q$, :'case_a'));
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.case_intake_answers SET value = '"yes"' WHERE case_id = %L AND field_key = 'veteran_status'$q$, :'case_a'));
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.cases SET shown_notices = ARRAY['suicide_loss'] WHERE id = %L$q$, :'case_a'));
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.cases SET attorney_triggers = ARRAY['grief'] WHERE id = %L$q$, :'case_a'));
+-- start_journey refuses unknown templates and a death that hasn't happened yet (UC-CASE-17).
+SELECT pg_temp.expect_fail(format($q$SELECT cairn.start_journey(%L, 9001, 'nonexistent_path')$q$, :'case_a'));
+SELECT pg_temp.expect_fail(format($q$SELECT cairn.start_journey(%L, 424242, 'general')$q$, :'case_a'));
+UPDATE cairn.cases SET death_not_yet_occurred = true WHERE id = :'case_a'::uuid;
+SELECT pg_temp.expect_fail(format($q$SELECT cairn.start_journey(%L, 9001, 'general')$q$, :'case_a'));
+UPDATE cairn.cases SET death_not_yet_occurred = false WHERE id = :'case_a'::uuid;
+SELECT pg_temp.expect_true('still a draft, still no trial',
+  (SELECT c.status = 'draft' AND u.trial_started_at IS NULL FROM cairn.cases c JOIN cairn.users u ON u.id = c.created_by
+   WHERE c.id = :'case_a'::uuid));
+
+-- Start journey: active, pinned, and the first journey starts the 28-day trial in this transaction.
+SELECT pg_temp.expect_true('first start_journey starts the trial', cairn.start_journey(:'case_a'::uuid, 9001, 'general'));
+SELECT pg_temp.expect_true('case is active and pinned',
+  (SELECT status = 'active' AND journey_template_key = 'general' AND journey_template_version = 9001
+          AND journey_started_at = now() AND journey_started_on IS NOT NULL FROM cairn.cases WHERE id = :'case_a'::uuid));
+SELECT pg_temp.expect_fail(format($q$SELECT cairn.start_journey(%L, 9001, 'general')$q$, :'case_a'));
 -- Identity fields (UC-5) then death event fields (UC-6) as two statements on
 -- the same row, matching the two-step UX now that the tables are merged.
 INSERT INTO cairn.deceased (case_id, legal_first_name, legal_last_name, date_of_birth, ssn_last4,
@@ -156,13 +210,14 @@ INSERT INTO cairn.consents (user_id, purpose, policy_version) VALUES (:'alice'::
 INSERT INTO cairn.audit_events (actor_id, case_id, action) VALUES (:'alice'::uuid, :'case_a'::uuid, 'case_created');
 
 -- always + vet + nh + nowill(has_will no, domicile NH) + t_old v2 = 5. CA excluded. Old version excluded.
--- The first case starts the 28-day trial in the same transaction and schedules reminders.
-SELECT pg_temp.expect_true('trial started with the first case',
+-- The first Start journey started the 28-day trial in the same transaction and scheduled reminders:
+-- day 21, day 27, and trial_reminder_days_before (3) before the end.
+SELECT pg_temp.expect_true('trial started with the first journey',
   (SELECT status = 'trial_active' AND trial_started_at = now() AND trial_ends_at = now() + interval '672 hours'
    FROM cairn.users WHERE id = :'alice'::uuid));
-SELECT pg_temp.expect_count('SELECT 1 FROM cairn.trial_reminders', 2);
-SELECT pg_temp.expect_true('reminders at day 21 and day 27',
-  (SELECT array_agg(due_at - now() ORDER BY kind) = ARRAY[interval '504 hours', interval '648 hours']
+SELECT pg_temp.expect_count('SELECT 1 FROM cairn.trial_reminders', 3);
+SELECT pg_temp.expect_true('reminders at day 21, day 27, and 3 days before the end',
+  (SELECT array_agg(due_at - now() ORDER BY kind) = ARRAY[interval '504 hours', interval '648 hours', interval '600 hours']
    FROM cairn.trial_reminders));
 
 SELECT pg_temp.expect_true('generate_case_tasks creates 5', cairn.generate_case_tasks(:'case_a'::uuid) = 5);
@@ -196,6 +251,7 @@ SELECT pg_temp.expect_count('SELECT 1 FROM cairn.cases', 0);
 SELECT pg_temp.expect_count('SELECT 1 FROM cairn.deceased', 0);
 SELECT pg_temp.expect_count('SELECT 1 FROM cairn.case_members', 0);
 SELECT pg_temp.expect_count('SELECT 1 FROM cairn.case_tasks', 0);
+SELECT pg_temp.expect_count('SELECT 1 FROM cairn.case_intake_answers', 0);
 SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.consents WHERE user_id = %L', :'alice'), 0);
 SELECT pg_temp.expect_count('SELECT 1 FROM cairn.users', 1);  -- only himself
 -- Writes against Alice's case are rejected or affect nothing.
@@ -204,6 +260,8 @@ SELECT pg_temp.expect_fail(format($q$INSERT INTO cairn.deceased (case_id, legal_
 SELECT pg_temp.expect_fail(format($q$INSERT INTO cairn.cases (created_by) VALUES (%L)$q$, :'alice'));
 SELECT pg_temp.expect_fail(format($q$INSERT INTO cairn.audit_events (actor_id, case_id, action) VALUES (%L,%L,'forged')$q$, :'alice', :'case_a'));
 SELECT pg_temp.expect_true('cannot generate tasks for another case', cairn.generate_case_tasks(:'case_a'::uuid) = 0);
+SELECT pg_temp.expect_fail(format($q$SELECT cairn.start_journey(%L, 9001, 'general')$q$, :'case_a'));
+SELECT pg_temp.expect_fail(format($q$INSERT INTO cairn.case_intake_answers (case_id, field_key, answer_state) VALUES (%L, 'user_role', 'skipped')$q$, :'case_a'));
 DO $$
 DECLARE n bigint;
 BEGIN
@@ -214,6 +272,8 @@ BEGIN
   IF n <> 0 THEN RAISE EXCEPTION 'Bob updated % death_state rows', n; END IF;
   UPDATE cairn.case_tasks SET status = 'skipped';         GET DIAGNOSTICS n = ROW_COUNT;
   IF n <> 0 THEN RAISE EXCEPTION 'Bob updated % task rows', n; END IF;
+  UPDATE cairn.case_intake_answers SET answer_state = 'skipped', value = NULL;  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 0 THEN RAISE EXCEPTION 'Bob updated % intake answers', n; END IF;
   DELETE FROM cairn.cases;                                 GET DIAGNOSTICS n = ROW_COUNT;
   IF n <> 0 THEN RAISE EXCEPTION 'Bob deleted % cases', n; END IF;
 END $$;
@@ -225,17 +285,26 @@ SELECT pg_temp.expect_count('SELECT 1 FROM cairn.deceased', 1);
 SELECT pg_temp.expect_count('SELECT 1 FROM cairn.case_tasks', 5);
 SELECT pg_temp.expect_fail($q$INSERT INTO cairn.task_templates (task_key,version,title,plain_summary,journey_week,due_offset_days,jurisdiction,content_hash,git_release) VALUES ('zzz',1,'x','x',1,1,'US',repeat('9',64),'t')$q$);
 
--- A second case never moves the trial clock.
+-- A second journey never moves the trial clock (DEC-04).
 SELECT trial_started_at AS alice_trial FROM cairn.users WHERE id = :'alice'::uuid \gset
 INSERT INTO cairn.cases (created_by) VALUES (:'alice'::uuid) RETURNING id AS case_a2 \gset
 INSERT INTO cairn.case_members (case_id, user_id, relationship, role)
   VALUES (:'case_a2'::uuid, :'alice'::uuid, 'spouse', 'owner');
+SELECT pg_temp.expect_true('second start_journey does not start a trial',
+  NOT cairn.start_journey(:'case_a2'::uuid, 9001, 'general'));
 SELECT pg_temp.expect_true('second case keeps trial_started_at',
   (SELECT trial_started_at = :'alice_trial'::timestamptz FROM cairn.users WHERE id = :'alice'::uuid));
-SELECT pg_temp.expect_count('SELECT 1 FROM cairn.trial_reminders', 2);
+SELECT pg_temp.expect_count('SELECT 1 FROM cairn.trial_reminders', 3);
 
 -- ------------------------------------------------------------ back to owner: immutability and retention
 RESET ROLE;
+-- A started journey never goes back to draft, not even for the owner.
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.cases SET status = 'draft', journey_started_at = NULL, journey_template_key = NULL, journey_template_version = NULL, journey_started_on = NULL WHERE id = %L$q$, :'case_a'));
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.cases SET journey_started_at = now() - interval '1 day' WHERE id = %L$q$, :'case_a'));
+-- last_activity_at always takes the server time.
+UPDATE cairn.cases SET last_activity_at = now() + interval '100 days' WHERE id = :'case_a'::uuid;
+SELECT pg_temp.expect_true('last_activity_at cannot be pushed forward',
+  (SELECT last_activity_at = now() FROM cairn.cases WHERE id = :'case_a'::uuid));
 -- The trial start is never reset, not even by the owner.
 SELECT pg_temp.expect_fail(format($q$UPDATE cairn.users SET trial_started_at = NULL, trial_ends_at = NULL WHERE id = %L$q$, :'alice'));
 SELECT pg_temp.expect_fail(format($q$UPDATE cairn.users SET trial_ends_at = now() WHERE id = %L$q$, :'alice'));
@@ -263,7 +332,13 @@ SELECT pg_temp.expect_true('effective status is read_only',
   (SELECT cairn.effective_account_status(status, trial_ends_at) = 'read_only' FROM cairn.users WHERE id = :'alice'::uuid));
 SELECT pg_temp.expect_count('SELECT 1 FROM cairn.cases', 2);          -- still readable
 SELECT pg_temp.expect_count('SELECT 1 FROM cairn.case_tasks', 5);
-SELECT pg_temp.expect_fail(format($q$INSERT INTO cairn.cases (created_by) VALUES (%L)$q$, :'alice'));
+-- UC-CASE-18. A read-only account can create and edit a draft, but can't start its journey.
+INSERT INTO cairn.cases (created_by) VALUES (:'alice'::uuid) RETURNING id AS case_a3 \gset
+INSERT INTO cairn.case_members (case_id, user_id, role) VALUES (:'case_a3'::uuid, :'alice'::uuid, 'owner');
+INSERT INTO cairn.case_intake_answers (case_id, field_key, answer_state) VALUES (:'case_a3'::uuid, 'user_role', 'skipped');
+UPDATE cairn.cases SET last_intake_step = 'display_name' WHERE id = :'case_a3'::uuid;
+SELECT pg_temp.expect_fail(format($q$SELECT cairn.start_journey(%L, 9001, 'general')$q$, :'case_a3'));
+DELETE FROM cairn.cases WHERE id = :'case_a3'::uuid;
 SELECT pg_temp.expect_fail(format($q$INSERT INTO cairn.deceased (case_id, legal_first_name, legal_last_name) VALUES (%L,'E','V')$q$, :'case_a2'));
 SELECT pg_temp.expect_fail(format($q$INSERT INTO cairn.context_items (case_id, item_key, payload) VALUES (%L,'CERT_ORDER','{}')$q$, :'case_a'));
 DO $$
@@ -275,6 +350,10 @@ BEGIN
   IF n <> 0 THEN RAISE EXCEPTION 'read-only account updated % task rows', n; END IF;
   UPDATE cairn.cases SET tasks_paused_until = now();       GET DIAGNOSTICS n = ROW_COUNT;
   IF n <> 0 THEN RAISE EXCEPTION 'read-only account updated % cases', n; END IF;
+  -- An active case's answers are read-only too. Only drafts stay editable.
+  UPDATE cairn.case_intake_answers SET answer_state = 'unsure', value = NULL, own_words = NULL;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 0 THEN RAISE EXCEPTION 'read-only account updated % answers on an active case', n; END IF;
 END $$;
 -- Settings stay editable and a case can still be deleted.
 UPDATE cairn.users SET voice = 'warm_patient' WHERE id = :'alice'::uuid;
@@ -304,21 +383,25 @@ UPDATE cairn.cases SET purge_after = now() - interval '1 day' WHERE id = :'case_
 SELECT pg_temp.expect_true('purge removes one case', cairn.purge_expired_cases() = 1);
 SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.deceased WHERE case_id = %L', :'case_a'), 0);
 SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.case_tasks WHERE case_id = %L', :'case_a'), 0);
-SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.audit_events WHERE case_id = %L', :'case_a'), 2);
+-- case_created (by the test), journey_started (by start_journey), and case_purged.
+SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.audit_events WHERE case_id = %L', :'case_a'), 3);
 
 -- A case owner can delete their own case through the app (erasure request path).
 SET LOCAL ROLE cairn_app;
 SELECT set_config('app.user_id', :'bob', true);
 INSERT INTO cairn.cases (created_by) VALUES (:'bob'::uuid) RETURNING id AS case_b \gset
 INSERT INTO cairn.case_members (case_id, user_id, relationship, role) VALUES (:'case_b'::uuid, :'bob'::uuid, 'child', 'owner');
+INSERT INTO cairn.case_intake_answers (case_id, field_key, answer_state, value) VALUES (:'case_b'::uuid, 'display_name', 'answered', '"Eve"');
+SELECT pg_temp.expect_true('bob starts his journey', cairn.start_journey(:'case_b'::uuid, 9001, 'general'));
 INSERT INTO cairn.deceased (case_id, legal_first_name, legal_last_name) VALUES (:'case_b'::uuid, 'Eve', 'Baker');
 DELETE FROM cairn.cases WHERE id = :'case_b'::uuid;
 SELECT pg_temp.expect_count('SELECT 1 FROM cairn.deceased', 0);
+SELECT pg_temp.expect_count('SELECT 1 FROM cairn.case_intake_answers', 0);
 
 -- ------------------------------------------------------------ account deletion (UC-ACCT-01)
 INSERT INTO cairn.cases (created_by) VALUES (:'bob'::uuid) RETURNING id AS case_b2 \gset
 INSERT INTO cairn.case_members (case_id, user_id, relationship, role) VALUES (:'case_b2'::uuid, :'bob'::uuid, 'child', 'owner');
-INSERT INTO cairn.deceased (case_id, legal_first_name, legal_last_name) VALUES (:'case_b2'::uuid, 'Eve', 'Baker');
+INSERT INTO cairn.case_intake_answers (case_id, field_key, answer_state, value) VALUES (:'case_b2'::uuid, 'display_name', 'answered', '"Eve"');
 SELECT cairn.delete_my_account();
 RESET ROLE;
 SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.users WHERE id = %L', :'bob'), 0);
@@ -326,8 +409,47 @@ SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.consents WHERE user_id =
 SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.trial_reminders WHERE user_id = %L', :'bob'), 0);
 SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.cases WHERE id = %L', :'case_b2'), 0);
 SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.deceased WHERE case_id = %L', :'case_b2'), 0);
+SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.case_intake_answers WHERE case_id = %L', :'case_b2'), 0);
 SELECT pg_temp.expect_count($q$SELECT 1 FROM cairn.identity_deletion_requests WHERE idp_subject = 'sub-bob'$q$, 1);
 SELECT pg_temp.expect_count(format($q$SELECT 1 FROM cairn.audit_events WHERE actor_id = %L AND action = 'account_deleted'$q$, :'bob'), 1);
+
+-- ------------------------------------------------------------ draft cleanup (DEC-07, UC-CASE-10)
+-- Drafts idle for draft_retention_days are deleted with their answers and conversation text.
+-- Active cases, accounts, and trial fields are never touched. The audit row has ids only.
+SET LOCAL ROLE cairn_app;
+SELECT cairn.create_account('sub-dave', 'dave@example.test', 'email') AS dave \gset
+SELECT set_config('app.user_id', :'dave', true);
+SELECT pg_temp.onboard();
+INSERT INTO cairn.cases (created_by) VALUES (:'dave'::uuid) RETURNING id AS old_draft \gset
+INSERT INTO cairn.case_members (case_id, user_id, role) VALUES (:'old_draft'::uuid, :'dave'::uuid, 'owner');
+INSERT INTO cairn.case_intake_answers (case_id, field_key, answer_state, value) VALUES (:'old_draft'::uuid, 'display_name', 'answered', '"Fakey"');
+INSERT INTO cairn.context_items (case_id, item_key, payload) VALUES (:'old_draft'::uuid, 'CONVO_SUMMARY', '{"text": "fake"}');
+INSERT INTO cairn.cases (created_by) VALUES (:'dave'::uuid) RETURNING id AS new_draft \gset
+INSERT INTO cairn.case_members (case_id, user_id, role) VALUES (:'new_draft'::uuid, :'dave'::uuid, 'owner');
+INSERT INTO cairn.cases (created_by) VALUES (:'dave'::uuid) RETURNING id AS old_active \gset
+INSERT INTO cairn.case_members (case_id, user_id, role) VALUES (:'old_active'::uuid, :'dave'::uuid, 'owner');
+SELECT pg_temp.expect_true('dave starts a journey', cairn.start_journey(:'old_active'::uuid, 9001, 'general'));
+RESET ROLE;
+SELECT trial_started_at AS dave_trial FROM cairn.users WHERE id = :'dave'::uuid \gset
+ALTER TABLE cairn.cases DISABLE TRIGGER cases_guard;
+UPDATE cairn.cases SET last_activity_at = now() - interval '28 days' WHERE id IN (:'old_draft'::uuid, :'old_active'::uuid);
+UPDATE cairn.cases SET last_activity_at = now() - interval '27 days 23 hours' WHERE id = :'new_draft'::uuid;
+ALTER TABLE cairn.cases ENABLE TRIGGER cases_guard;
+SELECT pg_temp.expect_true('purge removes the idle draft only', cairn.purge_inactive_drafts() = 1);
+SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.cases WHERE id = %L', :'old_draft'), 0);
+SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.case_intake_answers WHERE case_id = %L', :'old_draft'), 0);
+SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.context_items WHERE case_id = %L', :'old_draft'), 0);
+SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.cases WHERE id IN (%L, %L)', :'new_draft', :'old_active'), 2);
+SELECT pg_temp.expect_true('account and trial untouched',
+  (SELECT trial_started_at = :'dave_trial'::timestamptz FROM cairn.users WHERE id = :'dave'::uuid));
+SELECT pg_temp.expect_count(format($q$SELECT 1 FROM cairn.audit_events WHERE case_id = %L AND action = 'draft_case_expired'
+  AND actor_id IS NULL AND object_type = 'user' AND object_id = %L$q$, :'old_draft', :'dave'), 1);
+-- An answer is activity: it moves a draft's deletion date out again.
+ALTER TABLE cairn.cases DISABLE TRIGGER cases_guard;
+UPDATE cairn.cases SET last_activity_at = now() - interval '30 days' WHERE id = :'new_draft'::uuid;
+ALTER TABLE cairn.cases ENABLE TRIGGER cases_guard;
+INSERT INTO cairn.case_intake_answers (case_id, field_key, answer_state) VALUES (:'new_draft'::uuid, 'user_role', 'unsure');
+SELECT pg_temp.expect_true('purge keeps a draft with new activity', cairn.purge_inactive_drafts() = 0);
 
 -- ------------------------------------------------------------ stale account cleanup (UC-REG-10, UC-REG-13)
 SET LOCAL ROLE cairn_app;

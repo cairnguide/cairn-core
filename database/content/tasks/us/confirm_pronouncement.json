@@ -1,0 +1,24 @@
+{
+  "task_key": "confirm_pronouncement",
+  "version": 1,
+  "title": "Make sure the death has been pronounced",
+  "plain_summary": "Before anything else, a doctor, hospice nurse, or other authorized person officially pronounces the death. If hospice was caring for them, the hospice team usually handles this.",
+  "journey_week": 1,
+  "sort_order": 1,
+  "due_offset_days": 0,
+  "jurisdiction": "US",
+  "applies_when": {
+    "always": true
+  },
+  "attorney_referral": false,
+  "why_now": "The funeral home and the death certificate both wait on this step.",
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "CDC National Center for Health Statistics, Medical Examiners' and Coroners' Handbook on Death Registration",
+      "url": "https://www.cdc.gov/nchs/data/misc/hb_me.pdf",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

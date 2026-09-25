@@ -153,7 +153,19 @@ From `cairn-registration-use-cases.json`. Mapped onto existing tables rather tha
 - **CONSENTS** is the spec's consent record: purposes `privacy_terms`, `trial_terms`, and `ai_notice`, plus `auth_provider` and `client`. Append-only.
 - **TRIAL_REMINDERS** holds the day-21 and day-27 reminders, created when the trial starts.
 - **IDENTITY_DELETION_REQUESTS** queues Auth0 deletion and Apple token revocation after an account is deleted. It holds the IdP subject only and is emptied as the work is done.
-- The trial starts with the first case (a trigger on CASES) and lasts exactly 672 hours. After it ends, case data can be read and deleted but not created or changed, unless the account is subscribed.
+- The trial lasts exactly 672 hours. Migration 0010 moved its start from the first case to the first Start journey (see below). After it ends, case data can be read and deleted but not created or changed, unless the account is subscribed. Drafts stay editable.
+
+## Case creation (migration 0010)
+
+From `cairn-case-creation-use-cases.json` spec 0.3.0. `case-creation-gap-audit.md` has the full mapping.
+
+- **CASES** gains `status` draft (the default), `journey_template_key`, `journey_template_version`, `journey_started_at`, `last_intake_step`, `last_activity_at`, `death_not_yet_occurred`, `skip_explainers`, `name_fallback`, `attorney_triggers`, and `shown_notices`. A draft has no journey and no start date. An active case reads as read_only when the account is read-only.
+- **CASE_INTAKE_ANSWERS** is new: one row per data_fields key (user_role, display_name, date_of_death, place_of_death, residence_state, circumstance, veteran_status, estate_plan_status, completed_items) with `answer_state` answered, skipped, or unsure, a JSON value whose shape the database checks, and optional `own_words` for the review screen. No free text for circumstance.
+- **JOURNEY_TEMPLATES** is new: the journey selection rules as immutable versions, loaded from `content/journeys/`.
+- **CASE_TASKS** gains `selected` and the statuses `check_on_this` and `not_today`. `not_started` is the spec's todo.
+- **DECEASED** legal names are nullable. They are collected inside the task that needs them, never on a draft.
+- **APP_SETTINGS** is new: `draft_retention_days` and `trial_reminder_days_before`.
+- A draft idle for `draft_retention_days` is deleted with its answers and context by `purge_inactive_drafts()`. Active cases are never touched.
 
 ## Decision log
 

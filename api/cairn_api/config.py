@@ -44,6 +44,23 @@ class Settings:
     registration_copy_path: str | None = None
     # The voices folder (manifest.yaml, core.md, one file per voice). None uses the repository's voices/.
     voices_dir: str | None = None
+    # Path to a replacement case creation copy file after legal review. None uses the bundled one.
+    case_copy_path: str | None = None
+    # Case creation open decisions (spec open_decisions), with the spec's defaults.
+    # Only the default of each is built. Anything else is refused at startup.
+    estate_plan_mode: str = "add_on"        # OPEN-DECISION-01: estate plan as an add-on, not a starting trailhead
+    pre_need_path: str = "not_built"        # OPEN-DECISION-05: pre-need planning path
+    # UC-CASE-14 overwhelm signal: this many skips in a row slows the session down.
+    # Thresholds come from Trello card 26, which is not written yet.
+    overwhelm_skip_threshold: int = 3
+
+    def __post_init__(self):
+        if self.estate_plan_mode != "add_on":
+            raise RuntimeError("CAIRN_ESTATE_PLAN_MODE: only add_on is built (OPEN-DECISION-01).")
+        if self.pre_need_path != "not_built":
+            raise RuntimeError("CAIRN_PRE_NEED_PATH: the pre-need path is not built (OPEN-DECISION-05).")
+        if self.overwhelm_skip_threshold < 1:
+            raise RuntimeError("CAIRN_OVERWHELM_SKIP_THRESHOLD must be at least 1.")
 
     @property
     def auth0_issuer(self) -> str:
@@ -73,4 +90,8 @@ def load_settings() -> Settings:
         ai_provider_name=_require("CAIRN_AI_PROVIDER_NAME"),
         registration_copy_path=os.environ.get("CAIRN_REGISTRATION_COPY") or None,
         voices_dir=os.environ.get("CAIRN_VOICES_DIR") or None,
+        case_copy_path=os.environ.get("CAIRN_CASE_COPY") or None,
+        estate_plan_mode=os.environ.get("CAIRN_ESTATE_PLAN_MODE", "add_on"),
+        pre_need_path=os.environ.get("CAIRN_PRE_NEED_PATH", "not_built"),
+        overwhelm_skip_threshold=int(os.environ.get("CAIRN_OVERWHELM_SKIP_THRESHOLD", "3")),
     )

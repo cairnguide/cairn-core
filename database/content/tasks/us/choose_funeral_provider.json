@@ -1,14 +1,17 @@
 {
   "task_key": "choose_funeral_provider",
-  "version": 1,
+  "version": 2,
   "title": "Choose a funeral home",
   "plain_summary": "You have the right to an itemized price list from any funeral home, in person or over the phone. You only need to buy the goods and services you want.",
   "journey_week": 1,
   "sort_order": 20,
   "due_offset_days": 2,
   "jurisdiction": "US",
-  "applies_when": { "always": true },
+  "applies_when": {
+    "always": true
+  },
   "attorney_referral": false,
+  "why_now": "The funeral home helps with the death certificate and the arrangements that follow.",
   "counsel_reviewed_at": null,
   "citations": [
     {

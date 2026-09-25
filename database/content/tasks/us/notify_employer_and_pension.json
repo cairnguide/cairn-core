@@ -1,0 +1,23 @@
+{
+  "task_key": "notify_employer_and_pension",
+  "version": 1,
+  "title": "Contact their employer or pension plan",
+  "plain_summary": "If they were working, or had a pension or retirement plan from a past job, contact the employer or plan administrator. Retirement benefits are usually paid to the named beneficiary under the plan's terms.",
+  "journey_week": 3,
+  "sort_order": 25,
+  "due_offset_days": 16,
+  "jurisdiction": "US",
+  "applies_when": {
+    "always": true
+  },
+  "attorney_referral": false,
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "Internal Revenue Service, Retirement topics: Death",
+      "url": "https://www.irs.gov/retirement-plans/plan-participant-employee/retirement-topics-death",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

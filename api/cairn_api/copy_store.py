@@ -1,8 +1,9 @@
-"""Versioned user-facing copy for registration and onboarding (UC-REG-01 to UC-REG-14).
+"""Versioned user-facing copy for registration (UC-REG-01 to UC-REG-14) and case creation (UC-CASE-01 to UC-CASE-18).
 
-The spec's copy is stored verbatim in content/registration-copy.json so it can
-be replaced after legal review without a code change. Point
-CAIRN_REGISTRATION_COPY at another file to swap it.
+The spec's copy is stored verbatim in content/registration-copy.json and
+content/case-creation-copy.json so it can be replaced after legal review
+without a code change. Point CAIRN_REGISTRATION_COPY or CAIRN_CASE_COPY at
+another file to swap one.
 
 Acknowledgment versions are derived from the exact text shown, so any wording
 change produces a new version and the user is asked to acknowledge it again
@@ -17,6 +18,7 @@ from dataclasses import dataclass
 from functools import cached_property
 
 DEFAULT_PATH = pathlib.Path(__file__).parent / "content" / "registration-copy.json"
+CASE_COPY_PATH = pathlib.Path(__file__).parent / "content" / "case-creation-copy.json"
 
 # Which strings make up each acknowledgment. Changing any of them changes the version.
 _CONSENT_TEXT = {
@@ -41,18 +43,32 @@ class Copy:
         raise KeyError(key)
 
     def text_hash(self, consent_type: str) -> str:
-        joined = "\n".join(self.spec[k] for k in _CONSENT_TEXT[consent_type])
-        return hashlib.sha256(joined.encode()).hexdigest()[:12]
+        return self.version_of(*_CONSENT_TEXT[consent_type])
+
+    def version_of(self, *keys: str) -> str:
+        """A short hash of the exact wording, so a client can prove which text it showed."""
+        return self.version_of_text("\n".join(self[k] for k in keys))
+
+    @staticmethod
+    def version_of_text(text: str) -> str:
+        return hashlib.sha256(text.encode()).hexdigest()[:12]
+
+    def has(self, key: str) -> bool:
+        return any(key in table for table in (self.spec, self.flow, self.draft))
 
     @cached_property
     def all_strings(self) -> list[str]:
         return [*self.spec.values(), *self.flow.values(), *self.draft.values()]
 
 
-def load_copy(path: str | pathlib.Path | None = None) -> Copy:
-    data = json.loads(pathlib.Path(path or DEFAULT_PATH).read_text(encoding="utf-8"))
+def load_copy(path: str | pathlib.Path | None = None, default: pathlib.Path = DEFAULT_PATH) -> Copy:
+    data = json.loads(pathlib.Path(path or default).read_text(encoding="utf-8"))
     return Copy(version=data["version"], status=data["status"], spec=data["spec_copy"],
                 flow=data["flow_copy"], draft=data["draft_copy"])
+
+
+def load_case_copy(path: str | pathlib.Path | None = None) -> Copy:
+    return load_copy(path, CASE_COPY_PATH)
 
 
 def consent_versions(copy: Copy, privacy_version: str, terms_version: str) -> dict[str, str]:

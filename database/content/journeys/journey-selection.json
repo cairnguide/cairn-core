@@ -1,0 +1,379 @@
+{
+  "version": 1,
+  "counsel_reviewed_at": null,
+  "source": "database/docs/cairn-case-creation-use-cases.json 0.3.0, journey_selection",
+  "mvp_window": "first_4_weeks",
+  "verified_states": [],
+  "base_path_by_circumstance": {
+    "expected_illness_or_hospice": "expected_loss",
+    "sudden_natural": "sudden_loss",
+    "accident_or_unexpected": "sudden_loss_investigation",
+    "under_investigation": "sudden_loss_investigation",
+    "prefer_not_to_say": "general",
+    "skipped_or_unknown": "general"
+  },
+  "paths": {
+    "expected_loss": {
+      "title_copy_key": "path_expected_loss_title",
+      "why_copy_key": "path_expected_loss_why",
+      "tasks": [
+        "confirm_pronouncement",
+        "order_death_certificates",
+        "choose_funeral_provider",
+        "notify_social_security",
+        "notify_banks",
+        "notify_employer_and_pension",
+        "notify_life_insurers"
+      ]
+    },
+    "sudden_loss": {
+      "title_copy_key": "path_sudden_loss_title",
+      "why_copy_key": "path_sudden_loss_why",
+      "tasks": [
+        "confirm_pronouncement",
+        "order_death_certificates",
+        "choose_funeral_provider",
+        "notify_social_security",
+        "notify_banks",
+        "notify_employer_and_pension",
+        "notify_life_insurers"
+      ]
+    },
+    "sudden_loss_investigation": {
+      "title_copy_key": "path_sudden_loss_investigation_title",
+      "why_copy_key": "path_sudden_loss_investigation_why",
+      "tasks": [
+        "medical_examiner_or_coroner",
+        "order_death_certificates",
+        "choose_funeral_provider",
+        "notify_social_security",
+        "notify_banks",
+        "notify_employer_and_pension",
+        "notify_life_insurers"
+      ]
+    },
+    "general": {
+      "title_copy_key": "path_general_title",
+      "why_copy_key": "path_general_why",
+      "tasks": [
+        "confirm_pronouncement",
+        "order_death_certificates",
+        "choose_funeral_provider",
+        "notify_social_security",
+        "notify_banks",
+        "notify_employer_and_pension",
+        "notify_life_insurers"
+      ]
+    }
+  },
+  "waypoints": [
+    "first_hours",
+    "death_certificates",
+    "funeral_or_disposition",
+    "notify_ssa_and_agencies",
+    "notify_banks_insurers_employers"
+  ],
+  "task_waypoints": {
+    "confirm_pronouncement": "first_hours",
+    "medical_examiner_or_coroner": "first_hours",
+    "order_death_certificates": "death_certificates",
+    "ask_state_vital_records_office": "death_certificates",
+    "choose_funeral_provider": "funeral_or_disposition",
+    "notify_va_if_veteran": "funeral_or_disposition",
+    "notify_social_security": "notify_ssa_and_agencies",
+    "confirm_funeral_home_reported_death": "notify_ssa_and_agencies",
+    "notify_banks": "notify_banks_insurers_employers",
+    "notify_life_insurers": "notify_banks_insurers_employers",
+    "notify_employer_and_pension": "notify_banks_insurers_employers",
+    "talk_to_estate_attorney": null,
+    "find_the_will": null,
+    "confirm_named_executor": null,
+    "no_will_explainer": null
+  },
+  "add_ons": [
+    {
+      "id": "va_burial_benefits",
+      "spec_key": "va_burial_benefits_step",
+      "when": {
+        "fact": "veteran_status",
+        "op": "in",
+        "value": [
+          "yes",
+          "unknown"
+        ]
+      },
+      "add_tasks": [
+        "notify_va_if_veteran"
+      ],
+      "source_urls": [
+        "https://www.va.gov/burials-memorials/"
+      ]
+    },
+    {
+      "id": "veterans_crisis_line",
+      "spec_key": "UC-CASE-06 Veterans Crisis Line",
+      "when": {
+        "fact": "veteran_status",
+        "op": "eq",
+        "value": "yes"
+      },
+      "add_support_resources": [
+        "veterans_crisis_line"
+      ],
+      "source_urls": [
+        "https://www.veteranscrisisline.net"
+      ]
+    },
+    {
+      "id": "estate_plan_location_known",
+      "spec_key": "confirm_named_executor",
+      "when": {
+        "fact": "estate_plan_status",
+        "op": "eq",
+        "value": "yes_location_known"
+      },
+      "add_tasks": [
+        "confirm_named_executor"
+      ]
+    },
+    {
+      "id": "estate_plan_location_unknown",
+      "spec_key": "find_the_will, confirm_named_executor",
+      "when": {
+        "fact": "estate_plan_status",
+        "op": "eq",
+        "value": "yes_location_unknown"
+      },
+      "add_tasks": [
+        "find_the_will",
+        "confirm_named_executor"
+      ]
+    },
+    {
+      "id": "no_will",
+      "spec_key": "no_will_explainer",
+      "when": {
+        "fact": "estate_plan_status",
+        "op": "in",
+        "value": [
+          "no",
+          "unknown"
+        ]
+      },
+      "add_tasks": [
+        "no_will_explainer"
+      ],
+      "attorney_flag": true,
+      "legal_review": true
+    },
+    {
+      "id": "power_of_attorney",
+      "spec_key": "poa_authority_note",
+      "when": {
+        "fact": "user_role",
+        "op": "eq",
+        "value": "power_of_attorney"
+      },
+      "add_notes": [
+        "poa_authority_note"
+      ],
+      "attorney_flag": true,
+      "legal_review": true
+    },
+    {
+      "id": "certificate_may_be_pending",
+      "spec_key": "certificate_may_be_pending_note",
+      "when": {
+        "fact": "base_path",
+        "op": "in",
+        "value": [
+          "sudden_loss",
+          "sudden_loss_investigation"
+        ]
+      },
+      "add_notes": [
+        "certificate_may_be_pending_note"
+      ],
+      "source_urls": [
+        "https://www.cdc.gov/nchs/data/misc/hb_me.pdf",
+        "https://www.health.pa.gov/topics/Documents/Reporting-Registries/SRN%202019-12%20Follow-up%20with%20Coroners%20and%20Medical%20Examiners%20for%20Pending%20Manner%20and%20Causes%20of%20Death.pdf"
+      ]
+    },
+    {
+      "id": "certificate_waiting_on_place",
+      "spec_key": "certificate_task_waiting_on_place_note",
+      "reason": "Only for a US death. A death outside the US gets the outside_us note instead.",
+      "when": {
+        "all": [
+          {
+            "fact": "place_of_death.state",
+            "op": "is_null"
+          },
+          {
+            "fact": "place_of_death.outside_us",
+            "op": "eq",
+            "value": false
+          }
+        ]
+      },
+      "add_notes": [
+        "certificate_task_waiting_on_place_note"
+      ]
+    },
+    {
+      "id": "funeral_home_reports_to_ssa",
+      "spec_key": "change_task ssa_notify",
+      "reason": "In most cases the funeral director reports the death to Social Security using the SSN the family provides.",
+      "when": {
+        "all": [
+          {
+            "fact": "completed_items",
+            "op": "contains",
+            "value": "funeral_provider_chosen"
+          },
+          {
+            "fact": "completed_items",
+            "op": "not_contains",
+            "value": "ssa_notified"
+          }
+        ]
+      },
+      "replace_tasks": {
+        "notify_social_security": "confirm_funeral_home_reported_death"
+      },
+      "source_urls": [
+        "https://www.ssa.gov/faqs/en/questions/KA-02077.html",
+        "https://www.ssa.gov/forms/ssa-721.pdf"
+      ]
+    },
+    {
+      "id": "death_outside_us",
+      "spec_key": "UC-CASE-04 outside_us, UC-CASE-16",
+      "when": {
+        "fact": "place_of_death.outside_us",
+        "op": "eq",
+        "value": true
+      },
+      "add_tasks": [
+        "talk_to_estate_attorney"
+      ],
+      "add_notes": [
+        "outside_us_not_covered"
+      ],
+      "attorney_flag": true
+    },
+    {
+      "id": "attorney_triggers",
+      "spec_key": "UC-CASE-16",
+      "when": {
+        "fact": "attorney_triggers",
+        "op": "not_empty"
+      },
+      "add_tasks": [
+        "talk_to_estate_attorney"
+      ],
+      "attorney_flag": true
+    },
+    {
+      "id": "unverified_state",
+      "spec_key": "UC-CASE-16 state with no verified content",
+      "when": {
+        "all": [
+          {
+            "fact": "place_of_death.state",
+            "op": "not_null"
+          },
+          {
+            "fact": "place_state_verified",
+            "op": "eq",
+            "value": false
+          }
+        ]
+      },
+      "add_tasks": [
+        "ask_state_vital_records_office"
+      ],
+      "source_urls": [
+        "https://cdc.gov/nchs/w2w"
+      ]
+    }
+  ],
+  "notes": {
+    "poa_authority_note": {
+      "copy_key": "poa_authority_note",
+      "attach_to_task": null,
+      "source_urls": [
+        "https://www.alperlaw.com/?p=9650"
+      ],
+      "attorney_flag": true,
+      "legal_review": true
+    },
+    "certificate_may_be_pending_note": {
+      "copy_key": "certificate_may_be_pending_note",
+      "attach_to_task": "order_death_certificates",
+      "source_urls": [
+        "https://www.cdc.gov/nchs/data/misc/hb_me.pdf",
+        "https://www.health.pa.gov/topics/Documents/Reporting-Registries/SRN%202019-12%20Follow-up%20with%20Coroners%20and%20Medical%20Examiners%20for%20Pending%20Manner%20and%20Causes%20of%20Death.pdf"
+      ],
+      "attorney_flag": false,
+      "legal_review": false
+    },
+    "certificate_task_waiting_on_place_note": {
+      "copy_key": "place_unknown",
+      "attach_to_task": "order_death_certificates",
+      "source_urls": [
+        "https://cdc.gov/nchs/w2w"
+      ],
+      "attorney_flag": false,
+      "legal_review": false
+    },
+    "outside_us_not_covered": {
+      "copy_key": "outside_us_not_covered",
+      "attach_to_task": null,
+      "source_urls": [],
+      "attorney_flag": true,
+      "legal_review": true
+    }
+  },
+  "support_resources": {
+    "lifeline_988": {
+      "copy_key": "support_988",
+      "url": "https://988lifeline.org",
+      "always": true
+    },
+    "veterans_crisis_line": {
+      "copy_key": "support_veterans_crisis_line",
+      "url": "https://www.veteranscrisisline.net",
+      "always": false
+    }
+  },
+  "completed_items": {
+    "death_pronounced": [
+      "confirm_pronouncement"
+    ],
+    "funeral_provider_chosen": [
+      "choose_funeral_provider"
+    ],
+    "funeral_home_has_ssn": [],
+    "certificates_ordered": [
+      "order_death_certificates",
+      "ask_state_vital_records_office"
+    ],
+    "ssa_notified": [
+      "notify_social_security",
+      "confirm_funeral_home_reported_death"
+    ],
+    "bank_notified": [
+      "notify_banks"
+    ],
+    "other": []
+  },
+  "check_on_this_when_unsure": [
+    "confirm_pronouncement",
+    "choose_funeral_provider",
+    "order_death_certificates",
+    "notify_social_security",
+    "confirm_funeral_home_reported_death",
+    "notify_banks"
+  ]
+}

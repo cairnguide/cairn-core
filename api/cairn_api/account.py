@@ -6,8 +6,9 @@ next step instead of a bare 403.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import Request
@@ -106,8 +107,10 @@ def account_notes(s: Session, account: dict, copy: Copy) -> list[Note]:
 
 
 def reminder_text(kind: str, account: dict, copy: Copy) -> str:
-    key = {"trial_day_21": "trial_reminder_day_21", "trial_day_27": "trial_reminder_day_27"}[kind]
-    return copy[key].format(trial_end_date=format_date(local_trial_end(account)))
+    key = {"trial_day_21": "trial_reminder_day_21", "trial_day_27": "trial_reminder_day_27",
+           "trial_ends_soon": "trial_reminder_ends_soon"}[kind]
+    days_left = max(1, math.ceil((account["trial_ends_at"] - datetime.now(timezone.utc)).total_seconds() / 86400))
+    return copy[key].format(trial_end_date=format_date(local_trial_end(account)), days=days_left)
 
 
 # ------------------------------------------------------------------ gates for case, journey, and task routes
@@ -138,14 +141,3 @@ def require_ready(s: Session, request: Request, *, write: bool) -> Ready:
 def subscribe_step(copy: Copy) -> NextStep:
     return NextStep(action="choose_subscription", prompt=copy["read_only_banner"],
                     options=[Option(value="subscribe", label=copy["subscribe_button"])])
-
-
-def trial_started_now(s: Session) -> dict | None:
-    """The account row if this transaction just started the trial (the first case was created)."""
-    return s.one(f"SELECT {ACCOUNT_COLUMNS} FROM cairn.users WHERE id = cairn.current_user_id() "
-                 "AND trial_started_at = now()")
-
-
-def trial_start_note(account: dict, copy: Copy) -> Note:
-    return Note(kind="account", text=copy["case_created_trial_start"].format(
-        trial_end_date=format_date(local_trial_end(account))))
