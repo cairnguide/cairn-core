@@ -3,10 +3,14 @@
 
 Usage: python tools/check_examples.py
 """
-import json, sys
+
+import json
+import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from resolve import resolve
+
 ROOT = Path(__file__).resolve().parent.parent
 bad = 0
 for case in sorted((ROOT / "examples/cases").glob("*.json")):
@@ -18,5 +22,6 @@ for case in sorted((ROOT / "examples/cases").glob("*.json")):
             out.write_text(json.dumps(plan, indent=2, ensure_ascii=False))
         print(f"ok   {case.stem}: {plan['journey']['id']}, {plan['step_count']} MVP steps")
     except SystemExit as e:
-        bad += 1; print(f"FAIL {case.stem}: {e}")
+        bad += 1
+        print(f"FAIL {case.stem}: {e}")
 sys.exit(1 if bad else 0)
