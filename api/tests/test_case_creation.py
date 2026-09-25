@@ -550,6 +550,14 @@ def test_uc12_preview_then_start_starts_trial_once_in_local_time(api):
     assert preview["explanation"] and preview["start_available"]
     assert [w["week"] for w in preview["weeks"]] == [1, 2, 3, 4]
     assert preview["pre_button_notice"]["text"] == COPY["pre_button_notice"]
+    # Step 3 (UC-CASE-19) comes first: how Cairn keeps in touch. Then the notice and the buttons.
+    assert preview["notifications_chosen"] is False
+    assert preview["next_step"]["action"] == "choose_notifications"
+    assert [o["value"] for o in preview["next_step"]["options"]] == ["keep_it_simple", "set_up", "skip"]
+    r = api.put(f"/v1/cases/{cid}/notification-preferences", json={"preset": "skip"}, headers=as_user("cc12"))
+    assert r.status_code == 200, r.text
+    preview = api.get(f"/v1/cases/{cid}/journey/preview", headers=as_user("cc12")).json()
+    assert preview["notifications_chosen"] is True
     assert [o["value"] for o in preview["next_step"]["options"]] == ["start_journey", "not_yet"]
     assert trial(api, "cc12") == (None, None)  # viewing never starts it
 
@@ -564,8 +572,10 @@ def test_uc12_preview_then_start_starts_trial_once_in_local_time(api):
     assert ends - begun == timedelta(days=28)
     local_end = ends.astimezone(ZoneInfo("Pacific/Honolulu")).date()
     assert started["trial_end_date"] == local_end.isoformat()
+    # in_app_only: the trial reminder shows in Cairn only, and the confirmation says so.
     assert started["confirmation"] == COPY["confirmation_first_case"].format(
-        trial_end_date=f"{local_end:%B} {local_end.day}, {local_end.year}")
+        trial_end_date=f"{local_end:%B} {local_end.day}, {local_end.year}",
+        reminder_sentence=COPY["reminder_sentence_in_app_only"])
     case = started["case"]
     assert case["status"] == "active" and case["journey_template_key"] == "general"
     assert case["journey_template_version"] == 1 and case["journey_started_at"]

@@ -13,7 +13,7 @@ from .copy_store import load_case_copy, load_copy
 from .db import Database
 from .errors import ApiError, api_error_handler, unhandled_error_handler, validation_error_handler
 from .redaction import RedactingFilter
-from .routers import account, case_intake, cases, journey, onboarding, registration, tasks
+from .routers import account, case_intake, cases, journey, notifications, onboarding, registration, tasks
 from .voices import load_voices
 
 API_DESCRIPTION = """
@@ -32,17 +32,26 @@ it ends the account is read-only until subscribed. No payment information is
 asked for anywhere in case creation. Free text is redacted as it is received
 and never stored. The case is the security boundary and is enforced in the
 database with row-level security.
+
+The user decides how and how often Cairn keeps in touch, per journey
+(UC-CASE-19). With no choice, nothing is sent outside the app. Apart from that,
+Cairn sends only one confirmation for a deletion the user asked for
+(UC-CASE-21). Deleting a case or the account, downloading all data, and
+changing notifications are always free, including on a read-only account.
 """
 
 OPENAPI_TAGS = [
     {"name": "Registration", "description": "UC-REG-01 to UC-REG-05. Welcome, sign-in, and account creation."},
     {"name": "Onboarding", "description": "UC-REG-07 to UC-REG-14. Acknowledgments, name, voice."},
-    {"name": "Account", "description": "Settings and account deletion (UC-ACCT-01)."},
+    {"name": "Account", "description": "Settings, deleting the account (UC-REG-15), downloading all data "
+                                        "(UC-REG-16), and account requests in chat."},
     {"name": "Case creation", "description": "UC-CASE-01 to UC-CASE-11 and UC-CASE-14 to UC-CASE-18. "
                                               "Drafts, intake answers, own words, review, and safety."},
     {"name": "Journey", "description": "UC-CASE-12 and UC-CASE-13 (start the journey that fits), UC-12 and UC-13 "
                                         "(pausing and status)."},
     {"name": "Tasks", "description": "UC-10, UC-11. Working through individual tasks."},
+    {"name": "Keeping in touch", "description": "UC-CASE-19 and UC-CASE-20. How and when Cairn reaches the user "
+                                                 "outside the app, per journey."},
 ]
 
 
@@ -70,7 +79,7 @@ def create_app(settings: Settings | None = None, database: Database | None = Non
     app.add_exception_handler(ApiError, api_error_handler)
     app.add_exception_handler(RequestValidationError, validation_error_handler)
     app.add_exception_handler(Exception, unhandled_error_handler)
-    for module in (registration, onboarding, account, cases, case_intake, journey, tasks):
+    for module in (registration, onboarding, account, cases, case_intake, journey, notifications, tasks):
         app.include_router(module.router)
 
     @app.get("/healthz", include_in_schema=False)

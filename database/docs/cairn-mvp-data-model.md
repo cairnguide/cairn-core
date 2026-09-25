@@ -167,6 +167,16 @@ From `cairn-case-creation-use-cases.json` spec 0.3.0. `case-creation-gap-audit.m
 - **APP_SETTINGS** is new: `draft_retention_days` and `trial_reminder_days_before`.
 - A draft idle for `draft_retention_days` is deleted with its answers and context by `purge_inactive_drafts()`. Active cases are never touched.
 
+## Keeping in touch, confirmations, and deletion (migration 0011)
+
+From `cairn-case-creation-use-cases-2026-09-25.json` (UC-CASE-19 to UC-CASE-21) and `cairn-account-use-cases-2026-09-25.json` (UC-REG-15, UC-REG-16). `account-lifecycle-gap-audit.md` has the full mapping.
+
+- **NOTIFICATION_PREFERENCES** is new: one row per journey (the case), with `channels` (email, push, in_app_only), `reasons` (due_date_upcoming, inactivity), `due_date_lead_days` (1, 3, 7), `inactivity_days` (3, 7, 14), `frequency` (as_it_happens, daily_max, weekly_max), and `push_permission_granted`. No row means in_app_only. SMS and phone numbers are not stored until card 50 decides SMS. Always writable, including on a read-only account.
+- **NOTIFICATION_LOG** is new: what was sent outside the app, for which journey, and why. No text and no address.
+- **ACTION_CONFIRMATION_OUTBOX** is new: the one confirmation for a deletion the user asked for, with the address until it is sent. **ACTION_CONFIRMATION_LOG** keeps the action type, channel, and time only. Append-only.
+- **CASES** gains `deletion_requested_at`, for a case the user chose to delete with a hold. **APP_SETTINGS** gains `case_deletion_hold_days` (7).
+- Deleting the account deletes every case in any status, cases in a hold included, and queues exactly one confirmation that carries no user id.
+
 ## Decision log
 
 | # | Decision | Status |

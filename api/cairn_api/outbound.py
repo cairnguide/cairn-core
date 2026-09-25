@@ -1,0 +1,129 @@
+"""Messages Cairn sends outside the app. Run on a schedule as the owner role.
+
+Three queues, in this order:
+1. Confirmations for something the user just did (UC-CASE-21, UC-REG-15): case deleted now, case deleted
+   after the 7-day hold, account deleted. Exactly one each, by email, the only message sent outside
+   notification_preferences. On success the address is purged and the send is logged without content.
+   On failure the claim is released and the next run tries again.
+2. Trial reminders, only to users who chose email for a journey (0011, UC-CASE-12 change). They always
+   show in the app regardless.
+3. Notifications the user chose (UC-CASE-19): a step coming up, or checking in after a quiet stretch,
+   by email, at the pace the user chose. Push is not delivered yet (no push provider or device tokens).
+
+Every message is short and private. It never names the person who died, the circumstance, task details,
+or anything that was deleted. Nothing personal is logged: counts and error codes only.
+
+The email provider is not chosen yet. SmtpMailer works with any provider that offers SMTP. The sending
+domain must be registered with Apple's Private Email Relay Service so relay addresses receive mail.
+"""
+from __future__ import annotations
+
+import logging
+import smtplib
+from dataclasses import dataclass, field
+from email.message import EmailMessage
+from typing import Protocol
+
+import psycopg
+from psycopg.rows import dict_row
+
+from . import account as acct
+from .copy_store import Copy
+
+log = logging.getLogger("cairn_api.outbound")
+
+CONFIRMATION_KEYS = {"case_deleted_now": "email_case_deleted_now",
+                     "case_deleted_after_hold": "email_case_deleted_after_hold",
+                     "account_deleted": "email_account_deleted"}
+
+
+class Mailer(Protocol):
+    def send(self, to: str, subject: str, body: str) -> None: ...
+
+
+@dataclass(frozen=True)
+class SmtpMailer:
+    host: str
+    port: int
+    username: str
+    password: str       # from the secret manager, never from the repo
+    sender: str         # for example "Cairn <no-reply@mail.example>"
+    timeout: float = 15
+
+    def send(self, to: str, subject: str, body: str) -> None:
+        msg = EmailMessage()
+        msg["From"], msg["To"], msg["Subject"] = self.sender, to, subject
+        msg.set_content(body)
+        with smtplib.SMTP(self.host, self.port, timeout=self.timeout) as smtp:
+            smtp.starttls()
+            smtp.login(self.username, self.password)
+            smtp.send_message(msg)
+
+
+@dataclass
+class Outcome:
+    sent: dict[str, int] = field(default_factory=dict)
+    failed: dict[str, int] = field(default_factory=dict)
+
+    def count(self, queue: str, ok: bool) -> None:
+        table = self.sent if ok else self.failed
+        table[queue] = table.get(queue, 0) + 1
+
+
+@dataclass(frozen=True)
+class Message:
+    subject: str
+    body: str
+
+
+def confirmation(action_type: str, copy: Copy) -> Message:
+    return Message(copy["email_subject_confirmation"], copy[CONFIRMATION_KEYS[action_type]])
+
+
+def notification(reason: str, copy: Copy, case_copy: Copy) -> Message:
+    body = case_copy["notification_example"] if reason == "due_date_upcoming" else copy["email_notification_inactivity"]
+    return Message(copy["email_subject_notification"], body)
+
+
+def trial_reminder(row: dict, copy: Copy) -> Message:
+    return Message(copy["email_subject_trial"], acct.reminder_text(row["kind"], row, copy))
+
+
+def _try(mailer: Mailer, to: str, msg: Message) -> str | None:
+    """Send one message. Returns an error code, never the address or the provider's message."""
+    try:
+        mailer.send(to, msg.subject, msg.body)
+    except (smtplib.SMTPException, OSError) as exc:
+        return type(exc).__name__[:100]
+    return None
+
+
+def run_once(owner_database_url: str, mailer: Mailer, copy: Copy, case_copy: Copy, limit: int = 100) -> Outcome:
+    """Works through all three queues once. Must connect as the owner role."""
+    out = Outcome()
+    with psycopg.connect(owner_database_url, autocommit=True, row_factory=dict_row) as conn:
+        conn.execute("SET search_path = cairn, pg_temp")
+
+        for row in conn.execute("SELECT * FROM cairn.claim_action_confirmations(%s)", (limit,)).fetchall():
+            error = _try(mailer, row["email"], confirmation(row["action_type"], copy))
+            if error is None:
+                conn.execute("SELECT cairn.complete_action_confirmation(%s)", (row["confirmation_id"],))
+            else:
+                conn.execute("SELECT cairn.release_action_confirmation(%s, %s)", (row["confirmation_id"], error))
+                log.warning("confirmation not sent id=%s code=%s", row["confirmation_id"], error)
+            out.count("confirmations", error is None)
+
+        # Claimed rows are marked sent first. A failed send is not repeated with a date that no longer fits.
+        for row in conn.execute("SELECT * FROM cairn.claim_due_trial_reminders(%s)", (limit,)).fetchall():
+            error = _try(mailer, row["email"], trial_reminder(row, copy))
+            if error:
+                log.warning("trial reminder not sent id=%s code=%s", row["reminder_id"], error)
+            out.count("trial_reminders", error is None)
+
+        # Logged when claimed. A missed nudge is better than a repeated one.
+        for row in conn.execute("SELECT * FROM cairn.claim_due_notifications(%s)", (limit,)).fetchall():
+            error = _try(mailer, row["email"], notification(row["reason"], copy, case_copy))
+            if error:
+                log.warning("notification not sent id=%s code=%s", row["notification_id"], error)
+            out.count("notifications", error is None)
+    return out

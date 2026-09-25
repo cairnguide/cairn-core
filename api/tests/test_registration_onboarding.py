@@ -20,7 +20,10 @@ from .conftest import REPO, SETTINGS, answer, as_user, onboard, start_journey
 VOICES = ("steady_direct", "warm_patient", "brisk_businesslike", "plain_practical")
 
 SPEC = json.loads((REPO / "database" / "docs" / "cairn-registration-use-cases.json").read_text())
-COPY = SPEC["copy"]
+# The 2026-09-25 account spec changes UC-REG-08's trial wording (and adds UC-REG-15, UC-REG-16).
+ACCOUNT_SPEC = json.loads((REPO / "database" / "docs" / "cairn-account-use-cases-2026-09-25.json").read_text())
+COPY = {**SPEC["copy"], "trial_summary": next(c["copy"] for c in ACCOUNT_SPEC["changes_to_existing"]
+                                              if c["id"] == "UC-REG-08")}
 CASE_BODY = {"user_role": "spouse_partner"}
 
 
@@ -50,7 +53,7 @@ def expire_trial(url, subject):
 def test_copy_is_the_spec_copy_verbatim():
     copy = load_copy()
     assert copy.spec == COPY
-    assert copy.version == SPEC["spec"]["version"]
+    assert copy.version == "1.3.0"  # spec 1.2.0 plus the 2026-09-25 account spec
 
 
 def test_no_em_dashes_or_semicolons_in_any_user_facing_copy():
@@ -463,7 +466,9 @@ def test_delete_account_explains_then_deletes_everything(api):
     h = as_user(subject, method="apple")
     api.post("/v1/cases", json=CASE_BODY, headers=h)
     info = api.get("/v1/me/deletion", headers=h).json()
-    assert info["explanation"] and [o["value"] for o in info["next_step"]["options"]] == ["confirm", "cancel"]
+    # UC-REG-15: one button, no reason asked, nothing offered to keep the user.
+    assert info["explanation"] and [o["label"] for o in info["next_step"]["options"]] == [
+        "Delete my account and everything in it"]
     assert api.post("/v1/me/deletion", json={"confirm": False}, headers=h).status_code == 422
     r = api.post("/v1/me/deletion", json={"confirm": True}, headers=h)
     assert r.status_code == 200

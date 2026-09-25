@@ -94,6 +94,7 @@ Nothing on `main` fully met a use case. The closest were UC-REG-02 and UC-REG-03
 - Open: Trello card 26 has only a description, not a written plan. The phrase list and the draft acknowledgments need to be checked against it once it's written.
 
 ### UC-ACCT-01 Delete account
+- Superseded on 2026-09-25 by UC-REG-15 (one button, a masked confirmation address, one confirmation email, cases in a hold, and safety first in chat). See `account-lifecycle-gap-audit.md`.
 - Before: only a case could be deleted.
 - Now: `GET /v1/me/deletion` explains, and `POST /v1/me/deletion {"confirm": true}` runs `cairn.delete_my_account()`. That deletes the cases the user created (cascading to deceased, tasks, and context), their memberships, consents, reminders, and the account itself, in one transaction and in any status. Audit rows keep opaque ids only. The identity cleanup is queued, and `cairn_api.identity_cleanup` deletes the Auth0 user and, for Apple, revokes the refresh token through `https://appleid.apple.com/auth/revoke`.
 - Open: schedule the worker with owner credentials and Auth0 Management API and Apple keys. Confirm the tenant exposes the Apple refresh token (see the note in `identity_cleanup.py`).

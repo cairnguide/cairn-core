@@ -1,6 +1,6 @@
 # Cairn API (MVP)
 
-HTTP API for the MVP use cases in `database/docs/cairn-mvp-use-cases.md`, the registration use cases in `database/docs/cairn-registration-use-cases.json`, and the case creation use cases in `database/docs/cairn-case-creation-use-cases.json`, built on the schema in `database/db/migrations`. FastAPI generates the contract from the request and response models, which are the only way data enters or leaves the service.
+HTTP API for the MVP use cases in `database/docs/cairn-mvp-use-cases.md`, the registration use cases in `database/docs/cairn-registration-use-cases.json`, the case creation use cases in `database/docs/cairn-case-creation-use-cases.json`, and the 2026-09-25 changes to both (`database/docs/cairn-*-2026-09-25.json`, audited in `database/docs/account-lifecycle-gap-audit.md`), built on the schema in `database/db/migrations`. FastAPI generates the contract from the request and response models, which are the only way data enters or leaves the service.
 
 - Swagger UI: `/docs` when running. Static contract: [`openapi.json`](openapi.json) (OpenAPI 3.1).
 - Requests reject unknown fields, trim whitespace, and validate against the same rules as the database (state codes, date order, lengths, allowed values).
@@ -20,14 +20,19 @@ HTTP API for the MVP use cases in `database/docs/cairn-mvp-use-cases.md`, the re
 | UC-REG-13, resume | `GET /v1/onboarding` (and the 200 from `POST /v1/registrations`) |
 | UC-REG-14, I need a moment | `GET /v1/onboarding/need-a-moment`. Every onboarding response carries `support` |
 | Settings | `GET` and `PATCH /v1/me` |
-| UC-ACCT-01, delete account | `GET /v1/me/deletion`, then `POST /v1/me/deletion` |
+| UC-REG-15, delete my account (was UC-ACCT-01) | `GET /v1/me/deletion`, then `POST /v1/me/deletion`. The response says the user is signed out |
+| UC-REG-16, download all my data | `GET /v1/me/data-export`, then `GET /v1/me/data-export/file` (JSON) |
+| UC-REG-15, UC-REG-16, UC-CASE-20 asked in chat | `POST /v1/me/messages`. The client keeps `session` and sends it back |
+| UC-CASE-19, how Cairn keeps in touch | `GET /v1/cases/{id}/notification-preferences`, `POST .../readback`, `PUT`, `POST .../push-permission` |
+| UC-CASE-20, change it | `GET /v1/me/notification-preferences`, `POST /v1/me/notification-preferences/changes`, or the per-journey `PUT` |
+| UC-CASE-21 and UC-END-13, delete a case now or in 7 days | `GET`, `POST`, and `DELETE /v1/cases/{id}/deletion` (the last keeps a held case) |
 | UC-CASE-01, start a new case (a draft) | `POST /v1/cases`, then `POST .../intake/continue` (one question at a time) or `POST .../intake/messages` (own words) |
 | UC-CASE-01, own words read back | `POST /v1/cases/{id}/intake/messages`, then `POST .../intake/confirmations` |
 | UC-CASE-02 to UC-CASE-09, answer, skip, not sure, change | `PUT /v1/cases/{id}/intake/answers/{field}` |
 | UC-CASE-02 and UC-CASE-03 preferences | `PUT /v1/cases/{id}/intake/preferences` |
 | UC-CASE-10, pause and come back | `POST .../intake/pause`, then `GET /v1/cases/{id}` (resume) and `GET /v1/cases` |
 | UC-CASE-11, review | `GET /v1/cases/{id}/review` |
-| UC-CASE-12, the journey that fits | `GET .../journey/preview`, `POST .../journey/start`, `POST .../journey/not-yet` |
+| UC-CASE-12, the journey that fits | `GET .../journey/preview` (step 3 is `choose_notifications` until a choice is saved), `POST .../journey/start`, `POST .../journey/not-yet` |
 | UC-CASE-13, first task | `POST .../journey/first-task` |
 | UC-CASE-14, distress | Every intake turn. The client keeps `session` and sends it back. `POST .../intake/continue` resumes |
 | UC-CASE-15, sensitive numbers | Every free-text field is redacted as it is parsed |
@@ -102,7 +107,8 @@ Adding a voice means a new voice file and manifest entry, a new value in `schema
 | Job | Function | Notes |
 |---|---|---|
 | Trial status | `cairn.expire_trials()` | Reporting only. Read-only is enforced from `trial_ends_at` directly |
-| Trial reminder email | `cairn.claim_due_trial_reminders(limit)` | Returns due reminders (day 21, day 27, and `trial_ends_soon`) and marks them sent. Render with `account.reminder_text`. No email sender yet |
+| Outbound email | `python api/scripts/send_outbound.py` | Every 5 minutes. Deletion confirmations (one each, address purged once sent), trial reminders for users who chose email, and the notifications users chose. SMTP, provider not chosen yet. Register the sending domain with Apple's Private Email Relay Service |
+| Held case deletion (UC-END-13) | `cairn.purge_held_cases()` | At least hourly. Deletes cases whose 7-day hold has ended and queues their confirmation |
 | Draft cleanup (DEC-07) | `cairn.purge_inactive_drafts()` | At least daily. Deletes drafts idle for `app_settings.draft_retention_days` (28), with their answers and context. Never touches active cases |
 | Identity cleanup | `python api/scripts/identity_cleanup.py` | Deletes Auth0 users and revokes Apple tokens after account deletion |
 | Stale accounts | `cairn.purge_stale_accounts(pending, no_case)` | Periods come from the retention schedule [LEGAL REVIEW REQUIRED] |

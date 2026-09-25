@@ -312,10 +312,18 @@ SELECT pg_temp.expect_fail(format($q$UPDATE cairn.users SET trial_ends_at = now(
 SELECT pg_temp.expect_fail($q$UPDATE cairn.consents SET policy_version = 'x'$q$);
 SELECT pg_temp.expect_fail($q$DELETE FROM cairn.consents$q$);
 SELECT pg_temp.expect_fail($q$TRUNCATE cairn.consents$q$);
--- Reminders due now are claimed once for email.
+-- Reminders due now are claimed once for email, and only when the user chose
+-- email for a journey (0011, UC-CASE-12 change). Otherwise they show in Cairn only.
 UPDATE cairn.trial_reminders SET due_at = now() - interval '1 minute'
   WHERE user_id = :'alice'::uuid AND kind = 'trial_day_21';
+SELECT pg_temp.expect_count('SELECT * FROM cairn.claim_due_trial_reminders(10)', 0);
+INSERT INTO cairn.notification_preferences (case_id, channels, reasons, due_date_lead_days)
+  VALUES (:'case_a'::uuid, ARRAY['email'], ARRAY['due_date_upcoming'], 3);
 SELECT pg_temp.expect_count('SELECT * FROM cairn.claim_due_trial_reminders(10)', 1);
+SELECT pg_temp.expect_count('SELECT * FROM cairn.claim_due_trial_reminders(10)', 0);
+-- A reminder more than 48 hours overdue is not sent late.
+UPDATE cairn.trial_reminders SET due_at = now() - interval '49 hours'
+  WHERE user_id = :'alice'::uuid AND kind = 'trial_day_27';
 SELECT pg_temp.expect_count('SELECT * FROM cairn.claim_due_trial_reminders(10)', 0);
 
 -- ------------------------------------------------------------ read-only after the trial (D-05)
@@ -412,6 +420,9 @@ SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.deceased WHERE case_id =
 SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.case_intake_answers WHERE case_id = %L', :'case_b2'), 0);
 SELECT pg_temp.expect_count($q$SELECT 1 FROM cairn.identity_deletion_requests WHERE idp_subject = 'sub-bob'$q$, 1);
 SELECT pg_temp.expect_count(format($q$SELECT 1 FROM cairn.audit_events WHERE actor_id = %L AND action = 'account_deleted'$q$, :'bob'), 1);
+-- UC-REG-15. Exactly one confirmation is queued, to the address as it was, with no user id on it.
+SELECT pg_temp.expect_count($q$SELECT 1 FROM cairn.action_confirmation_outbox WHERE email = 'bob@example.test'
+  AND action_type = 'account_deleted' AND user_id IS NULL$q$, 1);
 
 -- ------------------------------------------------------------ draft cleanup (DEC-07, UC-CASE-10)
 -- Drafts idle for draft_retention_days are deleted with their answers and conversation text.
@@ -459,6 +470,193 @@ SELECT pg_temp.expect_true('fresh pending account is kept', cairn.purge_stale_ac
 UPDATE cairn.users SET created_at = now() - interval '2 days' WHERE id = :'carol'::uuid;
 SELECT pg_temp.expect_true('stale pending account is purged', cairn.purge_stale_accounts('1 day') = 1);
 SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.users WHERE id = %L', :'carol'), 0);
+
+-- ------------------------------------------------------------ keeping in touch (0011, UC-CASE-19, UC-CASE-20)
+SET LOCAL ROLE cairn_app;
+SELECT cairn.create_account('sub-erin', 'erin@example.test', 'apple') AS erin \gset
+SELECT cairn.create_account('sub-frank', 'frank@example.test', 'email') AS frank \gset
+SELECT set_config('app.user_id', :'frank', true);
+SELECT pg_temp.onboard();
+SELECT set_config('app.user_id', :'erin', true);
+SELECT pg_temp.onboard();
+INSERT INTO cairn.cases (created_by) VALUES (:'erin'::uuid) RETURNING id AS case_e \gset
+INSERT INTO cairn.case_members (case_id, user_id, role) VALUES (:'case_e'::uuid, :'erin'::uuid, 'owner');
+-- The default is in_app_only: nothing outside the app (D-2026-09-25-N2).
+INSERT INTO cairn.notification_preferences (case_id) VALUES (:'case_e'::uuid);
+SELECT pg_temp.expect_true('default is in_app_only with no reasons',
+  (SELECT channels = ARRAY['in_app_only'] AND reasons = '{}' AND NOT push_permission_granted
+   FROM cairn.notification_preferences WHERE case_id = :'case_e'::uuid));
+-- Only valid choices can be stored. SMS is not an accepted channel yet (card 50).
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.notification_preferences SET channels = ARRAY['sms'], reasons = ARRAY['inactivity'], inactivity_days = 7 WHERE case_id = %L$q$, :'case_e'));
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.notification_preferences SET channels = ARRAY['in_app_only', 'email'] WHERE case_id = %L$q$, :'case_e'));
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.notification_preferences SET channels = ARRAY['email'] WHERE case_id = %L$q$, :'case_e'));
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.notification_preferences SET channels = ARRAY['email', 'email'], reasons = ARRAY['inactivity'], inactivity_days = 7 WHERE case_id = %L$q$, :'case_e'));
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.notification_preferences SET channels = ARRAY['email'], reasons = ARRAY['due_date_upcoming'] WHERE case_id = %L$q$, :'case_e'));
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.notification_preferences SET channels = ARRAY['email'], reasons = ARRAY['inactivity'], inactivity_days = 7, due_date_lead_days = 3 WHERE case_id = %L$q$, :'case_e'));
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.notification_preferences SET channels = ARRAY['email'], reasons = ARRAY['inactivity'], inactivity_days = 5 WHERE case_id = %L$q$, :'case_e'));
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.notification_preferences SET frequency = 'hourly' WHERE case_id = %L$q$, :'case_e'));
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.notification_preferences SET channels = ARRAY[NULL]::text[] WHERE case_id = %L$q$, :'case_e'));
+UPDATE cairn.notification_preferences SET channels = ARRAY['email', 'push'], reasons = ARRAY['due_date_upcoming', 'inactivity'],
+  due_date_lead_days = 3, inactivity_days = 7, frequency = 'weekly_max' WHERE case_id = :'case_e'::uuid;
+-- Another user can't see or change them.
+SELECT set_config('app.user_id', :'frank', true);
+SELECT pg_temp.expect_count('SELECT 1 FROM cairn.notification_preferences', 0);
+SELECT pg_temp.expect_fail(format($q$INSERT INTO cairn.notification_preferences (case_id) VALUES (%L)$q$, :'case_e'));
+DO $$
+DECLARE n bigint;
+BEGIN
+  UPDATE cairn.notification_preferences SET channels = ARRAY['in_app_only'], reasons = '{}',
+    due_date_lead_days = NULL, inactivity_days = NULL;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 0 THEN RAISE EXCEPTION 'another user changed % notification rows', n; END IF;
+END $$;
+-- The app has no way to the outbox, the log, or the sending functions.
+SELECT pg_temp.expect_fail($q$SELECT * FROM cairn.action_confirmation_outbox$q$);
+SELECT pg_temp.expect_fail($q$SELECT * FROM cairn.action_confirmation_log$q$);
+SELECT pg_temp.expect_fail($q$INSERT INTO cairn.notification_log (case_id, reason, channel) SELECT id, 'inactivity', 'email' FROM cairn.cases LIMIT 1$q$);
+SELECT pg_temp.expect_fail($q$SELECT * FROM cairn.claim_action_confirmations(10)$q$);
+SELECT pg_temp.expect_fail($q$SELECT cairn.complete_action_confirmation(gen_random_uuid())$q$);
+SELECT pg_temp.expect_fail($q$SELECT cairn.release_action_confirmation(gen_random_uuid(), 'x')$q$);
+SELECT pg_temp.expect_fail($q$SELECT * FROM cairn.claim_due_notifications(10)$q$);
+SELECT pg_temp.expect_fail($q$SELECT cairn.purge_held_cases()$q$);
+SELECT pg_temp.expect_fail(format($q$SELECT cairn.queue_action_confirmation('account_deleted', %L)$q$, :'frank'));
+SELECT pg_temp.expect_fail(format($q$UPDATE cairn.cases SET deletion_requested_at = now() WHERE id = %L$q$, :'case_e'));
+-- Someone else can't ask for Erin's case to be deleted.
+SELECT pg_temp.expect_fail(format($q$SELECT cairn.request_case_deletion(%L, 'now')$q$, :'case_e'));
+
+-- ------------------------------------------------------------ case deletion with a hold (0011, UC-END-13, UC-CASE-21)
+SELECT set_config('app.user_id', :'erin', true);
+SELECT pg_temp.expect_fail(format($q$SELECT cairn.request_case_deletion(%L, 'later')$q$, :'case_e'));
+SELECT pg_temp.expect_true('a hold returns the date it will be deleted, 7 days out',
+  cairn.request_case_deletion(:'case_e'::uuid, 'hold') = now() + interval '7 days');
+SELECT pg_temp.expect_true('asking again keeps the first date',
+  cairn.request_case_deletion(:'case_e'::uuid, 'hold') = now() + interval '7 days');
+SELECT pg_temp.expect_true('the hold can be cancelled', cairn.cancel_case_deletion(:'case_e'::uuid));
+SELECT pg_temp.expect_true('cancelling twice changes nothing', NOT cairn.cancel_case_deletion(:'case_e'::uuid));
+SELECT pg_temp.expect_true('hold again', cairn.request_case_deletion(:'case_e'::uuid, 'hold') IS NOT NULL);
+-- A second case is deleted now: its data goes, and one confirmation is queued.
+INSERT INTO cairn.cases (created_by) VALUES (:'erin'::uuid) RETURNING id AS case_e2 \gset
+INSERT INTO cairn.case_members (case_id, user_id, role) VALUES (:'case_e2'::uuid, :'erin'::uuid, 'owner');
+INSERT INTO cairn.case_intake_answers (case_id, field_key, answer_state, value) VALUES (:'case_e2'::uuid, 'display_name', 'answered', '"Gus"');
+INSERT INTO cairn.notification_preferences (case_id) VALUES (:'case_e2'::uuid);
+SELECT pg_temp.expect_true('deleting now returns no date', cairn.request_case_deletion(:'case_e2'::uuid, 'now') IS NULL);
+SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.cases WHERE id = %L', :'case_e2'), 0);
+RESET ROLE;
+SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.case_intake_answers WHERE case_id = %L', :'case_e2'), 0);
+SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.notification_preferences WHERE case_id = %L', :'case_e2'), 0);
+SELECT pg_temp.expect_count(format($q$SELECT 1 FROM cairn.action_confirmation_outbox WHERE user_id = %L
+  AND action_type = 'case_deleted_now' AND email = 'erin@example.test'$q$, :'erin'), 1);
+SELECT pg_temp.expect_count(format($q$SELECT 1 FROM cairn.audit_events WHERE case_id = %L AND action = 'case_deleted_now'$q$, :'case_e2'), 1);
+-- The held case is deleted when its hold ends, and not before.
+SELECT pg_temp.expect_true('nothing is purged before the hold ends', cairn.purge_held_cases() = 0);
+UPDATE cairn.cases SET deletion_requested_at = now() - interval '7 days' WHERE id = :'case_e'::uuid;
+SELECT pg_temp.expect_true('the held case is purged', cairn.purge_held_cases() = 1);
+SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.cases WHERE id = %L', :'case_e'), 0);
+SELECT pg_temp.expect_count(format($q$SELECT 1 FROM cairn.action_confirmation_outbox WHERE user_id = %L
+  AND action_type = 'case_deleted_after_hold'$q$, :'erin'), 1);
+-- Sending: claim, then complete. The address is purged and the log has no content.
+SELECT pg_temp.expect_count('SELECT * FROM cairn.claim_action_confirmations(10)', 3);
+SELECT pg_temp.expect_count('SELECT * FROM cairn.claim_action_confirmations(10)', 0);
+SELECT cairn.release_action_confirmation(id, 'smtp_failed') FROM cairn.action_confirmation_outbox
+  WHERE action_type = 'account_deleted';
+SELECT pg_temp.expect_count('SELECT * FROM cairn.claim_action_confirmations(10)', 1);
+SELECT pg_temp.expect_true('completing sends each once',
+  (SELECT bool_and(cairn.complete_action_confirmation(id)) FROM cairn.action_confirmation_outbox));
+SELECT pg_temp.expect_count('SELECT 1 FROM cairn.action_confirmation_outbox', 0);
+SELECT pg_temp.expect_count($q$SELECT 1 FROM cairn.action_confirmation_log WHERE channel = 'email'$q$, 3);
+SELECT pg_temp.expect_count($q$SELECT 1 FROM information_schema.columns WHERE table_schema = 'cairn'
+  AND table_name = 'action_confirmation_log' AND column_name NOT IN ('id', 'action_type', 'channel', 'sent_at')$q$, 0);
+SELECT pg_temp.expect_fail($q$UPDATE cairn.action_confirmation_log SET action_type = 'account_deleted'$q$);
+SELECT pg_temp.expect_fail($q$DELETE FROM cairn.action_confirmation_log$q$);
+SELECT pg_temp.expect_fail($q$TRUNCATE cairn.action_confirmation_log$q$);
+
+-- ------------------------------------------------------------ always free on a read-only account (D-2026-09-25-F1)
+SET LOCAL ROLE cairn_app;
+SELECT set_config('app.user_id', :'frank', true);
+INSERT INTO cairn.cases (created_by) VALUES (:'frank'::uuid) RETURNING id AS case_f \gset
+INSERT INTO cairn.case_members (case_id, user_id, role) VALUES (:'case_f'::uuid, :'frank'::uuid, 'owner');
+SELECT pg_temp.expect_true('frank starts a journey', cairn.start_journey(:'case_f'::uuid, 9001, 'general'));
+INSERT INTO cairn.notification_preferences (case_id, channels, reasons, due_date_lead_days, frequency)
+  VALUES (:'case_f'::uuid, ARRAY['email'], ARRAY['due_date_upcoming'], 3, 'daily_max');
+RESET ROLE;
+INSERT INTO cairn.case_tasks (case_id, template_id, status, due_on)
+  SELECT :'case_f'::uuid, id, 'not_started', current_date + 1 FROM cairn.task_templates WHERE task_key = 't_always';
+INSERT INTO cairn.case_tasks (case_id, template_id, status, due_on)
+  SELECT :'case_f'::uuid, id, 'not_started', current_date + 2 FROM cairn.task_templates WHERE task_key = 't_vet';
+
+-- ------------------------------------------------------------ sending notifications (0011, UC-CASE-19)
+-- A step coming up within the lead time: one message for the journey, not one per task.
+SELECT pg_temp.expect_count($q$SELECT * FROM cairn.claim_due_notifications(10) WHERE reason = 'due_date_upcoming'
+  AND email = 'frank@example.test'$q$, 1);
+-- daily_max: nothing more for 24 hours.
+SELECT pg_temp.expect_count('SELECT * FROM cairn.claim_due_notifications(10)', 0);
+-- as_it_happens: the second task's turn, and then nothing, because each task is sent once.
+UPDATE cairn.notification_preferences SET frequency = 'as_it_happens' WHERE case_id = :'case_f'::uuid;
+SELECT pg_temp.expect_count('SELECT * FROM cairn.claim_due_notifications(10)', 1);
+SELECT pg_temp.expect_count('SELECT * FROM cairn.claim_due_notifications(10)', 0);
+SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.notification_log WHERE case_id = %L', :'case_f'), 2);
+-- Inactivity: once per quiet stretch.
+UPDATE cairn.notification_preferences SET reasons = ARRAY['inactivity'], due_date_lead_days = NULL, inactivity_days = 3
+  WHERE case_id = :'case_f'::uuid;
+SELECT pg_temp.expect_count('SELECT * FROM cairn.claim_due_notifications(10)', 0);
+ALTER TABLE cairn.cases DISABLE TRIGGER cases_guard;
+UPDATE cairn.cases SET last_activity_at = now() - interval '4 days' WHERE id = :'case_f'::uuid;
+ALTER TABLE cairn.cases ENABLE TRIGGER cases_guard;
+SELECT pg_temp.expect_count($q$SELECT * FROM cairn.claim_due_notifications(10) WHERE reason = 'inactivity'$q$, 1);
+SELECT pg_temp.expect_count('SELECT * FROM cairn.claim_due_notifications(10)', 0);
+-- Changing a task's status is activity.
+SET LOCAL ROLE cairn_app;
+SELECT set_config('app.user_id', :'frank', true);
+UPDATE cairn.case_tasks SET status = 'in_progress' WHERE case_id = :'case_f'::uuid AND due_on = current_date + 1;
+SELECT pg_temp.expect_true('a task change counts as activity',
+  (SELECT last_activity_at = now() FROM cairn.cases WHERE id = :'case_f'::uuid));
+RESET ROLE;
+-- Nothing is sent while paused, for in_app_only, or for a case set to be deleted.
+-- Forget the inactivity send first, so only the rule under test can hold it back.
+DELETE FROM cairn.notification_log WHERE case_id = :'case_f'::uuid AND reason = 'inactivity';
+ALTER TABLE cairn.cases DISABLE TRIGGER cases_guard;
+UPDATE cairn.cases SET last_activity_at = now() - interval '10 days', tasks_paused_until = now() + interval '1 day'
+  WHERE id = :'case_f'::uuid;
+ALTER TABLE cairn.cases ENABLE TRIGGER cases_guard;
+SELECT pg_temp.expect_count('SELECT * FROM cairn.claim_due_notifications(10)', 0);
+UPDATE cairn.cases SET tasks_paused_until = NULL, deletion_requested_at = now() WHERE id = :'case_f'::uuid;
+SELECT pg_temp.expect_count('SELECT * FROM cairn.claim_due_notifications(10)', 0);
+UPDATE cairn.cases SET deletion_requested_at = NULL WHERE id = :'case_f'::uuid;
+UPDATE cairn.notification_preferences SET channels = ARRAY['in_app_only'], reasons = '{}', inactivity_days = NULL
+  WHERE case_id = :'case_f'::uuid;
+SELECT pg_temp.expect_count('SELECT * FROM cairn.claim_due_notifications(10)', 0);
+-- Control: with email chosen again, the same journey is due.
+UPDATE cairn.notification_preferences SET channels = ARRAY['email'], reasons = ARRAY['inactivity'], inactivity_days = 3
+  WHERE case_id = :'case_f'::uuid;
+SELECT pg_temp.expect_count('SELECT * FROM cairn.claim_due_notifications(10)', 1);
+DELETE FROM cairn.notification_log WHERE case_id = :'case_f'::uuid AND reason = 'inactivity';
+
+-- Read-only: nothing is sent, and preferences and deletion stay available.
+ALTER TABLE cairn.users DISABLE TRIGGER users_trial_set_once;
+UPDATE cairn.users SET trial_started_at = now() - interval '29 days',
+                       trial_ends_at = now() - interval '29 days' + interval '672 hours'
+  WHERE id = :'frank'::uuid;
+ALTER TABLE cairn.users ENABLE TRIGGER users_trial_set_once;
+SELECT pg_temp.expect_count('SELECT * FROM cairn.claim_due_notifications(10)', 0);
+SET LOCAL ROLE cairn_app;
+SELECT set_config('app.user_id', :'frank', true);
+SELECT pg_temp.expect_true('frank is read-only', NOT cairn.account_can_write());
+UPDATE cairn.notification_preferences SET channels = ARRAY['in_app_only'], reasons = '{}', inactivity_days = NULL
+  WHERE case_id = :'case_f'::uuid;
+SELECT pg_temp.expect_true('read-only accounts can change notifications',
+  (SELECT channels = ARRAY['in_app_only'] FROM cairn.notification_preferences WHERE case_id = :'case_f'::uuid));
+SELECT pg_temp.expect_count('SELECT 1 FROM cairn.notification_log', 2);
+SELECT pg_temp.expect_true('read-only accounts can set a hold',
+  cairn.request_case_deletion(:'case_f'::uuid, 'hold') IS NOT NULL);
+SELECT pg_temp.expect_true('read-only accounts can delete now',
+  cairn.request_case_deletion(:'case_f'::uuid, 'now') IS NULL);
+-- Account deletion sends one confirmation only: the pending case one is dropped.
+SELECT cairn.delete_my_account();
+RESET ROLE;
+SELECT pg_temp.expect_count($q$SELECT 1 FROM cairn.action_confirmation_outbox WHERE email = 'frank@example.test'$q$, 1);
+SELECT pg_temp.expect_count($q$SELECT 1 FROM cairn.action_confirmation_outbox WHERE email = 'frank@example.test'
+  AND action_type = 'account_deleted' AND user_id IS NULL$q$, 1);
+SELECT pg_temp.expect_count(format('SELECT 1 FROM cairn.notification_log WHERE case_id = %L', :'case_f'), 0);
 
 ROLLBACK;
 \echo All checks passed.

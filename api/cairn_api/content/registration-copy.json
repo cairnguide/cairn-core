@@ -1,13 +1,15 @@
 {
-  "version": "1.2.0",
-  "source": "database/docs/cairn-registration-use-cases.json",
+  "version": "1.3.0",
+  "source": "database/docs/cairn-registration-use-cases.json with database/docs/cairn-account-use-cases-2026-09-25.json (UC-REG-15, UC-REG-16, UC-REG-08 change)",
   "status": "pending_legal_review",
   "notes": [
     "spec_copy is copied verbatim from the spec's copy section. Do not edit it here without a new spec version.",
     "flow_copy is quoted verbatim from the use case flows (button and link text).",
     "draft_copy was written for the build because the spec does not supply it. It needs product and legal review.",
     "Voice labels, taglines, and sample replies come from voices/manifest.yaml and the voice files, not from this file. Only the confirmation after choosing a voice lives here.",
-    "UC-REG-06 (age) is not built, by product decision. age_question and age_under_18 stay in spec_copy only because it mirrors the spec verbatim. They are not shown."
+    "UC-REG-06 (age) is not built, by product decision. age_question and age_under_18 stay in spec_copy only because it mirrors the spec verbatim. They are not shown.",
+    "trial_summary is the UC-REG-08 wording from the 2026-09-25 account spec. Because the text changed, everyone who agreed to the old wording is asked to acknowledge it again on next sign-in (UC-REG-13).",
+    "Outbound message text (email_*) is short and private. It never names the person who died, the circumstance, task details, or anything deleted (UC-CASE-19, UC-CASE-21)."
   ],
   "spec_copy": {
     "welcome_acknowledgment": "We're sorry you're here. Cairn will walk with you one step at a time.",
@@ -19,7 +21,7 @@
     "age_under_18": "Cairn is built for adults handling these tasks. If you're helping a family member, they can create an account.",
     "privacy_terms_summary": "Your privacy matters, especially right now. Cairn never uses your information, or information about the person who died, for marketing or advertising. We do not sell it or share it for ads. We use it only to help you with the steps in front of you. You can delete your account and your information at any time from Settings.",
     "privacy_terms_checkbox": "I have read and agree to the Privacy Policy and Terms of Use.",
-    "trial_summary": "Cairn is free for 28 days, and we will not ask for a card. Your 28 days begin when you start your first case, so nothing counts down while you get settled. After 28 days, a subscription is needed to keep adding and updating your tasks. If you do not subscribe, your account becomes read-only on day 29. Nothing is deleted and nothing is charged. We will remind you before your free time ends.",
+    "trial_summary": "Cairn is free for 28 days, and we will not ask for a card. Your 28 days begin when you start your first journey, so nothing counts down while you get settled. Once they begin, they keep counting even if you pause. After 28 days, a subscription is needed to keep adding and updating your tasks. If you do not subscribe, your account becomes read-only on day 29. Nothing is deleted and nothing is charged. You can always close, download, or delete your information for free. We will remind you in Cairn before your free time ends, and outside Cairn only in the way you choose when you start your journey.",
     "trial_checkbox": "I understand that 28 days after I start my first case, I will need a subscription to keep using Cairn fully.",
     "ai_notice": "Before we begin, an important notice. Cairn is an artificial intelligence (AI) guide. It is not a human. It is not an attorney and cannot give legal advice. It is not a therapist, counselor, or medical professional. Cairn helps you organize the steps after a death and points you to official instructions, and it can make mistakes. Whenever your situation calls for an attorney, a therapist, or crisis support, Cairn will always tell you and point you to one. If you are in crisis, you can call or text 988, or chat at 988lifeline.org, any time.",
     "ai_notice_legal": "This notice is provided consistent with the disclosure requirements of California Senate Bill 243 (2025), which requires that you be told clearly that you are interacting with an artificially generated assistant and not a human.",
@@ -46,7 +48,10 @@
     "send_new_link": "Send a new link",
     "resend_link": "Resend",
     "not_sure": "I'm not sure",
-    "delete_account": "Delete account"
+    "delete_account": "Delete account",
+    "delete_my_account": "Delete my account",
+    "delete_account_confirm_button": "Delete my account and everything in it",
+    "download_my_data": "Download my data"
   },
   "draft_copy": {
     "continue": "Continue",
@@ -72,11 +77,25 @@
     "acknowledgment_version_changed": "We've updated this since you last saw it. Please take a moment to read it again.",
     "onboarding_incomplete": "There are a few steps left before you can start a case.",
     "subscribe_button": "Choose a subscription",
-    "deletion_explanation": "Deleting your account removes your account, your sign-in details, your settings, every case you started, the information about the person who died, and your tasks. This can't be undone. We keep a record that the account existed and was deleted, with no names or details in it.",
-    "deletion_question": "Do you want to delete your account and your information?",
-    "deletion_confirm_button": "Yes, delete everything",
-    "deletion_cancel_button": "Keep my account",
-    "deletion_done": "Your account and your information have been deleted.",
-    "trial_reminder_ends_soon": "Your free time with Cairn ends in {days} days, on {trial_end_date}. Nothing will be charged, and nothing will be deleted."
+    "deletion_explanation": "Deleting your account deletes everything in it, right away: your account, every case and what you told Cairn about the person who died, every task, all of your conversations with Cairn, and your notification settings. This can't be undone. We keep a record that an account was deleted, with no names or details in it.",
+    "deletion_done": "Your account and everything in it have been deleted. You're signed out.",
+    "trial_reminder_ends_soon": "Your free time with Cairn ends in {days} days, on {trial_end_date}. Nothing will be charged, and nothing will be deleted.",
+    "deletion_store_subscription": "A subscription bought through the App Store or Google Play is cancelled in the store, not in Cairn. Deleting your account doesn't cancel it.",
+    "deletion_store_apple_link": "How to cancel in the App Store",
+    "deletion_store_google_link": "How to cancel in Google Play",
+    "deletion_confirmation_destination": "We'll send one confirmation to {masked_email}. Then we delete that address too.",
+    "export_explanation": "Your download has your profile, every case with its answers and summary, where each task stands, your notification settings, and your conversation text.",
+    "export_button": "Download",
+    "email_subject_confirmation": "Cairn: confirmation",
+    "email_account_deleted": "Your Cairn account and everything in it have been deleted, as you asked. This is the last message we'll send.",
+    "email_case_deleted_now": "A case in your Cairn account has been deleted, as you asked.",
+    "email_case_deleted_after_hold": "A case you chose to delete from your Cairn account has now been deleted, as you asked.",
+    "email_subject_notification": "A note from Cairn",
+    "email_notification_inactivity": "Cairn is here whenever you're ready to pick things back up.",
+    "email_subject_trial": "Your free time with Cairn",
+    "chat_help": "I can help you delete your account, download a copy of your information, or change how Cairn keeps in touch.",
+    "chat_delete_start": "Here's what deleting your account means.",
+    "chat_download_start": "Here's what your download includes.",
+    "chat_notifications_start": "Here's how Cairn keeps in touch now."
   }
 }

@@ -1,0 +1,208 @@
+{
+  "schema_version": "1.0",
+  "product": "Cairn",
+  "spec": "Case Creation Use Cases, draft 0.4",
+  "generated": "2026-09-25",
+  "status": "draft, pending usability testing and legal review",
+  "open_questions_card": "https://trello.com/c/DKgHH7M7",
+  "source_spec": "https://claude.ai/artifact/Fycpvac5Lgke9wkxKoA82Y",
+  "decisions": [
+    {
+      "id": "D-2026-09-25-N1",
+      "decision": "Notification channel, reasons, and pace are chosen by the user at journey setup. Cairn sends nothing else except confirmations of actions the user takes, and states where each confirmation will go before it is sent."
+    },
+    {
+      "id": "D-2026-09-25-N2",
+      "decision": "If the user makes no notification choice, the preference is 'in_app_only' and nothing is sent outside the app."
+    },
+    {
+      "id": "D-2026-09-25-P1",
+      "decision": "Pausing an active journey does not stop or extend the 28-day free period. Cairn tells the user this when they pause."
+    },
+    {
+      "id": "D-2026-09-25-F1",
+      "decision": "Closing, downloading, deleting, and changing notification preferences are always free, including when the account is read-only."
+    }
+  ],
+  "new_use_cases": [
+    {
+      "id": "UC-CASE-19",
+      "title": "Choose how and when Cairn keeps in touch",
+      "actors": [
+        "User (surviving spouse, adult child or executor, power of attorney, or professional fiduciary)",
+        "Cairn (AI guide)"
+      ],
+      "trigger": "User reaches journey setup in UC-CASE-12 (step 3) or UC-CASE-18 for a second case.",
+      "preconditions": [
+        "A draft case exists",
+        "The journey has been shown to the user"
+      ],
+      "main_flow": [
+        "Cairn explains that the user decides how and how often Cairn keeps in touch, and that this can be changed any time.",
+        "Ask channel (multi-select): email, sms, push, in_app_only.",
+        "If any channel other than in_app_only: ask reasons (multi-select): due_date_upcoming, inactivity.",
+        "Ask timing: due_date lead time (1, 3, or 7 days) and inactivity threshold (3, 7, or 14 days) for each selected reason.",
+        "Ask maximum frequency: as_it_happens, daily_max, weekly_max.",
+        "Read back choices in plain language and confirm."
+      ],
+      "shortcut": {
+        "label": "Keep it simple for me",
+        "preset": {
+          "channels": [
+            "email"
+          ],
+          "reasons": [
+            "due_date_upcoming"
+          ],
+          "due_date_lead_days": 3,
+          "frequency": "daily_max"
+        },
+        "status": "draft values, open question on card 50"
+      },
+      "alternate_flows": [
+        {
+          "name": "skipped_or_in_app_only",
+          "behavior": "Store in_app_only. Nothing sent outside the app. Due dates and updates show in Cairn only."
+        },
+        {
+          "name": "email",
+          "behavior": "Use the account email, shown masked for confirmation. Must work with Apple private email relay."
+        },
+        {
+          "name": "push",
+          "behavior": "Show the OS permission prompt only after the user selects push. Never required for the app to work. Never promotional (Apple App Review Guideline 4.5.4)."
+        },
+        {
+          "name": "sms",
+          "behavior": "Collect mobile number just in time, verify with a one-time code, show consent line before first message.",
+          "flags": [
+            "OPEN QUESTION card 50: SMS in MVP",
+            "LEGAL REVIEW: SMS consent wording and carrier registration"
+          ]
+        },
+        {
+          "name": "distress",
+          "behavior": "UC-CASE-14 applies. Setup waits."
+        }
+      ],
+      "rules": [
+        "Notification text is short and private. Never include the name of the person who died, the circumstance, or task details. Example: 'You have a step coming up in Cairn.'",
+        "Never send a notification the user did not choose, except action confirmations (UC-CASE-21).",
+        "Notification preferences are never used for marketing or advertising (UC-REG-07)."
+      ],
+      "postconditions": [
+        "notification_preferences row stored for this journey",
+        "Default in_app_only if skipped"
+      ],
+      "data": {
+        "entity": "notification_preferences",
+        "scope": "per journey (open question card 50: or account-wide)",
+        "fields": {
+          "journey_id": "uuid",
+          "channels": "array<enum: email|sms|push|in_app_only>",
+          "reasons": "array<enum: due_date_upcoming|inactivity>",
+          "due_date_lead_days": "int (1|3|7) nullable",
+          "inactivity_days": "int (3|7|14) nullable",
+          "frequency": "enum: as_it_happens|daily_max|weekly_max",
+          "sms_number": "string nullable, encrypted, verified_at timestamp",
+          "sms_consent_at": "timestamp nullable",
+          "push_permission_granted": "bool",
+          "updated_at": "timestamp"
+        }
+      },
+      "sources": [
+        "https://developer.apple.com/app-store/review/guidelines/",
+        "https://developer.apple.com/documentation/signinwithapple/configuring-your-environment-for-sign-in-with-apple"
+      ]
+    },
+    {
+      "id": "UC-CASE-20",
+      "title": "Change how Cairn keeps in touch",
+      "actors": [
+        "User (surviving spouse, adult child or executor, power of attorney, or professional fiduciary)",
+        "Cairn (AI guide)"
+      ],
+      "trigger": "User asks in chat ('Stop texting me', 'Email me instead'), opens Settings, or accepts the offer to change preferences when pausing (UC-END-08) or reopening (UC-END-11).",
+      "preconditions": [
+        "Journey exists (active, paused, or closed)"
+      ],
+      "main_flow": [
+        "Cairn reads back the change in one line and asks for confirmation.",
+        "On yes, apply immediately and confirm."
+      ],
+      "alternate_flows": [
+        {
+          "name": "stop_everything",
+          "behavior": "Set in_app_only in one step. No persuasion, no follow-up question."
+        },
+        {
+          "name": "multiple_cases",
+          "behavior": "Ask which journey by the display name of each person, offer 'All of them'."
+        }
+      ],
+      "rules": [
+        "Always free, including read-only accounts.",
+        "Turning notifications off never changes the journey itself."
+      ],
+      "postconditions": [
+        "notification_preferences updated for the selected journey or journeys"
+      ]
+    },
+    {
+      "id": "UC-CASE-21",
+      "title": "Confirmations for something the user just did",
+      "actors": [
+        "User (surviving spouse, adult child or executor, power of attorney, or professional fiduciary)",
+        "Cairn (AI guide)"
+      ],
+      "trigger": "User completes an action that sends a confirmation. MVP: case deleted now, case deleted after 7-day hold, account deleted.",
+      "preconditions": [
+        "User initiated the action in the app"
+      ],
+      "main_flow": [
+        "Before the user confirms the action, show where the confirmation will go (masked address).",
+        "After the action completes, send exactly one confirmation."
+      ],
+      "rules": [
+        "Deletion confirmations go by email (decided 2026-09-25). Open question card 50: follow SMS or push preference instead?",
+        "Confirmation text is short, private, and never repeats deleted content.",
+        "The only notification type sent outside notification_preferences. Never used for anything else."
+      ],
+      "postconditions": [
+        "One confirmation sent",
+        "Send logged without content"
+      ],
+      "data": {
+        "entity": "action_confirmation_log",
+        "fields": {
+          "id": "uuid",
+          "action_type": "enum: case_deleted_now|case_deleted_after_hold|account_deleted",
+          "channel": "enum: email",
+          "sent_at": "timestamp",
+          "content_stored": false
+        }
+      }
+    }
+  ],
+  "changes_to_existing": [
+    {
+      "id": "UC-CASE-10",
+      "change": "Removed 'reminders about a draft if the user asks'. No notifications are sent about drafts. Added alternate flow: user can delete a draft any time, free, choosing delete now or 7-day hold (UC-END-13).",
+      "open_question": "Warn before a draft is auto-deleted at 28 days? (card 50)"
+    },
+    {
+      "id": "UC-CASE-12",
+      "change": "New step 3: notification setup (UC-CASE-19). Pre-button copy adds 'They keep counting even if you pause.' Confirmation copy: trial reminder always shows in Cairn and is sent outside the app only by the channel the user chose.",
+      "copy": {
+        "before_button": "When you tap Start journey, your 28 free days begin. They keep counting even if you pause. You won't need to enter any payment information now.",
+        "reminder_sentence_with_channel": "You'll see a reminder here in Cairn a few days before your free time ends, and we'll also send it the way you chose.",
+        "reminder_sentence_in_app_only": "You'll see a reminder here in Cairn a few days before your free time ends."
+      },
+      "open_question": "Does the trial reminder follow notification choices or is it always sent? (card 50)"
+    },
+    {
+      "id": "UC-CASE-18",
+      "change": "At UC-CASE-19, offer 'Use the same as [first case name]' first. Each journey keeps its own preferences."
+    }
+  ]
+}

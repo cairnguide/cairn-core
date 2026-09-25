@@ -1,5 +1,5 @@
-"""UC-CASE-12 and UC-CASE-13 (see the journey that fits, start it, choose a first task),
-plus stepping back from tasks (UC-12) and status across the case (UC-13).
+"""UC-CASE-12 and UC-CASE-13 (see the journey that fits, choose how Cairn keeps in touch, start it, choose a
+first task), plus stepping back from tasks (UC-12) and status across the case (UC-13).
 """
 from datetime import date, datetime, timezone
 from uuid import UUID
@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Request
 
 from .. import account as acct
 from .. import intake, journey, messages
+from .. import notifications as nt
 from ..auth import Identity, get_identity
 from ..db import Session
 from ..errors import ApiError, case_access_denied
@@ -22,6 +23,7 @@ from ..schemas import (
     JourneyPreviewResponse,
     JourneyResponse,
     NextStep,
+    Note,
     Option,
     PauseRequest,
     PreButtonNotice,
@@ -131,6 +133,7 @@ def preview(case_id: UUID, request: Request, identity: Identity = Depends(get_id
         path = definition["paths"][sel.path_key]
         explanation = c.copy[path["why_copy_key"]]
         is_draft = case["status"] == "draft"
+        chosen = nt.load(s, case_id) is not None
         if not is_draft:
             notice, available = None, False
             step = NextStep(action="view_journey", prompt=c.copy["journey_preview_intro"])
@@ -145,6 +148,12 @@ def preview(case_id: UUID, request: Request, identity: Identity = Depends(get_id
             notice, available = None, False
             step = NextStep(action="choose_subscription", prompt=c.copy["subscription_needed_new_journey"],
                             options=[Option(value="subscribe", label=request.app.state.copy["subscribe_button"])])
+        elif not chosen:
+            # UC-CASE-12 step 3 (UC-CASE-19): how Cairn keeps in touch, before the notice and the buttons.
+            notice, available = _notice(c), True
+            names = nt.display_names(s, c.copy)
+            step = NextStep(action="choose_notifications", prompt=c.copy["notifications_intro"],
+                            options=nt.shortcuts(s, c.copy, case_id, names))
         else:
             notice, available = _notice(c), True
             step = NextStep(action="start_journey", prompt=notice.text,
@@ -155,7 +164,7 @@ def preview(case_id: UUID, request: Request, identity: Identity = Depends(get_id
             case=intake.case_out(c, case, answers), journey_template_key=sel.path_key,
             journey_template_version=sel.template_version, explanation=explanation, weeks=weeks, notes=loose,
             support=intake.support_resources(c, definition, sel), pre_button_notice=notice,
-            start_available=available, next_step=step,
+            start_available=available, notifications_chosen=chosen, next_step=step,
             read_aloud=ReadAloud(label=c.copy["read_this_to_me"], text=text))
 
 
@@ -207,12 +216,17 @@ def start(case_id: UUID, req: StartJourneyIn, request: Request,
                                   (case_id, sel.template_version, sel.path_key))["started"]
         case = intake.load_case(s, case_id)
         intake.sync_tasks(s, case, answers, sel)
+        # No choice made at step 3 means in_app_only (UC-CASE-19).
+        nt.ensure_default(s, case_id)
 
         account = acct.load_account(s)
         c = intake.ctx(s, request, account)
         end = acct.format_date(acct.local_trial_end(account))
         key = "confirmation_first_case" if trial_started_now else "confirmation_existing_trial"
-        confirmation = c.copy[key].format(trial_end_date=end)
+        # The trial reminder always shows in Cairn. It goes by email only when the user chose email (0011).
+        reminder = c.copy["reminder_sentence_with_channel" if nt.any_email_choice(s)
+                          else "reminder_sentence_in_app_only"]
+        confirmation = c.copy[key].format(trial_end_date=end, reminder_sentence=reminder)
 
         rows = journey.load_tasks(s, case_id)
         context = journey.task_context(c, case, answers)
@@ -299,6 +313,9 @@ def get_journey(case_id: UUID, request: Request, identity: Identity = Depends(ge
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
         ready = acct.require_ready(s, request, write=False)
+        if ready.account["status"] != "read_only":
+            # Coming back to the journey is activity, for the inactivity reason (UC-CASE-19).
+            intake.touch(s, case_id)
         return _journey_view(s, request, ready.account, case_id, notes=ready.notes)
 
 
@@ -308,7 +325,8 @@ def get_journey(case_id: UUID, request: Request, identity: Identity = Depends(ge
     summary="Step back from tasks for a while",
     description=(
         "UC-12. Holds all progress exactly as it is. Stores only the time the pause ends. "
-        "No reason or feeling is collected or stored."
+        "No reason or feeling is collected or stored. Pausing doesn't stop or extend the 28 free days, and "
+        "the response says so (D-2026-09-25-P1). It also offers to change how Cairn keeps in touch (UC-CASE-20)."
     ),
     responses=_DENIED,
 )
@@ -323,7 +341,11 @@ def pause_journey(case_id: UUID, request: Request, req: PauseRequest | None = No
         if row is None:
             raise case_access_denied()
         s.audit("journey_paused", case_id, "case", case_id)
-        return _journey_view(s, request, ready.account, case_id)
+        c = intake.ctx(s, request, ready.account)
+        notes = [Note(kind="info", text=c.copy["pause_notifications_offer"])]
+        if ready.account["status"] == "trial_active":
+            notes.insert(0, Note(kind="account", text=c.copy["pause_trial_note"]))
+        return _journey_view(s, request, ready.account, case_id, notes=notes)
 
 
 @router.post("/journey/resume", response_model=JourneyResponse, summary="Pick the tasks back up",
