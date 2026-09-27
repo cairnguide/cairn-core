@@ -5,6 +5,7 @@
 #   3. the task and journey templates (drafts allowed, development only)
 #   4. the cairn_api_login role with a fresh random password
 #   5. .env, copied from .env.example on the first run, with DATABASE_URL pointing at that role
+#   6. test logins (database/README.md) and CAIRN_DEV_AUTH_SECRET in .env, so sign-up works without Auth0
 #
 # Usage: scripts/dev-setup.sh
 # ADMIN_URL defaults to the devcontainer's Postgres (postgres:postgres@localhost:5432). It needs
@@ -58,6 +59,15 @@ sed -i.bak -e "s|^DATABASE_URL=.*|DATABASE_URL=$APP_URL|" \
            -e "s|^CAIRN_OWNER_DATABASE_URL=.*|CAIRN_OWNER_DATABASE_URL=$OWNER_URL|" .env
 rm -f .env.bak
 
+echo "== Test logins (development only)"
+if DATABASE_URL="$OWNER_URL" .venv/bin/python database/tools/seed_test_db.py; then
+  if ! grep -q '^CAIRN_DEV_AUTH_SECRET=' .env; then
+    echo "CAIRN_DEV_AUTH_SECRET=$(.venv/bin/python -c 'import secrets; print(secrets.token_urlsafe(32))')" >> .env
+  fi
+else
+  echo "Skipped. Test logins are only added to a database on this machine." >&2
+fi
+
 if command -v npm >/dev/null && [[ -f cloudflare/package-lock.json ]]; then
   echo "== Cloudflare Worker dependencies"
   (cd cloudflare && npm ci --no-audit --no-fund --loglevel=error)
@@ -65,3 +75,4 @@ fi
 
 echo
 echo "Ready. Start the API with:  make run   (then open http://localhost:8000/docs)"
+echo "Sign in as a test user with:  make dev-token   (usernames and password in database/README.md)"

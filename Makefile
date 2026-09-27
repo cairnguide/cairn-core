@@ -4,14 +4,23 @@
 VENV ?= .venv
 PY := $(VENV)/bin/python
 ADMIN_URL ?= postgresql://postgres:postgres@localhost:5432/postgres
+LOGIN ?= test.user
 
-.PHONY: help setup run run-jobs job test test-db db-check lint openapi docker-build docker-run cf-install cf-types cf-check cf-dev cf-deploy cf-tail
+.PHONY: help setup seed-test-db dev-token run run-jobs job test test-db db-check lint openapi docker-build docker-run cf-install cf-types cf-check cf-dev cf-deploy cf-tail
 
 help: ## List the commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-14s %s\n", $$1, $$2}'
 
 setup: ## One-time setup: .venv, database, migrations, templates, login role, .env
 	scripts/dev-setup.sh
+
+seed-test-db: ## Add the test logins to the local database (development only). ARGS=--reset starts them over
+	DATABASE_URL="$$(grep ^CAIRN_OWNER_DATABASE_URL= .env | cut -d= -f2-)" $(PY) database/tools/seed_test_db.py $(ARGS)
+
+dev-token: ## Print an access token for a test login while make run is up, for example: make dev-token LOGIN=new.user
+	@curl -fsS -X POST http://localhost:8000/v1/dev/token -H 'Content-Type: application/json' \
+	  -d '{"username": "$(LOGIN)", "password": "$(or $(CAIRN_TEST_PASSWORD),cairn-local-test-password)"}' \
+	  | $(PY) -c 'import json, sys; print(json.load(sys.stdin)["access_token"])'
 
 run: ## Run the API with reload on http://localhost:8000 (reads .env)
 	$(VENV)/bin/uvicorn cairn_api.main:app --app-dir api --env-file .env --reload --host 0.0.0.0 --port 8000

@@ -64,6 +64,8 @@ export CAIRN_CASE_COPY=...                 # optional: a replacement case creati
 export CAIRN_ESTATE_PLAN_MODE=add_on       # optional: OPEN-DECISION-01. Only add_on is built
 export CAIRN_PRE_NEED_PATH=not_built       # optional: OPEN-DECISION-05. Only not_built is built
 export CAIRN_OVERWHELM_SKIP_THRESHOLD=3    # optional: skips in a row that slow a session down (UC-CASE-14)
+export CAIRN_CORS_ORIGINS=...              # optional: browser origins allowed to call the API, comma-separated
+export CAIRN_DEV_AUTH_SECRET=...           # development only: turns on POST /v1/dev/token for the test logins
 .venv/bin/uvicorn cairn_api.main:app --app-dir api
 ```
 

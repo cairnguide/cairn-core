@@ -23,7 +23,7 @@ The requirements come from `database/docs/cairn-registration-use-cases.json` (UC
 CAIRN_AUTH0_DOMAIN=<tenant>.us.auth0.com        # or a custom domain
 CAIRN_AUTH0_AUDIENCE=https://api.cairn.example
 CAIRN_CLAIM_NAMESPACE=https://cairn.invalid/     # must match the Action secret
-CAIRN_AUTH0_EMAIL_CONNECTION=Username-Password-Authentication
+CAIRN_AUTH0_EMAIL_CONNECTION=email                # the passwordless connection's name
 ```
 
 The issuer (`https://<domain>/`) and the signing keys (`/.well-known/jwks.json`) are derived from the domain.
