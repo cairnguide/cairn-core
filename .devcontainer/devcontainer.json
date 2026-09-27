@@ -1,0 +1,42 @@
+// GitHub Codespaces and VS Code Dev Containers.
+// Python 3.12 (the version CI uses), Node for the Cloudflare Worker, the PostgreSQL client,
+// Docker (to build the container image and run wrangler dev), and a Postgres 16 server.
+// On first start, scripts/dev-setup.sh builds the database and writes .env. Then run: make run
+{
+  "name": "Cairn",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "shutdownAction": "stopCompose",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "22" },
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "forwardPorts": [8000, 8001, 8787],
+  "portsAttributes": {
+    "8000": { "label": "Cairn API", "onAutoForward": "notify" },
+    "8001": { "label": "Cairn jobs (local only)", "onAutoForward": "silent" },
+    "8787": { "label": "wrangler dev", "onAutoForward": "notify" },
+    "5432": { "label": "Postgres", "onAutoForward": "silent" }
+  },
+  "postCreateCommand": "sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client shellcheck >/dev/null && scripts/dev-setup.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python",
+        "python.testing.pytestEnabled": true,
+        "python.testing.cwd": "${containerWorkspaceFolder}/api"
+      }
+    },
+    "codespaces": {
+      "openFiles": ["README.md"]
+    }
+  },
+  "remoteUser": "vscode"
+}

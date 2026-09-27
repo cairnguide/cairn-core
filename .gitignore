@@ -5,3 +5,8 @@ __pycache__/
 api/results.xml
 *.egg-info/
 .idea
+.env
+.dev.vars
+node_modules/
+.wrangler/
+cloudflare/worker-configuration.d.ts

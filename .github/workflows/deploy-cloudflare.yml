@@ -1,0 +1,83 @@
+# Deploys Cairn to Cloudflare: database migrations, templates, then the Worker and container image.
+# Run it by hand from the Actions tab (Deploy to Cloudflare > Run workflow) once main is green.
+# One-time setup, including the secrets below, is in README.md under "Deploy to Cloudflare".
+#
+# Repository or "cloudflare" environment secrets:
+#   CLOUDFLARE_API_TOKEN       token with Workers Scripts, Containers, and Durable Objects edit rights
+#   CLOUDFLARE_ACCOUNT_ID
+#   CAIRN_OWNER_DATABASE_URL   owner connection string, for migrations and the template loader only
+name: Deploy to Cloudflare
+
+on:
+  workflow_dispatch:
+    inputs:
+      allow_unreviewed_templates:
+        description: "Load templates that haven't had counsel review (staging only, never production)"
+        type: boolean
+        default: false
+      skip_database:
+        description: "Skip migrations and templates (deploy code only)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-cloudflare
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: cloudflare
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        if: ${{ !inputs.skip_database }}
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: database/tools/requirements.txt
+
+      - name: Install database tools
+        if: ${{ !inputs.skip_database }}
+        run: |
+          pip install -r database/tools/requirements.txt
+          command -v psql || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
+
+      - name: Apply migrations
+        if: ${{ !inputs.skip_database }}
+        env:
+          DATABASE_URL: ${{ secrets.CAIRN_OWNER_DATABASE_URL }}
+        run: database/db/apply.sh context_items_jsonb context_items_read_only
+
+      - name: Load templates
+        if: ${{ !inputs.skip_database }}
+        env:
+          DATABASE_URL: ${{ secrets.CAIRN_OWNER_DATABASE_URL }}
+          ALLOW_UNREVIEWED: ${{ inputs.allow_unreviewed_templates }}
+        run: |
+          args=(--git-release "${GITHUB_SHA::12}")
+          if [[ "$ALLOW_UNREVIEWED" == "true" ]]; then
+            args+=(--allow-unreviewed)
+          fi
+          python database/tools/load_templates.py "${args[@]}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: cloudflare/package-lock.json
+
+      - name: Deploy the Worker and container image
+        working-directory: cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npm ci
+          npx wrangler deploy

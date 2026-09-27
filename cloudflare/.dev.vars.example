@@ -1,0 +1,14 @@
+# Secrets for `npx wrangler dev`. Copy to cloudflare/.dev.vars (gitignored) and fill in.
+# The container runs in Docker on this machine, so use host.docker.internal to reach a local Postgres.
+DATABASE_URL=postgresql://cairn_api_login:CHANGE_ME@host.docker.internal:5432/cairn
+CAIRN_OWNER_DATABASE_URL=postgresql://postgres:postgres@host.docker.internal:5432/cairn
+# CAIRN_SMTP_HOST=
+# CAIRN_SMTP_USERNAME=
+# CAIRN_SMTP_PASSWORD=
+# CAIRN_EMAIL_FROM=
+# CAIRN_AUTH0_MGMT_CLIENT_ID=
+# CAIRN_AUTH0_MGMT_CLIENT_SECRET=
+# CAIRN_APPLE_CLIENT_ID=
+# CAIRN_APPLE_TEAM_ID=
+# CAIRN_APPLE_KEY_ID=
+# CAIRN_APPLE_PRIVATE_KEY=

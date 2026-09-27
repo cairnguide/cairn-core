@@ -1,0 +1,10 @@
+# Only api/ and voices/ go into the image. Keep everything else out of the build context.
+*
+!api/
+!voices/
+api/tests/
+api/**/__pycache__/
+api/**/*.egg-info/
+api/.pytest_cache/
+api/results.xml
+voices/**/__pycache__/

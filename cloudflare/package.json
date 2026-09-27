@@ -1,0 +1,20 @@
+{
+  "name": "cairn-cloudflare",
+  "private": true,
+  "description": "Cloudflare Worker that serves the Cairn API from Cloudflare Containers and runs its scheduled jobs.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "check": "wrangler types && tsc --noEmit && wrangler deploy --dry-run",
+    "types": "wrangler types",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "^0.3.7"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "wrangler": "^4.142.0"
+  }
+}

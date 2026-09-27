@@ -49,6 +49,8 @@ HTTP API for the MVP use cases in `database/docs/cairn-mvp-use-cases.md`, the re
 
 ## Running
 
+The repository [README](../README.md) has the full setup: `make setup` and `make run` locally or in GitHub Codespaces, and the Cloudflare deployment. The container entry point is `python -m cairn_api.serve`, which runs this API (`CAIRN_PROCESS=api`) or the scheduled jobs service (`CAIRN_PROCESS=jobs`, `cairn_api/jobs.py`). By hand:
+
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -e 'api[test]'
 export DATABASE_URL=postgresql://cairn_api_login@host/cairn   # a login role that is a member of cairn_app
@@ -65,7 +67,7 @@ export CAIRN_OVERWHELM_SKIP_THRESHOLD=3    # optional: skips in a row that slow 
 .venv/bin/uvicorn cairn_api.main:app --app-dir api
 ```
 
-The database needs migrations 0001 to 0010 **and** the optional `context_items_jsonb` and `context_items_read_only` migrations, in that order (`db/apply.sh context_items_jsonb context_items_read_only`). UC-10 and UC-11 store their records in `context_items` (`CERT_ORDER` and `BANK_NOTICES`).
+The database needs migrations 0001 to 0011 **and** the optional `context_items_jsonb` and `context_items_read_only` migrations, in that order (`db/apply.sh context_items_jsonb context_items_read_only`). UC-10 and UC-11 store their records in `context_items` (`CERT_ORDER` and `BANK_NOTICES`).
 
 ## Tests
 
@@ -106,12 +108,14 @@ Adding a voice means a new voice file and manifest entry, a new value in `schema
 
 | Job | Function | Notes |
 |---|---|---|
-| Trial status | `cairn.expire_trials()` | Reporting only. Read-only is enforced from `trial_ends_at` directly |
-| Outbound email | `python api/scripts/send_outbound.py` | Every 5 minutes. Deletion confirmations (one each, address purged once sent), trial reminders for users who chose email, and the notifications users chose. SMTP, provider not chosen yet. Register the sending domain with Apple's Private Email Relay Service |
-| Held case deletion (UC-END-13) | `cairn.purge_held_cases()` | At least hourly. Deletes cases whose 7-day hold has ended and queues their confirmation |
-| Draft cleanup (DEC-07) | `cairn.purge_inactive_drafts()` | At least daily. Deletes drafts idle for `app_settings.draft_retention_days` (28), with their answers and context. Never touches active cases |
-| Identity cleanup | `python api/scripts/identity_cleanup.py` | Deletes Auth0 users and revokes Apple tokens after account deletion |
+| Trial status | `cairn.expire_trials()`, job `expire_trials` | Reporting only. Read-only is enforced from `trial_ends_at` directly |
+| Outbound email | `python api/scripts/send_outbound.py` or job `outbound` | Every 5 minutes. Deletion confirmations (one each, address purged once sent), trial reminders for users who chose email, and the notifications users chose. SMTP, provider not chosen yet. Register the sending domain with Apple's Private Email Relay Service |
+| Held case deletion (UC-END-13) | `cairn.purge_held_cases()`, job `purge_held_cases` | At least hourly. Deletes cases whose 7-day hold has ended and queues their confirmation |
+| Draft cleanup (DEC-07) | `cairn.purge_inactive_drafts()`, job `purge_inactive_drafts` | At least daily. Deletes drafts idle for `app_settings.draft_retention_days` (28), with their answers and context. Never touches active cases |
+| Identity cleanup | `python api/scripts/identity_cleanup.py` or job `identity_cleanup` | Deletes Auth0 users and revokes Apple tokens after account deletion |
 | Stale accounts | `cairn.purge_stale_accounts(pending, no_case)` | Periods come from the retention schedule [LEGAL REVIEW REQUIRED] |
+
+On Cloudflare, Cron Triggers in `cloudflare/wrangler.jsonc` run the first four through `cairn_api/jobs.py` (`POST /jobs/{name}` in the private jobs container). Stale account purging isn't scheduled until the retention periods are set.
 
 ## Security choices
 
