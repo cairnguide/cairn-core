@@ -1,0 +1,73 @@
+// Cloudflare deployment for the Cairn API. See README.md, "Deploy to Cloudflare".
+//
+// One Worker, two container classes built from the same image (../Dockerfile):
+//   CairnApi   serves every public request. Holds the app role's DATABASE_URL.
+//   CairnJobs  runs the scheduled jobs on the cron triggers below. Holds the OWNER connection
+//              string and provider secrets. The Worker never routes public traffic to it.
+//
+// Secrets are not in this file. Set them with `npx wrangler secret put NAME` (see README.md).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cairn-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  "containers": [
+    {
+      "class_name": "CairnApi",
+      "image": "../Dockerfile",
+      "image_build_context": "..",
+      "instance_type": "basic",
+      "max_instances": 3
+    },
+    {
+      "class_name": "CairnJobs",
+      "image": "../Dockerfile",
+      "image_build_context": "..",
+      "instance_type": "basic",
+      "max_instances": 1
+    }
+  ],
+
+  "durable_objects": {
+    "bindings": [
+      { "name": "CAIRN_API", "class_name": "CairnApi" },
+      { "name": "CAIRN_JOBS", "class_name": "CairnJobs" }
+    ]
+  },
+
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["CairnApi", "CairnJobs"] }
+  ],
+
+  // Keep in step with JOBS_BY_CRON in src/index.ts. Times are UTC.
+  "triggers": {
+    "crons": [
+      "*/5 * * * *",   // outbound email
+      "*/15 * * * *",  // identity cleanup
+      "7 * * * *",     // held case deletion (UC-END-13), hourly
+      "30 3 * * *"     // draft cleanup (DEC-07) and trial status, daily
+    ]
+  },
+
+  // Settings that aren't secret. Replace these example values before the first deploy.
+  "vars": {
+    "CAIRN_API_INSTANCES": "1",
+    "CAIRN_AUTH0_DOMAIN": "cairn-dev.us.auth0.com",
+    "CAIRN_AUTH0_AUDIENCE": "https://api.cairn.example",
+    "CAIRN_CLAIM_NAMESPACE": "https://cairn.invalid/",
+    "CAIRN_AUTH0_EMAIL_CONNECTION": "email",
+    "CAIRN_TERMS_VERSION": "terms-dev",
+    "CAIRN_PRIVACY_VERSION": "privacy-dev",
+    "CAIRN_PRIVACY_POLICY_URL": "https://cairn.example/privacy",
+    "CAIRN_TERMS_URL": "https://cairn.example/terms",
+    "CAIRN_JOURNEY_MAP_URL": "https://cairn.example/first-weeks",
+    "CAIRN_SUPPORT_URL": "https://cairn.example/support",
+    "CAIRN_AI_PROVIDER_NAME": "Example AI Provider",
+    "CAIRN_DB_POOL_MIN": "1",
+    "CAIRN_DB_POOL_MAX": "5",
+    "CAIRN_SMTP_PORT": "587"
+  }
+}

@@ -4,6 +4,7 @@ Credentials are never committed. DATABASE_URL must use a login role that is a
 member of cairn_app. Never the owner role, and never a role with BYPASSRLS.
 """
 import os
+import pathlib
 from dataclasses import dataclass
 
 
@@ -12,6 +13,21 @@ def _require(name: str) -> str:
     if not value:
         raise RuntimeError(f"Set {name} in the environment.")
     return value
+
+
+def secret_from_env(name: str) -> str | None:
+    """A secret from NAME, or from the file named by NAME_FILE.
+
+    Secret managers that mount files use NAME_FILE. Cloudflare secrets arrive as
+    environment variables, so NAME works too. NAME wins when both are set.
+    """
+    value = os.environ.get(name)
+    if value:
+        return value
+    path = os.environ.get(f"{name}_FILE")
+    if path:
+        return pathlib.Path(path).read_text().strip()
+    return None
 
 
 @dataclass(frozen=True)

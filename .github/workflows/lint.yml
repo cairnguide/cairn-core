@@ -30,7 +30,7 @@ jobs:
         run: ruff check --output-format=github .
 
       - name: Shell scripts (shellcheck)
-        run: shellcheck database/db/apply.sh database/db/tests/run.sh .github/scripts/*.sh
+        run: shellcheck database/db/apply.sh database/db/tests/run.sh .github/scripts/*.sh scripts/*.sh
 
       - name: GitHub Actions workflows (actionlint)
         run: actionlint
@@ -50,3 +50,28 @@ jobs:
             echo "::error file=api/openapi.json::openapi.json is out of date. Run: python api/scripts/export_openapi.py"
             exit 1
           }
+
+  cloudflare:
+    name: Cloudflare Worker and container image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: cloudflare
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: cloudflare/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Type-check the Worker
+        run: npx wrangler types && npx tsc --noEmit
+
+      - name: Build the container image and bundle the Worker (no upload)
+        run: npx wrangler deploy --dry-run
