@@ -10,7 +10,8 @@ type Settings = Record<string, string>;
 // Environment variables each container receives. Vars come from wrangler.jsonc, secrets from
 // `wrangler secret put`. Anything unset is left out, and the Python side decides what's required.
 const API_KEYS = [
-  "DATABASE_URL",
+  "MONGODB_URI",
+  "CAIRN_MONGODB_DB",
   "CAIRN_DB_POOL_MIN",
   "CAIRN_DB_POOL_MAX",
   "CAIRN_AUTH0_DOMAIN",
@@ -29,9 +30,10 @@ const API_KEYS = [
   "CAIRN_OVERWHELM_SKIP_THRESHOLD",
 ] as const;
 
-// The owner connection string and provider secrets reach only the jobs container.
+// The jobs user's connection string and provider secrets reach only the jobs container.
 const JOBS_KEYS = [
-  "CAIRN_OWNER_DATABASE_URL",
+  "CAIRN_JOBS_MONGODB_URI",
+  "CAIRN_MONGODB_DB",
   "CAIRN_SMTP_HOST",
   "CAIRN_SMTP_PORT",
   "CAIRN_SMTP_USERNAME",

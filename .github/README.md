@@ -5,9 +5,11 @@
 | Event | Workflow | What it checks |
 |---|---|---|
 | Push to any branch except `main` | [`branch-push.yml`](workflows/branch-push.yml) | Lint, plus the test files the push added or changed. If no test files changed, it runs the fast suite, which needs no database. |
-| Pull request into `main` | [`pull-request.yml`](workflows/pull-request.yml) | Lint, every API test on Postgres 15 and 16 (a skipped test counts as a failure), and the database security suite (`database/db/tests/run.sh`) on Postgres 15 and 16. |
+| Pull request into `main` | [`pull-request.yml`](workflows/pull-request.yml) | Lint, then every API test, including the data security suite (`api/tests/test_data_security.py`), on MongoDB 7.0 and 8.0. A skipped test counts as a failure. |
 | Merge to `main` | [`pull-request.yml`](workflows/pull-request.yml) | The same full set, so `main` is re-verified after every merge. |
-| Run by hand | [`deploy-cloudflare.yml`](workflows/deploy-cloudflare.yml) | Deploys to Cloudflare: migrations, templates, then the Worker and container image. See the repository README. |
+| Run by hand | [`deploy-cloudflare.yml`](workflows/deploy-cloudflare.yml) | Deploys to Cloudflare: the MongoDB schema, templates, then the Worker and container image. See the repository README. |
+
+Database tests run against a throwaway MongoDB replica set with authentication on, started by [`scripts/start-mongodb.sh`](scripts/start-mongodb.sh) in Docker. The API connects to it as a `cairnApp` user, exactly as in production.
 
 "New tests" means test files under `api/tests/` that were added or modified since the previous push. On a branch's first push, or after a force push, it means every test file changed since the branch left `main`.
 
@@ -25,7 +27,7 @@ Run the same checks locally before pushing:
 
 ```bash
 pip install -e 'api[test,lint]'
-ruff check . && shellcheck database/db/*.sh database/db/tests/*.sh .github/scripts/*.sh scripts/*.sh && actionlint
+ruff check . && shellcheck .github/scripts/*.sh scripts/*.sh && actionlint
 cd api && pytest
 cd ../cloudflare && npm ci && npx wrangler types && npx tsc --noEmit && npx wrangler deploy --dry-run
 ```

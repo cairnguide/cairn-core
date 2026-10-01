@@ -1,5 +1,7 @@
 # Cairn MVP Use Case Scenarios
 
+> **2026-10-01:** the database moved from PostgreSQL to MongoDB. SQL tables, row-level security policies, and functions named below now live in `database/db/schema.py` (collections, validators, roles) and `api/cairn_api/store.py` (the case boundary). `database/CLAUDE.md`, "The move to MongoDB", maps each one.
+
 Written for the four MVP personas: surviving spouse, adult child acting as executor, power of attorney, and professional fiduciary. Each scenario follows the acknowledge-first, one-question-at-a-time standard from the product design, and each ends with the user knowing their next action.
 
 Schema references point to `db/migrations/0002_core_tables.sql`, `0003_journey_tables.sql`, and the functions in `0005_functions.sql`.
@@ -162,4 +164,4 @@ This scenario composes UC-5, UC-6, and UC-7 into a single continuous session rat
 - All four flows run under the `cairn_app` role with row-level security enabled. None should require elevated privileges.
 - None of the flows write directly to `cairn.users`. Identity is established at registration (`cairn.register_user`), and these flows only reference the existing `user_id`.
 - No flow should call `cairn.generate_case_tasks` until at minimum the fields listed in UC-8's second bullet are present. Calling it earlier is not an error, since it simply returns fewer or zero matched tasks, but the UI should wait until UC-7 or UC-8's flow completes before showing the journey, so the first impression is a populated one.
-- Every flow described here should have a corresponding case in `db/tests/verify.sql` or a new test file, following the existing pattern (owner setup, act as `cairn_app` with `app.user_id` set, assert both success and permission-denied paths).
+- Every flow described here should have a corresponding case in `api/tests/test_data_security.py` or a new test file, following the existing pattern (owner setup, act as `cairn_app` with `app.user_id` set, assert both success and permission-denied paths).

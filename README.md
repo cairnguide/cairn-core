@@ -1,8 +1,8 @@
 # cairn_core
 
-Core functionality for the Cairn app: the HTTP API, the PostgreSQL schema, journey templates, and the voices Cairn speaks in.
+Core functionality for the Cairn app: the HTTP API, the MongoDB schema, journey templates, and the voices Cairn speaks in.
 
-Cairn walks a family through the logistics of a death, one step at a time. The data is highly sensitive, so security comes first: the case is the security boundary, enforced in the database with row-level security.
+Cairn walks a family through the logistics of a death, one step at a time. The data is highly sensitive, so security comes first: the case is the security boundary, enforced in one data-access layer that every request goes through (`api/cairn_api/store.py`), with MongoDB validators and least-privilege roles as the backstop.
 
 - [Repository layout](#repository-layout)
 - [How it runs](#how-it-runs)
@@ -17,7 +17,7 @@ Cairn walks a family through the logistics of a death, one step at a time. The d
 | Folder | What's in it | More detail |
 |---|---|---|
 | `api/` | The Cairn API (Python, FastAPI) and the scheduled jobs | [api/README.md](api/README.md) |
-| `database/` | PostgreSQL migrations, row-level security, the template loader, and the security test suite | [database/CLAUDE.md](database/CLAUDE.md) |
+| `database/` | The MongoDB schema (validators, indexes, roles), the template loader, and the user and data-moving tools | [database/README.md](database/README.md), [database/CLAUDE.md](database/CLAUDE.md) |
 | `journeys/` | Journey templates and their tools | [journeys/README.md](journeys/README.md) |
 | `voices/` | The voices users choose from during onboarding | [voices/README.md](voices/README.md) |
 | `auth0/` | Auth0 tenant setup and the post-login Action | [auth0/README.md](auth0/README.md) |
@@ -33,25 +33,25 @@ Cairn walks a family through the logistics of a death, one step at a time. The d
                          Cloudflare
   ┌──────────────────────────────────────────────────────────────┐
   │                                                              │
-  │  Client ──HTTPS──▶ Worker "cairn-api" ──▶ CairnApi container ─┼──▶ PostgreSQL 15+
-  │                    (cloudflare/src)      (Python API,         │    as cairn_api_login
-  │                          │                app role only)      │    (member of cairn_app,
-  │                          │                                    │     row-level security)
-  │   Cron Triggers ──▶ scheduled() ──▶ CairnJobs container ──────┼──▶ PostgreSQL as OWNER
+  │  Client ──HTTPS──▶ Worker "cairn-api" ──▶ CairnApi container ─┼──▶ MongoDB Atlas
+  │                    (cloudflare/src)      (Python API,         │    as cairn_api
+  │                          │                app user only)      │    (cairnApp role only,
+  │                          │                                    │     validators on)
+  │   Cron Triggers ──▶ scheduled() ──▶ CairnJobs container ──────┼──▶ MongoDB as cairn_jobs
   │                                     (private, never public)   │    SMTP, Auth0, Apple
   └──────────────────────────────────────────────────────────────┘
 ```
 
 - The API is unchanged Python. It runs in a [Cloudflare Container](https://developers.cloudflare.com/containers/), built from the `Dockerfile` in this repository. A small Worker in `cloudflare/` is the front door. It receives every request and forwards it to the container.
-- Scheduled jobs (outbound email, identity cleanup, held case deletion, draft cleanup, trial status) run in a second container from the same image. [Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/) call the Worker, and the Worker calls that container. It holds the owner connection string and provider secrets. The API container never sees them, and no public request can reach the jobs container.
-- PostgreSQL is not on Cloudflare. Use any managed PostgreSQL 15 or newer (for example Neon, Supabase, Crunchy Bridge, or Amazon RDS) that is reachable over the internet with TLS.
+- Scheduled jobs (outbound email, identity cleanup, held case deletion, draft cleanup, trial status) run in a second container from the same image. [Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/) call the Worker, and the Worker calls that container. It holds the jobs user's connection string and provider secrets. The API container never sees them, and no public request can reach the jobs container.
+- MongoDB is not on Cloudflare. Use [MongoDB Atlas](https://www.mongodb.com/docs/atlas/) (M10 or larger), or any MongoDB 7.0 or newer replica set reachable over the internet with TLS. Every request is one multi-document transaction, which needs a replica set.
 - Sign-in is Auth0 ([auth0/README.md](auth0/README.md)). The API only verifies Auth0's signed tokens.
 
 The same image runs anywhere Docker does. `CAIRN_PROCESS=api` (the default) serves the API, and `CAIRN_PROCESS=jobs` serves the jobs.
 
 ## Run it in GitHub Codespaces
 
-A Codespace comes with everything installed: Python 3.12, Node 22, the PostgreSQL client, Docker, and a PostgreSQL 16 server. The first start builds the database and writes your settings.
+A Codespace comes with everything installed: Python 3.12, Node 22, Docker, and a MongoDB 8.0 server with authentication on. The first start builds the database and writes your settings.
 
 ### 1. Create the Codespace
 
@@ -68,10 +68,11 @@ A Codespace comes with everything installed: Python 3.12, Node 22, the PostgreSQ
 The setup ran `scripts/dev-setup.sh` for you. It:
 
 - made a Python virtual environment in `.venv` with the API, test, lint, and loader dependencies
-- created a `cairn` database and applied every migration, plus the two optional ones the API needs
-- loaded the task and journey templates (drafts allowed, development only)
-- created the `cairn_api_login` role with a random password, as a member of `cairn_app`
-- copied `.env.example` to `.env` and pointed `DATABASE_URL` at that role
+- made the MongoDB server a single-node replica set, so transactions work
+- created a `cairn` database with its collections, validators, indexes, roles, and settings (`database/db/apply.py`)
+- created the `cairn_api`, `cairn_jobs`, and `cairn_loader` users, each with one role and a random password
+- loaded the task and journey templates as `cairn_loader` (drafts allowed, development only)
+- copied `.env.example` to `.env` and pointed `MONGODB_URI` and `CAIRN_JOBS_MONGODB_URI` at those users
 
 If anything failed, run it again. It's safe to repeat:
 
@@ -111,7 +112,7 @@ make test-db
 make db-check
 ```
 
-`make test` is the fast suite with no database. `make test-db` adds every use case against a scratch database on the Codespace's PostgreSQL server, and `make db-check` runs the database security suite. Both create a temporary database and drop it afterwards, so they never touch the `cairn` database.
+`make test` is the fast suite with no database. `make test-db` adds every use case and the data security suite against a scratch database on the Codespace's MongoDB server, with the API connected as a `cairnApp` user. `make db-check` runs the data security suite on its own. Both create a temporary database with its own users and roles and drop them afterwards, so they never touch the `cairn` database.
 
 ### 4. Try signed-in endpoints
 
@@ -160,39 +161,31 @@ A Codespace stops by itself after 30 minutes idle, and the database keeps its da
 You need:
 
 - Python 3.11 or newer (CI uses 3.12)
-- PostgreSQL 15 or newer, and its `psql` client
-- Docker, to build and test the container image (Docker Desktop, OrbStack, or Colima)
+- Docker, for MongoDB and to build and test the container image (Docker Desktop, OrbStack, or Colima)
 - Node 20 or newer, for the Cloudflare Worker
 
 On macOS with Homebrew:
 
 ```bash
-brew install python@3.12 postgresql@16 node
-```
-
-```bash
-brew services start postgresql@16
+brew install python@3.12 node
 ```
 
 You can use the same Dev Container as Codespaces instead. Open the folder in VS Code and choose **Reopen in Container**.
 
 ### Set up
 
-With a local PostgreSQL server, tell the setup script how to reach it as a user that can create databases and roles. Homebrew's server uses your macOS user name with no password:
+Start MongoDB 8.0 in Docker as a replica set with authentication, the same way CI does. The `admin` password is for this throwaway local server only:
 
 ```bash
-ADMIN_URL=postgresql://$(whoami)@localhost:5432/postgres make setup
-```
-
-With the PostgreSQL in Docker instead:
-
-```bash
-docker run -d --name cairn-postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16
+docker run -d --name cairn-mongo -p 27017:27017 -e MONGO_INITDB_ROOT_USERNAME=admin -e MONGO_INITDB_ROOT_PASSWORD=admin \
+  --entrypoint bash mongo:8.0 -c 'head -c 756 /dev/urandom | base64 > /tmp/keyfile && chmod 400 /tmp/keyfile && chown 999:999 /tmp/keyfile && exec docker-entrypoint.sh mongod --replSet rs0 --keyFile /tmp/keyfile --bind_ip_all'
 ```
 
 ```bash
 make setup
 ```
+
+`make setup` initiates the replica set the first time. With a different MongoDB, pass an administrator URI: `make setup MONGO_ADMIN_URI='mongodb://...'`.
 
 Then start the API and open http://localhost:8000/docs:
 
@@ -200,7 +193,7 @@ Then start the API and open http://localhost:8000/docs:
 make run
 ```
 
-The tests, jobs, and Auth0 steps are the same as in [Codespaces](#run-it-in-github-codespaces). Pass the same `ADMIN_URL` to `make test-db` and `make db-check` if yours isn't the default.
+The tests, jobs, and Auth0 steps are the same as in [Codespaces](#run-it-in-github-codespaces). Pass the same `MONGO_ADMIN_URI` to `make test-db` and `make db-check` if yours isn't the default.
 
 ### Run the container image locally
 
@@ -223,51 +216,49 @@ curl http://localhost:8080/healthz
 ### What you need
 
 - A Cloudflare account on the **Workers Paid** plan. Containers aren't available on the free plan.
-- A managed PostgreSQL 15+ database reachable from the internet over TLS, with an owner role that can create roles (the migrations create `cairn_app` and `cairn_loader`).
+- A MongoDB Atlas cluster (M10 or larger), or another MongoDB 7.0+ replica set reachable from the internet over TLS, and an administrator login for setup.
 - An Auth0 tenant set up with [auth0/README.md](auth0/README.md).
 - Docker running on the machine that deploys. `wrangler` builds the image locally and pushes it to Cloudflare's registry. The GitHub Actions deploy workflow does this for you.
 - Node 20+ and this repository.
 
-### 1. Create the database
+### 1. Create the database, roles, and users
 
-Create a PostgreSQL 15+ database called `cairn` with your provider and copy two things:
+Follow [database/README.md](database/README.md), "Atlas setup": create the cluster, add the `cairnApp`, `cairnJobs`, and `cairnLoader` custom roles (`python3 database/db/apply.py --print-roles` prints them), and create one user per role:
 
-- the **owner** connection string, for example `postgresql://owner:…@db.example.com:5432/cairn?sslmode=require`
-- confirmation that it's a **direct** connection, not a transaction pooler
+- `cairn_api` with `cairnApp`, for the API (`MONGODB_URI`)
+- `cairn_jobs` with `cairnJobs`, for the jobs (`CAIRN_JOBS_MONGODB_URI`)
+- `cairn_loader` with `cairnLoader`, for loading templates
 
-The API sets `search_path` and `SET ROLE cairn_app` once per connection, which a transaction-mode pooler (PgBouncer in transaction mode, Neon's `-pooler` host, Supabase's port 6543) would lose between transactions. Use the direct host, or a pooler in session mode. The API keeps its own small pool.
+Atlas refuses `createRole` and `createUser` from a driver, which is why roles and users are made in Atlas ([Unsupported Commands](https://www.mongodb.com/docs/atlas/unsupported-commands/)). On a self-managed replica set, `database/db/apply.py` creates the roles and `database/tools/create_login_user.py` creates the users.
 
-Cloudflare Containers don't have fixed outbound IP addresses, so the database has to accept TLS connections from the internet. Keep strong passwords and require TLS (`sslmode=require` or `verify-full`).
+Cloudflare Containers don't have fixed outbound IP addresses, so the cluster's IP access list has to accept the containers' connections ([IP Access List](https://www.mongodb.com/docs/atlas/security/ip-access-list/)). Keep strong passwords and TLS on. Whether to add a fixed-egress proxy first is an open decision (`database/CLAUDE.md`, open question 12).
 
-### 2. Apply the migrations and load the templates
+### 2. Apply the schema and load the templates
 
-From a Codespace or your machine, with the owner connection string in your shell only:
+From a Codespace or your machine, with the connection strings in your shell only:
 
 ```bash
-export OWNER_URL='postgresql://owner:…@db.example.com:5432/cairn?sslmode=require'
+export CAIRN_ADMIN_MONGODB_URI='mongodb+srv://admin:…@cluster.example.mongodb.net/'
 ```
 
 ```bash
-DATABASE_URL="$OWNER_URL" database/db/apply.sh context_items_jsonb context_items_read_only
+.venv/bin/python database/db/apply.py --db cairn --skip-roles
 ```
 
 ```bash
-DATABASE_URL="$OWNER_URL" .venv/bin/python database/tools/load_templates.py --git-release "$(git rev-parse --short HEAD)"
+CAIRN_LOADER_MONGODB_URI='mongodb+srv://cairn_loader:…@cluster.example.mongodb.net/' \
+  .venv/bin/python database/tools/load_templates.py --git-release "$(git rev-parse --short HEAD)"
 ```
+
+Leave out `--skip-roles` on a self-managed deployment, where `apply.py` can create the roles itself. If the environment already has data in PostgreSQL, move it now with `database/tools/move_from_postgres.py` (see [database/README.md](database/README.md)).
 
 The loader refuses templates that haven't had counsel review. That's the release gate. For a staging database only, add `--allow-unreviewed`. The current templates are unreviewed drafts (see [api/README.md](api/README.md), decision 8), so production needs that review first.
 
 Later deploys can do this step for you with the [GitHub Actions workflow](#8-optional-deploy-from-github-actions).
 
-### 3. Create the API's login role
+### 3. Copy the API and jobs connection strings
 
-The API must never connect as the owner. Create its login role, a member of `cairn_app`, and print its connection string:
-
-```bash
-DATABASE_URL="$OWNER_URL" .venv/bin/python database/tools/create_login_role.py --generate
-```
-
-The last line is the API's `DATABASE_URL`. Copy it straight into step 6 and don't save it anywhere else. To choose the password yourself, set `CAIRN_LOGIN_PASSWORD` and leave out `--generate`. Running it again changes the password.
+The API must never connect as an administrator. Its `MONGODB_URI` is the `cairn_api` user's connection string, and the jobs' `CAIRN_JOBS_MONGODB_URI` is the `cairn_jobs` user's. Copy them straight into step 6 and don't save them anywhere else.
 
 ### 4. Install the Worker's tools and sign in
 
@@ -315,14 +306,14 @@ Settings changed in the Cloudflare dashboard are replaced by this file on the ne
 Each command asks for the value. Nothing is saved in the repository.
 
 ```bash
-npx wrangler secret put DATABASE_URL
+npx wrangler secret put MONGODB_URI
 ```
 
 ```bash
-npx wrangler secret put CAIRN_OWNER_DATABASE_URL
+npx wrangler secret put CAIRN_JOBS_MONGODB_URI
 ```
 
-`DATABASE_URL` is the login role's connection string from step 3, for the API. `CAIRN_OWNER_DATABASE_URL` is the owner connection string, for the jobs only.
+`MONGODB_URI` is the `cairn_api` user's connection string from step 3, for the API. `CAIRN_JOBS_MONGODB_URI` is the `cairn_jobs` user's, for the jobs only. The database name comes from `CAIRN_MONGODB_DB` in `wrangler.jsonc` (`cairn`).
 
 When you've chosen an email provider, add SMTP for the outbound job:
 
@@ -396,10 +387,10 @@ To use your own domain, open **Workers & Pages > cairn-api > Settings > Domains 
 
 ### 8. (Optional) Deploy from GitHub Actions
 
-[`.github/workflows/deploy-cloudflare.yml`](.github/workflows/deploy-cloudflare.yml) runs steps 2 and 7 for you: migrations, templates, then `wrangler deploy`.
+[`.github/workflows/deploy-cloudflare.yml`](.github/workflows/deploy-cloudflare.yml) runs steps 2 and 7 for you: the schema, templates, then `wrangler deploy`.
 
 1. In the repository, open **Settings > Environments > New environment** and name it `cloudflare`. Add required reviewers if you want an approval before each deploy.
-2. Add three environment secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `CAIRN_OWNER_DATABASE_URL`.
+2. Add four environment secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CAIRN_ADMIN_MONGODB_URI` (an administrator, for `apply.py`), and `CAIRN_LOADER_MONGODB_URI` (the `cairn_loader` user). On Atlas, also add the environment variable `CAIRN_MANAGE_ROLES` set to `false`, because Atlas manages the roles.
 3. Keep setting the Worker's own secrets with `wrangler secret put` (step 6). The workflow doesn't touch them.
 4. Open **Actions > Deploy to Cloudflare > Run workflow** and choose the branch. Tick **Load templates that haven't had counsel review** for staging only.
 
@@ -429,7 +420,7 @@ npx wrangler deployments list
 npx wrangler rollback
 ```
 
-A rollback changes the Worker and image. It doesn't undo migrations, which only ever move forward.
+A rollback changes the Worker and image. It doesn't undo schema changes: validators and indexes stay as the newest `apply.py` left them, so keep schema changes backward compatible for one release.
 
 Run a job by hand to test it. `wrangler dev --test-scheduled` exposes the scheduled handler locally:
 
@@ -472,13 +463,14 @@ Run `make help` for this list. Everything the Makefile does is also written out 
 
 | Command | What it does |
 |---|---|
-| `make setup` | One-time setup: `.venv`, database, migrations, templates, login role, `.env` |
+| `make setup` | One-time setup: `.venv`, MongoDB replica set, schema, login users, templates, `.env` |
 | `make run` | The API with reload on port 8000 |
 | `make run-jobs` | The jobs service on port 8001 (localhost only) |
 | `make job NAME=…` | Trigger one job on the local jobs service |
 | `make test` | Fast tests, no database |
 | `make test-db` | Every API test on a scratch database |
-| `make db-check` | Database security suite on a scratch database |
+| `make db-check` | Data security suite on a scratch database |
+| `make db-apply` | Apply `database/db/schema.py` to the local database |
 | `make lint` | The same checks as CI |
 | `make openapi` | Regenerate `api/openapi.json` after changing an endpoint |
 | `make docker-build`, `make docker-run` | Build and run the container image |
@@ -491,13 +483,15 @@ Run `make help` for this list. Everything the Makefile does is also written out 
 
 ## Troubleshooting
 
-**The API won't start: "Set DATABASE_URL in the environment."** A required setting is missing. Locally, check `.env`. On Cloudflare, check `vars` in `wrangler.jsonc` and `npx wrangler secret list`.
+**The API won't start: "Set MONGODB_URI in the environment."** A required setting is missing. Locally, check `.env`. On Cloudflare, check `vars` in `wrangler.jsonc` and `npx wrangler secret list`.
 
-**"Permission denied" or "role … does not exist" from the database.** `DATABASE_URL` must be the login role from `create_login_role.py`, a member of `cairn_app`. Run step 3 again to reset its password.
+**Every request returns 403 `case_access_denied`, or the logs show `code=13`.** MongoDB refused the user (Unauthorized). `MONGODB_URI` must be the `cairn_api` user, holding the `cairnApp` role on the database named in `CAIRN_MONGODB_DB`. On Atlas, check the role matches `python3 database/db/apply.py --print-roles`.
 
-**Requests fail after a while with a pooler.** The connection string points at a transaction-mode pooler. Use the direct host (see step 1).
+**"Transaction numbers are only allowed on a replica set member or mongos".** The server is a standalone `mongod`. Start it with `--replSet rs0` and run `python3 scripts/init_replica_set.py '<admin uri>'` once (`make setup` does this).
 
-**`make setup` says psql is missing.** Install the PostgreSQL client: `sudo apt-get install postgresql-client` on Debian or Ubuntu, `brew install libpq` on macOS (then add `$(brew --prefix libpq)/bin` to your `PATH`).
+**A request returns 409 `try_again`.** Another request changed the same document at the same moment, and MongoDB aborted this one instead of making it wait. Sending it again is safe.
+
+**Connections time out from Cloudflare.** The Atlas IP access list doesn't admit the containers (see step 1).
 
 **`wrangler deploy` fails to build the image.** Docker has to be running. On Apple silicon, the build emulates `linux/amd64`, which is slower but works.
 

@@ -1,6 +1,6 @@
 // GitHub Codespaces and VS Code Dev Containers.
-// Python 3.12 (the version CI uses), Node for the Cloudflare Worker, the PostgreSQL client,
-// Docker (to build the container image and run wrangler dev), and a Postgres 16 server.
+// Python 3.12 (the version CI uses), Node for the Cloudflare Worker, Docker (to build the
+// container image and run wrangler dev), and a MongoDB 8.0 single-node replica set.
 // On first start, scripts/dev-setup.sh builds the database and writes .env. Then run: make run
 {
   "name": "Cairn",
@@ -18,9 +18,9 @@
     "8000": { "label": "Cairn API", "onAutoForward": "notify" },
     "8001": { "label": "Cairn jobs (local only)", "onAutoForward": "silent" },
     "8787": { "label": "wrangler dev", "onAutoForward": "notify" },
-    "5432": { "label": "Postgres", "onAutoForward": "silent" }
+    "27017": { "label": "MongoDB", "onAutoForward": "silent" }
   },
-  "postCreateCommand": "sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client shellcheck >/dev/null && scripts/dev-setup.sh",
+  "postCreateCommand": "sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck >/dev/null && scripts/dev-setup.sh",
   "customizations": {
     "vscode": {
       "extensions": [
