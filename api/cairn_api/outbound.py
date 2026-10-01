@@ -1,4 +1,4 @@
-"""Messages Cairn sends outside the app. Run on a schedule as the owner role.
+"""Messages Cairn sends outside the app. Run on a schedule as the cairnJobs user.
 
 Three queues, in this order:
 1. Confirmations for something the user just did (UC-CASE-21, UC-REG-15): case deleted now, case deleted
@@ -24,10 +24,8 @@ from dataclasses import dataclass, field
 from email.message import EmailMessage
 from typing import Protocol
 
-import psycopg
-from psycopg.rows import dict_row
-
 from . import account as acct
+from . import maintenance
 from .copy_store import Copy
 
 log = logging.getLogger("cairn_api.outbound")
@@ -98,32 +96,30 @@ def _try(mailer: Mailer, to: str, msg: Message) -> str | None:
     return None
 
 
-def run_once(owner_database_url: str, mailer: Mailer, copy: Copy, case_copy: Copy, limit: int = 100) -> Outcome:
-    """Works through all three queues once. Must connect as the owner role."""
+def run_once(db, mailer: Mailer, copy: Copy, case_copy: Copy, limit: int = 100) -> Outcome:
+    """Works through all three queues once. db is the Cairn database, connected as the cairnJobs user."""
     out = Outcome()
-    with psycopg.connect(owner_database_url, autocommit=True, row_factory=dict_row) as conn:
-        conn.execute("SET search_path = cairn, pg_temp")
 
-        for row in conn.execute("SELECT * FROM cairn.claim_action_confirmations(%s)", (limit,)).fetchall():
-            error = _try(mailer, row["email"], confirmation(row["action_type"], copy))
-            if error is None:
-                conn.execute("SELECT cairn.complete_action_confirmation(%s)", (row["confirmation_id"],))
-            else:
-                conn.execute("SELECT cairn.release_action_confirmation(%s, %s)", (row["confirmation_id"], error))
-                log.warning("confirmation not sent id=%s code=%s", row["confirmation_id"], error)
-            out.count("confirmations", error is None)
+    for row in maintenance.claim_action_confirmations(db, limit):
+        error = _try(mailer, row["email"], confirmation(row["action_type"], copy))
+        if error is None:
+            maintenance.complete_action_confirmation(db, row["confirmation_id"])
+        else:
+            maintenance.release_action_confirmation(db, row["confirmation_id"], error)
+            log.warning("confirmation not sent id=%s code=%s", row["confirmation_id"], error)
+        out.count("confirmations", error is None)
 
-        # Claimed rows are marked sent first. A failed send is not repeated with a date that no longer fits.
-        for row in conn.execute("SELECT * FROM cairn.claim_due_trial_reminders(%s)", (limit,)).fetchall():
-            error = _try(mailer, row["email"], trial_reminder(row, copy))
-            if error:
-                log.warning("trial reminder not sent id=%s code=%s", row["reminder_id"], error)
-            out.count("trial_reminders", error is None)
+    # Claimed rows are marked sent first. A failed send is not repeated with a date that no longer fits.
+    for row in maintenance.claim_due_trial_reminders(db, limit):
+        error = _try(mailer, row["email"], trial_reminder(row, copy))
+        if error:
+            log.warning("trial reminder not sent id=%s code=%s", row["reminder_id"], error)
+        out.count("trial_reminders", error is None)
 
-        # Logged when claimed. A missed nudge is better than a repeated one.
-        for row in conn.execute("SELECT * FROM cairn.claim_due_notifications(%s)", (limit,)).fetchall():
-            error = _try(mailer, row["email"], notification(row["reason"], copy, case_copy))
-            if error:
-                log.warning("notification not sent id=%s code=%s", row["notification_id"], error)
-            out.count("notifications", error is None)
+    # Logged when claimed. A missed nudge is better than a repeated one.
+    for row in maintenance.claim_due_notifications(db, limit):
+        error = _try(mailer, row["email"], notification(row["reason"], copy, case_copy))
+        if error:
+            log.warning("notification not sent id=%s code=%s", row["notification_id"], error)
+        out.count("notifications", error is None)
     return out

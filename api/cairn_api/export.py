@@ -1,11 +1,11 @@
 """Download all my data (UC-REG-16).
 
-Everything is read as the user, so row-level security decides what is theirs.
+Everything is read through store.Session as the user, so the case boundary decides what is theirs.
 Always free, on every account status, and never gated on acknowledgments.
 Cases in a 7-day deletion hold are included until they are deleted.
 
 Never included: Social Security number digits, account numbers, or card
-numbers. deceased.ssn_last4 is never selected, and every free-text value is
+numbers. deceased.ssn_last4 is never read, and every free-text value is
 put through the UC-CASE-15 redaction again on the way out, as defense in depth.
 """
 from __future__ import annotations
@@ -25,10 +25,6 @@ from .schemas import (
     ExportReminder,
     ExportTask,
 )
-
-# Never add ssn_last4 here.
-_DECEASED = ("legal_first_name, legal_middle_name, legal_last_name, date_of_birth, domicile_state, veteran_status, "
-             "has_will, date_of_death, place_type, facility_name, city, county, death_state")
 
 
 def _clean(value):
@@ -57,11 +53,9 @@ def _case(c: intake.Ctx, case_id) -> ExportCase:
     s = c.s
     case, answers = intake.load_case(s, case_id), intake.load_answers(s, case_id)
     rows = journey.load_tasks(s, case_id)
-    person = s.one(f"SELECT {_DECEASED} FROM cairn.deceased WHERE case_id = %s", (case_id,))
-    conversation = s.all("SELECT item_key, payload, updated_at FROM cairn.context_items WHERE case_id = %s "
-                         "ORDER BY item_key", (case_id,))
-    sent = s.all("SELECT reason, channel, sent_at FROM cairn.notification_log WHERE case_id = %s ORDER BY sent_at",
-                 (case_id,))
+    person = s.load_deceased(case_id, for_export=True)  # never the SSN digits
+    conversation = s.context_items(case_id)
+    sent = s.notifications_sent(case_id)
     return ExportCase(
         id=case["id"], status=intake.effective_status(case, c.account),
         display_name=_clean(intake.display_name(case, answers, c.copy)), created_at=case["created_at"],
@@ -92,12 +86,9 @@ def build(c: intake.Ctx) -> DataExport:
         "trial_ends_at": a["trial_ends_at"].isoformat() if a["trial_ends_at"] else None,
         "created_at": a["created_at"].isoformat(),
     })
-    consents = s.all("SELECT purpose, policy_version, granted_at, auth_provider, client FROM cairn.consents "
-                     "WHERE user_id = cairn.current_user_id() ORDER BY granted_at")
-    reminders = s.all("SELECT kind, due_at, email_sent_at FROM cairn.trial_reminders "
-                      "WHERE user_id = cairn.current_user_id() ORDER BY due_at")
-    case_ids = [r["id"] for r in s.all("SELECT id FROM cairn.cases WHERE created_by = cairn.current_user_id() "
-                                       "ORDER BY created_at")]
+    consents = s.consents()
+    reminders = s.trial_reminders()
+    case_ids = [r["id"] for r in s.owned_cases()]
     return DataExport(
         format="cairn-data-export", format_version=1, generated_at=datetime.now(timezone.utc), profile=profile,
         acknowledgments=[ExportConsent.model_validate(r) for r in consents],

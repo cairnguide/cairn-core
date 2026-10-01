@@ -439,9 +439,9 @@ def test_open_decisions_are_configuration_with_the_spec_defaults():
     for bad in ({"estate_plan_mode": "trailhead"}, {"pre_need_path": "built"}):
         with pytest.raises(RuntimeError):
             Settings(**{**SETTINGS.__dict__, **bad})
-    migration = (REPO / "database" / "db" / "migrations" / "0010_case_creation.sql").read_text()
-    assert "('trial_reminder_days_before', '3'" in migration   # OPEN-DECISION-02
-    assert "('draft_retention_days', '28'" in migration        # DEC-07
+    schema = (REPO / "database" / "db" / "schema.py").read_text()
+    assert re.search(r'"trial_reminder_days_before": \(3,', schema)   # OPEN-DECISION-02
+    assert re.search(r'"draft_retention_days": \(28,', schema)        # DEC-07
 
 
 def test_no_payment_code_in_the_api():

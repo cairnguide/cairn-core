@@ -2,12 +2,14 @@
 
 On Cloudflare, Cron Triggers call the Worker's scheduled handler, which posts to
 this service in its own container (see cloudflare/src/index.ts). That container
-holds the OWNER connection string and the provider secrets. The API container
-never does, and the Worker never routes public traffic here.
+holds the jobs connection string (the cairnJobs MongoDB user) and the provider
+secrets. The API container never does, and the Worker never routes public
+traffic here.
 
 Run with: uvicorn cairn_api.jobs:app  (or CAIRN_PROCESS=jobs python -m cairn_api.serve)
 
-  CAIRN_OWNER_DATABASE_URL          owner connection string (required)
+  CAIRN_JOBS_MONGODB_URI            the cairnJobs user's connection string (required)
+  CAIRN_MONGODB_DB                  the Cairn database name, cairn by default
   CAIRN_SMTP_HOST, CAIRN_SMTP_PORT, CAIRN_SMTP_USERNAME, CAIRN_EMAIL_FROM
   CAIRN_SMTP_PASSWORD               or CAIRN_SMTP_PASSWORD_FILE
   CAIRN_AUTH0_DOMAIN, CAIRN_AUTH0_MGMT_CLIENT_ID
@@ -27,12 +29,13 @@ import os
 from typing import Callable
 
 import httpx
-import psycopg
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
+from . import maintenance
 from .config import secret_from_env
 from .copy_store import load_case_copy, load_copy
+from .db import client_for
 from .identity_cleanup import CleanupSettings, IdentityCleanup
 from .identity_cleanup import run_once as run_identity_cleanup
 from .outbound import SmtpMailer
@@ -59,8 +62,15 @@ def _secret(name: str) -> str:
     return value
 
 
-def owner_database_url() -> str:
-    return _env("CAIRN_OWNER_DATABASE_URL")
+_client = None
+
+
+def jobs_database():
+    """The Cairn database as the cairnJobs user. One client per process, created on first use."""
+    global _client
+    if _client is None:
+        _client = client_for(_env("CAIRN_JOBS_MONGODB_URI"), app_name="cairn-jobs", max_size=4)
+    return _client[os.environ.get("CAIRN_MONGODB_DB", "cairn")]
 
 
 def mailer_from_env() -> SmtpMailer:
@@ -83,7 +93,7 @@ def cleanup_settings_from_env() -> CleanupSettings:
 
 def outbound() -> dict:
     """UC-CASE-19, UC-CASE-21, UC-REG-15. Every 5 minutes."""
-    outcome = run_outbound(owner_database_url(), mailer_from_env(),
+    outcome = run_outbound(jobs_database(), mailer_from_env(),
                            load_copy(os.environ.get("CAIRN_REGISTRATION_COPY") or None),
                            load_case_copy(os.environ.get("CAIRN_CASE_COPY") or None))
     return {"sent": outcome.sent, "failed": outcome.failed}
@@ -93,17 +103,14 @@ def identity_cleanup() -> dict:
     """UC-ACCT-01. Every 15 minutes."""
     cleanup_settings = cleanup_settings_from_env()
     with httpx.Client(timeout=15) as http:
-        done, failed = run_identity_cleanup(owner_database_url(), IdentityCleanup(cleanup_settings, http))
+        done, failed = run_identity_cleanup(jobs_database(), IdentityCleanup(cleanup_settings, http))
     return {"sent": done, "failed": failed}
 
 
-def _owner_function(function: str) -> Callable[[], dict]:
+def _database_job(name: str) -> Callable[[], dict]:
     def run() -> dict:
-        with psycopg.connect(owner_database_url(), autocommit=True) as conn:
-            conn.execute("SET search_path = cairn, pg_temp")
-            (count,) = conn.execute(f"SELECT cairn.{function}()").fetchone()
-        return {"affected": count, "failed": 0}
-    run.__name__ = function
+        return {"affected": maintenance.JOBS[name](jobs_database()), "failed": 0}
+    run.__name__ = name
     return run
 
 
@@ -111,9 +118,9 @@ def _owner_function(function: str) -> Callable[[], dict]:
 JOBS: dict[str, Callable[[], dict]] = {
     "outbound": outbound,
     "identity_cleanup": identity_cleanup,
-    "purge_held_cases": _owner_function("purge_held_cases"),          # UC-END-13, at least hourly
-    "purge_inactive_drafts": _owner_function("purge_inactive_drafts"),  # DEC-07, at least daily
-    "expire_trials": _owner_function("expire_trials"),                # reporting only
+    "purge_held_cases": _database_job("purge_held_cases"),            # UC-END-13, at least hourly
+    "purge_inactive_drafts": _database_job("purge_inactive_drafts"),  # DEC-07, at least daily
+    "expire_trials": _database_job("expire_trials"),                  # reporting only
 }
 
 

@@ -1,8 +1,8 @@
 """Identity provider cleanup after account deletion (UC-ACCT-01).
 
-cairn.delete_my_account removes the account and its data in the database and
-queues a row in cairn.identity_deletion_requests. This worker, run on a
-schedule as the owner role, finishes the job outside the database:
+store.Session.delete_my_account removes the account and its data and queues a
+document in identity_deletion_requests. This worker, run on a schedule as the
+cairnJobs user, finishes the job outside the database:
 
 1. For Apple accounts, revoke the Apple refresh token through the Sign in with
    Apple REST API (https://appleid.apple.com/auth/revoke), as App Review
@@ -25,7 +25,6 @@ from urllib.parse import quote
 
 import httpx
 import jwt
-import psycopg
 
 log = logging.getLogger("cairn_api.identity_cleanup")
 
@@ -109,22 +108,20 @@ class IdentityCleanup:
         self.delete_auth0_user(subject)
 
 
-def run_once(owner_database_url: str, cleanup: IdentityCleanup, limit: int = 50) -> tuple[int, int]:
-    """Works through queued requests. Returns (done, failed). Must connect as the owner role."""
+def run_once(db, cleanup: IdentityCleanup, limit: int = 50) -> tuple[int, int]:
+    """Works through queued requests. Returns (done, failed). db is the Cairn database, as cairnJobs."""
     done = failed = 0
-    with psycopg.connect(owner_database_url, autocommit=True) as conn:
-        rows = conn.execute("SELECT id, idp_subject, provider FROM cairn.identity_deletion_requests "
-                            "ORDER BY requested_at LIMIT %s", (limit,)).fetchall()
-        for rid, subject, provider in rows:
-            try:
-                cleanup.process(subject, provider)
-            except (CleanupError, httpx.HTTPError) as exc:
-                code = exc.code if isinstance(exc, CleanupError) else "network_error"
-                conn.execute("UPDATE cairn.identity_deletion_requests SET attempts = attempts + 1, "
-                             "last_error = %s WHERE id = %s", (code, rid))
-                log.warning("identity cleanup failed request=%s code=%s", rid, code)
-                failed += 1
-                continue
-            conn.execute("DELETE FROM cairn.identity_deletion_requests WHERE id = %s", (rid,))
-            done += 1
+    queue = db.identity_deletion_requests
+    for row in list(queue.find({}, {"idp_subject": 1, "provider": 1}, sort=[("requested_at", 1)], limit=limit)):
+        rid = row["_id"]
+        try:
+            cleanup.process(row["idp_subject"], row.get("provider"))
+        except (CleanupError, httpx.HTTPError) as exc:
+            code = exc.code if isinstance(exc, CleanupError) else "network_error"
+            queue.update_one({"_id": rid}, {"$inc": {"attempts": 1}, "$set": {"last_error": code}})
+            log.warning("identity cleanup failed request=%s code=%s", rid, code)
+            failed += 1
+            continue
+        queue.delete_one({"_id": rid})
+        done += 1
     return done, failed
