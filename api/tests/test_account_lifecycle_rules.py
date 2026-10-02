@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import ast
 import json
-import re
+import sys
 
 import pytest
 from pydantic import ValidationError
@@ -97,11 +97,14 @@ def test_the_data_model_matches_the_spec_entity():
     fields = NEW["UC-CASE-19"]["data"]["fields"]
     assert fields["channels"] == "array<enum: email|sms|push|in_app_only>"
     assert {c.value for c in NotificationChannel} == {"email", "push", "in_app_only"}
-    migration = (REPO / "database" / "db" / "migrations" / "0011_account_lifecycle_notifications.sql").read_text()
-    for column in ("channels", "reasons", "due_date_lead_days", "inactivity_days", "frequency",
-                   "push_permission_granted", "updated_at"):
-        assert re.search(rf"^\s+{column}\s", migration, re.MULTILINE), column
-    assert "IN (1, 3, 7)" in migration and "IN (3, 7, 14)" in migration
+    sys.path.insert(0, str(REPO / "database" / "db"))
+    import schema
+    stored = schema.COLLECTIONS["notification_preferences"]["$and"][0]["$jsonSchema"]["properties"]
+    assert set(stored) == {"_id", "channels", "reasons", "due_date_lead_days", "inactivity_days", "frequency",
+                           "push_permission_granted", "updated_at"}
+    assert stored["channels"]["items"]["enum"] == ["email", "push", "in_app_only"]
+    assert stored["due_date_lead_days"]["enum"] == [1, 3, 7, None]
+    assert stored["inactivity_days"]["enum"] == [3, 7, 14, None]
 
 
 # ------------------------------------------------------------------ plain-language readback
@@ -180,9 +183,11 @@ def test_the_download_has_no_field_for_sensitive_numbers():
     schema = json.dumps(DataExport.model_json_schema()).lower()
     for field in ("ssn", "social_security", "account_number", "card_number", "routing"):
         assert field not in schema
-    source = (REPO / "api" / "cairn_api" / "export.py").read_text()
-    selects = re.findall(r'_DECEASED = \((.*?)\)', source, re.DOTALL)[0]
-    assert "ssn" not in selects
+    import inspect
+
+    from cairn_api.store import Session
+    reads = inspect.getsource(Session.load_deceased)
+    assert "ssn" not in reads.split('"""')[2]  # the fields read, after the docstring
 
 
 # ------------------------------------------------------------------ contract and copy layer

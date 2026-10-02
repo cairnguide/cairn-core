@@ -3,15 +3,19 @@
 .DEFAULT_GOAL := help
 VENV ?= .venv
 PY := $(VENV)/bin/python
-ADMIN_URL ?= postgresql://postgres:postgres@localhost:5432/postgres
+# The devcontainer's MongoDB administrator. Never point these targets at real data.
+MONGO_ADMIN_URI ?= mongodb://admin:admin@localhost:27017/?replicaSet=rs0
 
-.PHONY: help setup run run-jobs job test test-db db-check lint openapi docker-build docker-run cf-install cf-types cf-check cf-dev cf-deploy cf-tail
+.PHONY: help setup db-apply run run-jobs job test test-db db-check lint openapi docker-build docker-run cf-install cf-types cf-check cf-dev cf-deploy cf-tail
 
 help: ## List the commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-14s %s\n", $$1, $$2}'
 
-setup: ## One-time setup: .venv, database, migrations, templates, login role, .env
-	scripts/dev-setup.sh
+setup: ## One-time setup: .venv, MongoDB replica set, schema, login users, templates, .env
+	CAIRN_ADMIN_MONGODB_URI='$(MONGO_ADMIN_URI)' scripts/dev-setup.sh
+
+db-apply: ## Apply database/db/schema.py to the local database (collections, validators, indexes, roles)
+	CAIRN_ADMIN_MONGODB_URI='$(MONGO_ADMIN_URI)' $(PY) database/db/apply.py
 
 run: ## Run the API with reload on http://localhost:8000 (reads .env)
 	$(VENV)/bin/uvicorn cairn_api.main:app --app-dir api --env-file .env --reload --host 0.0.0.0 --port 8000
@@ -25,15 +29,15 @@ job: ## Trigger one job on the local jobs service, for example: make job NAME=pu
 test: ## Fast test suite, no database
 	cd api && ../$(PY) -m pytest -q
 
-test-db: ## Every API test, including the use case suite on a scratch database
-	cd api && CAIRN_TEST_ADMIN_URL=$(ADMIN_URL) ../$(PY) -m pytest -q -ra
+test-db: ## Every API test, including the use case and security suites, on a scratch database
+	cd api && CAIRN_TEST_MONGODB_URI='$(MONGO_ADMIN_URI)' ../$(PY) -m pytest -q -ra
 
-db-check: ## Database security suite (migrations, loader, verify.sql) on a scratch database
-	PATH="$(CURDIR)/$(VENV)/bin:$$PATH" ADMIN_URL=$(ADMIN_URL) database/db/tests/run.sh
+db-check: ## The data security suite only (roles, validators, case boundary, jobs) on a scratch database
+	cd api && CAIRN_TEST_MONGODB_URI='$(MONGO_ADMIN_URI)' ../$(PY) -m pytest -q -ra tests/test_data_security.py
 
 lint: ## The same checks CI runs
 	$(VENV)/bin/ruff check .
-	shellcheck database/db/apply.sh database/db/tests/run.sh .github/scripts/*.sh scripts/*.sh
+	shellcheck .github/scripts/*.sh scripts/*.sh
 	$(VENV)/bin/actionlint
 	node --check auth0/actions/*.js
 	$(PY) database/tools/load_templates.py --dry-run --allow-unreviewed
@@ -47,7 +51,7 @@ docker-build: ## Build the container image Cloudflare runs
 
 docker-run: ## Run the container image locally on http://localhost:8080 (reads .env)
 	docker run --rm -p 8080:8080 --env-file .env --add-host=host.docker.internal:host-gateway \
-	  -e DATABASE_URL="$$(grep ^DATABASE_URL= .env | cut -d= -f2- | sed s/localhost/host.docker.internal/)" cairn-api:local
+	  -e MONGODB_URI="$$(grep ^MONGODB_URI= .env | cut -d= -f2- | sed s/localhost/host.docker.internal/)" cairn-api:local
 
 cf-install: ## Install the Worker dependencies (wrangler, @cloudflare/containers)
 	cd cloudflare && npm ci

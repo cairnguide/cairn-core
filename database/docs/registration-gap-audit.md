@@ -1,5 +1,7 @@
 # Registration gap audit: UC-REG-01 to UC-REG-14 and UC-ACCT-01
 
+> **2026-10-01:** the database moved from PostgreSQL to MongoDB. SQL tables, row-level security policies, and functions named below now live in `database/db/schema.py` (collections, validators, roles) and `api/cairn_api/store.py` (the case boundary). `database/CLAUDE.md`, "The move to MongoDB", maps each one.
+
 Audit of the registration code on `main` (commit 9201759) against `cairn-registration-use-cases.json` spec 1.1.0 (copied to `docs/cairn-registration-use-cases.json`), and what this branch changes.
 
 **Before** is the state of `main`: **Met**, **Partial**, or **Missing**. **Now** is the state on this branch: **Done** means built and covered by tests. **Client** means this repo exposes what's needed but the check can only be met in the app UI, which isn't in this repo. **Open** means not done yet, with the reason given.

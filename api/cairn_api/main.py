@@ -30,8 +30,9 @@ UC-CASE-01 to UC-CASE-18: a case starts as a draft, and the free period of 28
 days starts only when the user taps Start journey on their first case. After
 it ends the account is read-only until subscribed. No payment information is
 asked for anywhere in case creation. Free text is redacted as it is received
-and never stored. The case is the security boundary and is enforced in the
-database with row-level security.
+and never stored. The case is the security boundary. It is enforced in one
+data-access layer that every request goes through, with MongoDB validators and
+least-privilege roles as the backstop.
 
 The user decides how and how often Cairn keeps in touch, per journey
 (UC-CASE-19). With no choice, nothing is sent outside the app. Apart from that,
@@ -64,8 +65,7 @@ def create_app(settings: Settings | None = None, database: Database | None = Non
         app.state.copy = load_copy(cfg.registration_copy_path)
         app.state.case_copy = load_case_copy(cfg.case_copy_path)
         app.state.voices = load_voices(cfg.voices_dir)  # fails fast if a stored voice can't be loaded
-        app.state.db = database or Database(cfg.database_url, cfg.db_session_role,
-                                            cfg.pool_min_size, cfg.pool_max_size)
+        app.state.db = database or Database(cfg.mongodb_uri, cfg.mongodb_db, cfg.pool_min_size, cfg.pool_max_size)
         app.state.token_verifier = verifier or TokenVerifier(cfg.auth0_issuer, cfg.auth0_audience,
                                                              cfg.auth0_jwks_url, cfg.claim_namespace)
         app.state.db.open()

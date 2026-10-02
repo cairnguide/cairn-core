@@ -1,7 +1,7 @@
 """UC-REG-01 to UC-REG-14 and UC-ACCT-01, from database/docs/cairn-registration-use-cases.json.
 
 Tests that take the `contract_client` fixture, or no fixture, need no database. The rest
-need CAIRN_TEST_ADMIN_URL (see conftest.py). Fake data only.
+need CAIRN_TEST_MONGODB_URI (see conftest.py). Fake data only.
 """
 from __future__ import annotations
 
@@ -10,12 +10,11 @@ import json
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-import psycopg
 import pytest
 
 from cairn_api.copy_store import consent_versions, load_copy
 
-from .conftest import REPO, SETTINGS, answer, as_user, onboard, start_journey
+from .conftest import REPO, SETTINGS, answer, as_user, expire_trial, onboard, start_journey, user_id
 
 VOICES = ("steady_direct", "warm_patient", "brisk_businesslike", "plain_practical")
 
@@ -31,21 +30,6 @@ def start(api, subject, method="email", email=None, **body):
     r = api.post("/v1/registrations", json=body, headers=as_user(subject, email, method=method))
     assert r.status_code in (200, 201), r.text
     return r
-
-
-def owner_sql(url, query, params=()):
-    with psycopg.connect(url, autocommit=True) as conn:
-        cur = conn.execute(query, params)
-        return cur.fetchall() if cur.description else None
-
-
-def expire_trial(url, subject):
-    """Moves an account's trial 29 days into the past. The guard trigger is lifted only for this statement."""
-    with psycopg.connect(url) as conn:
-        conn.execute("ALTER TABLE cairn.users DISABLE TRIGGER users_trial_set_once")
-        conn.execute("UPDATE cairn.users SET trial_started_at = trial_started_at - interval '29 days', "
-                     "trial_ends_at = trial_ends_at - interval '29 days' WHERE idp_subject = %s", (subject,))
-        conn.execute("ALTER TABLE cairn.users ENABLE TRIGGER users_trial_set_once")
 
 
 # ------------------------------------------------------------------ copy (no database)
@@ -171,7 +155,7 @@ def test_existing_email_names_the_provider_used_last_time(api):
                                                    "available": True, "unavailable_reason": None}
     # Never linked automatically: the original method still signs in to the same single account.
     assert start(api, "google-oauth2|dup-reg", method="google", email=email).status_code == 200
-    assert owner_sql(api.scratch_url, "SELECT count(*) FROM cairn.users WHERE lower(email) = %s", (email,))[0][0] == 1
+    assert api.db.users.count_documents({"email_lower": email.lower()}) == 1
 
 
 # ------------------------------------------------------------------ UC-REG-07 to UC-REG-12 (no UC-REG-06 age step)
@@ -231,12 +215,11 @@ def test_full_onboarding_sequence(api):
     assert "Trish" in body["screen"]["acknowledgment"]
     assert body["next_step"]["action"] == "choose_relationship"
 
-    rows = owner_sql(api.scratch_url,
-                     "SELECT c.purpose, c.auth_provider, c.client, u.name_prefill "
-                     "FROM cairn.consents c JOIN cairn.users u ON u.id = c.user_id "
-                     "WHERE u.idp_subject = %s ORDER BY c.granted_at", (subject,))
-    assert [r[0] for r in rows] == ["privacy_terms", "trial_terms", "ai_notice"]
-    assert all(r[1] == "apple" and r[2] == "ios/1.0" and r[3] is None for r in rows)
+    user = api.db.users.find_one({"idp_subject": subject})
+    rows = list(api.db.consents.find({"user_id": user["_id"]}, sort=[("granted_at", 1), ("_id", 1)]))
+    assert sorted(r["purpose"] for r in rows) == ["ai_notice", "privacy_terms", "trial_terms"]
+    assert all(r["auth_provider"] == "apple" and r["client"] == "ios/1.0" for r in rows)
+    assert user["name_prefill"] is None
 
 
 def test_steps_must_go_in_order_and_repeats_are_harmless(api):
@@ -248,8 +231,7 @@ def test_steps_must_go_in_order_and_repeats_are_harmless(api):
     api.post("/v1/onboarding/acknowledgments/privacy_terms", json=ack, headers=as_user(subject))
     again = api.post("/v1/onboarding/acknowledgments/privacy_terms", json=ack, headers=as_user(subject))
     assert again.status_code == 200 and again.json()["screen"]["id"] == "trial_terms"
-    assert owner_sql(api.scratch_url, "SELECT count(*) FROM cairn.consents c JOIN cairn.users u ON u.id = c.user_id "
-                                      "WHERE u.idp_subject = %s", (subject,))[0][0] == 1
+    assert api.db.consents.count_documents({"user_id": user_id(api, subject)}) == 1
 
 
 @pytest.mark.parametrize("consent_type", ["privacy_terms", "trial_terms", "ai_notice"])
@@ -287,8 +269,7 @@ def test_pre_filled_name_is_never_saved_silently(api):
     start(api, subject, method="google", name_from_provider="Robert")
     onboard(api, subject, method="google", preferred_name="Bob")
     assert api.get("/v1/me", headers=as_user(subject, method="google")).json()["account"]["preferred_name"] == "Bob"
-    assert owner_sql(api.scratch_url, "SELECT name_prefill FROM cairn.users WHERE idp_subject = %s",
-                     (subject,))[0][0] is None
+    assert api.db.users.find_one({"idp_subject": subject})["name_prefill"] is None
 
 
 def test_distress_in_free_text_pauses_and_saves_nothing(api):
@@ -410,9 +391,9 @@ def test_trial_starts_at_the_first_start_journey_not_at_case_creation(api):
     again = start_journey(api, subject, second)
     assert again["trial_started_now"] is False
     assert api.get("/v1/me", headers=h).json()["account"]["trial_started_at"] == me["trial_started_at"]
-    kinds = owner_sql(api.scratch_url, "SELECT r.kind, r.due_at - u.trial_started_at FROM cairn.trial_reminders r "
-                                       "JOIN cairn.users u ON u.id = r.user_id WHERE u.idp_subject = %s "
-                                       "ORDER BY r.kind", (subject,))
+    user = api.db.users.find_one({"idp_subject": subject})
+    kinds = [(r["kind"], r["due_at"] - user["trial_started_at"])
+             for r in api.db.trial_reminders.find({"user_id": user["_id"]}, sort=[("kind", 1)])]
     assert kinds == [("trial_day_21", timedelta(days=21)), ("trial_day_27", timedelta(days=27)),
                      ("trial_ends_soon", timedelta(days=25))]
 
@@ -423,9 +404,8 @@ def test_day_21_reminder_shows_in_the_app(api):
     onboard(api, subject)
     cid = api.post("/v1/cases", json=CASE_BODY, headers=as_user(subject)).json()["case"]["id"]
     start_journey(api, subject, cid)
-    owner_sql(api.scratch_url, "UPDATE cairn.trial_reminders r SET due_at = now() - interval '1 minute' "
-                               "FROM cairn.users u WHERE u.id = r.user_id AND u.idp_subject = %s "
-                               "AND r.kind = 'trial_day_21'", (subject,))
+    api.db.trial_reminders.update_one({"user_id": user_id(api, subject), "kind": "trial_day_21"},
+                                      {"$set": {"due_at": datetime.now(ZoneInfo("UTC")) - timedelta(minutes=1)}})
     notes = api.get("/v1/me", headers=as_user(subject)).json()["notes"]
     assert notes[0]["kind"] == "reminder"
     assert notes[0]["text"].startswith("Your free time with Cairn ends in 7 days, on ")
@@ -439,7 +419,7 @@ def test_after_the_trial_the_account_is_read_only_and_nothing_is_lost(api):
     cid = api.post("/v1/cases", json=CASE_BODY, headers=h).json()["case"]["id"]
     answer(api, subject, cid, "display_name", "Dan")
     start_journey(api, subject, cid)
-    expire_trial(api.scratch_url, subject)
+    expire_trial(api, subject)
 
     me = api.get("/v1/me", headers=h).json()
     assert me["account"]["status"] == "read_only"
@@ -473,7 +453,6 @@ def test_delete_account_explains_then_deletes_everything(api):
     r = api.post("/v1/me/deletion", json={"confirm": True}, headers=h)
     assert r.status_code == 200
     assert api.get("/v1/me", headers=h).json()["code"] == "registration_required"
-    assert owner_sql(api.scratch_url, "SELECT provider FROM cairn.identity_deletion_requests "
-                                      "WHERE idp_subject = %s", (subject,)) == [("apple",)]
-    assert owner_sql(api.scratch_url, "SELECT count(*) FROM cairn.consents c LEFT JOIN cairn.users u "
-                                      "ON u.id = c.user_id WHERE u.id IS NULL")[0][0] == 0
+    assert [r["provider"] for r in api.db.identity_deletion_requests.find({"idp_subject": subject})] == ["apple"]
+    users = [u["_id"] for u in api.db.users.find({}, {"_id": 1})]
+    assert api.db.consents.count_documents({"user_id": {"$nin": users}}) == 0

@@ -9,7 +9,6 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
-from psycopg import sql
 
 from .. import account as acct
 from .. import account_chat, export, intake
@@ -69,10 +68,7 @@ def update_me(req: AccountPatch, request: Request, identity: Identity = Depends(
         fields = {f: getattr(req, f) for f in req.model_fields_set}
         if "voice" in fields:
             fields["voice"] = fields["voice"].value
-        assignments = sql.SQL(", ").join(
-            sql.SQL("{} = {}").format(sql.Identifier(f), sql.Placeholder(f)) for f in sorted(fields))
-        s.conn.execute(sql.SQL("UPDATE cairn.users SET {} WHERE id = {}").format(assignments, sql.Placeholder("id")),
-                       {**fields, "id": uid})
+        s.update_account(**fields)
         s.audit("account_settings_updated", object_type="user", object_id=uid)
         return _account_response(s, request)
 
@@ -120,7 +116,7 @@ def delete_me(req: AccountDeletionRequest, request: Request,
     copy: Copy = request.app.state.copy
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
-        s.one("SELECT cairn.delete_my_account() AS done")
+        s.delete_my_account()
     done = copy["deletion_done"]
     return AccountDeletionResponse(notes=[Note(kind="acknowledgment", text=done)], signed_out=True,
                                    next_step=NextStep(action="signed_out", prompt=done))
@@ -237,10 +233,7 @@ def message(req: AccountMessageIn, request: Request,
 
 def _veteran_answers(s) -> dict:
     """Any of the user's cases says the person was a veteran: show the Veterans Crisis Line."""
-    row = s.one("SELECT EXISTS (SELECT 1 FROM cairn.case_intake_answers a JOIN cairn.cases c ON c.id = a.case_id "
-                "WHERE c.created_by = cairn.current_user_id() AND a.field_key = 'veteran_status' "
-                "AND a.answer_state = 'answered' AND a.value = '\"yes\"'::jsonb) AS x")
-    return {"veteran_status": {"answer_state": "answered", "value": "yes"}} if row["x"] else {}
+    return {"veteran_status": {"answer_state": "answered", "value": "yes"}} if s.any_case_says_veteran() else {}
 
 
 def _reply(c: intake.Ctx, intent: str, ack: str | None, body: list[str], support: list[SupportResource],

@@ -1,8 +1,8 @@
 """Account state: onboarding progress, trial dates, read-only, and acknowledgment versions.
 
-The database is the enforced backstop (restrictive row-level security in
-migration 0008). The checks here exist so the user gets a plain answer and a
-next step instead of a bare 403.
+store.Session is the enforced backstop (account_can_write and
+account_can_edit_drafts on every case write). The checks here exist so the user
+gets a plain answer and a next step instead of a bare 403.
 """
 from __future__ import annotations
 
@@ -18,10 +18,6 @@ from .db import Session
 from .errors import ApiError
 from .schemas import AccountOut, ConsentType, NextStep, Note, OnboardingStep, Option
 
-ACCOUNT_COLUMNS = """id, email, sign_in_method, preferred_name, name_pronunciation, name_prefill, voice,
-  time_zone, onboarding_step, trial_started_at, trial_ends_at, created_at,
-  cairn.effective_account_status(status, trial_ends_at) AS status"""
-
 # The onboarding step that records each acknowledgment.
 CONSENT_STEP = {
     ConsentType.privacy_terms: OnboardingStep.privacy_terms_accepted,
@@ -36,20 +32,16 @@ def step_reached(account: dict, step: OnboardingStep) -> bool:
 
 
 def load_account(s: Session) -> dict:
-    uid = s.require_user()
-    return s.one(f"SELECT {ACCOUNT_COLUMNS} FROM cairn.users WHERE id = %s", (uid,))
+    s.require_user()
+    return s.load_account()
 
 
 def has_case(s: Session) -> bool:
-    return s.one("SELECT EXISTS (SELECT 1 FROM cairn.cases WHERE created_by = cairn.current_user_id()) AS x")["x"]
+    return s.has_case()
 
 
 def accepted_versions(s: Session) -> dict[str, set[str]]:
-    rows = s.all("SELECT purpose, policy_version FROM cairn.consents WHERE user_id = cairn.current_user_id()")
-    out: dict[str, set[str]] = {}
-    for r in rows:
-        out.setdefault(r["purpose"], set()).add(r["policy_version"])
-    return out
+    return s.accepted_versions()
 
 
 def current_versions(request: Request) -> dict[str, str]:
@@ -115,11 +107,10 @@ def account_notes(s: Session, account: dict, copy: Copy) -> list[Note]:
         return [Note(kind="account", text=copy["read_only_banner"])]
     if account["status"] != "trial_active":
         return []
-    due = s.one("SELECT kind FROM cairn.trial_reminders WHERE user_id = cairn.current_user_id() "
-                "AND due_at <= now() ORDER BY due_at DESC LIMIT 1")
+    due = s.latest_due_reminder_kind()
     if due is None:
         return []
-    return [Note(kind="reminder", text=reminder_text(due["kind"], account, copy))]
+    return [Note(kind="reminder", text=reminder_text(due, account, copy))]
 
 
 def reminder_text(kind: str, account: dict, copy: Copy) -> str:

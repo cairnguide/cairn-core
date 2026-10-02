@@ -23,22 +23,13 @@ jobs:
     uses: ./.github/workflows/lint.yml
 
   api-tests:
-    name: API tests (Postgres ${{ matrix.postgres }})
+    name: API and data security tests (MongoDB ${{ matrix.mongodb }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        postgres: ["15", "16"]
-    services:
-      postgres:
-        image: postgres:${{ matrix.postgres }}
-        env:
-          POSTGRES_PASSWORD: postgres  # throwaway CI container, not a real credential
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+        mongodb: ["7.0", "8.0"]
     steps:
       - uses: actions/checkout@v4
 
@@ -46,15 +37,22 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: api/pyproject.toml
+          cache-dependency-path: |
+            api/pyproject.toml
+            database/tools/requirements.txt
 
       - name: Install
-        run: pip install -e 'api[test]'
+        run: pip install -e 'api[test]' -r database/tools/requirements.txt
 
-      - name: Run all API tests, including the database use case suite
+      - name: Start MongoDB (throwaway replica set with authentication)
+        env:
+          MONGODB_VERSION: ${{ matrix.mongodb }}
+        run: .github/scripts/start-mongodb.sh "$MONGODB_VERSION"
+
+      - name: Run every test, including the use case and data security suites
         working-directory: api
         env:
-          CAIRN_TEST_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/postgres
+          CAIRN_TEST_MONGODB_URI: mongodb://admin:admin@localhost:27017/?replicaSet=rs0  # throwaway CI container
         # Fails if any database test is skipped, so a broken database
         # connection can't produce a green run with nothing actually tested.
         run: |
@@ -67,46 +65,10 @@ jobs:
               sys.exit(f"{skipped} test(s) were skipped. Every test must run on a pull request.")
           PY
 
-  database-tests:
-    name: Database security checks (Postgres ${{ matrix.postgres }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        postgres: ["15", "16"]
-    services:
-      postgres:
-        image: postgres:${{ matrix.postgres }}
-        env:
-          POSTGRES_PASSWORD: postgres  # throwaway CI container, not a real credential
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: database/tools/requirements.txt
-
-      - name: Install
-        run: |
-          pip install -r database/tools/requirements.txt
-          command -v psql || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
-
-      - name: Migrations, loader, and verify.sql
-        env:
-          ADMIN_URL: postgresql://postgres:postgres@localhost:5432/postgres
-        run: database/db/tests/run.sh
-
   all-checks-passed:
     name: All checks passed
     if: always()
-    needs: [lint, api-tests, database-tests]
+    needs: [lint, api-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Require every job to succeed

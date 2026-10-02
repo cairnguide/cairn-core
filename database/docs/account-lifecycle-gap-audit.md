@@ -1,5 +1,7 @@
 # Account lifecycle and keeping in touch: gap audit
 
+> **2026-10-01:** the database moved from PostgreSQL to MongoDB. SQL tables, row-level security policies, and functions named below now live in `database/db/schema.py` (collections, validators, roles) and `api/cairn_api/store.py` (the case boundary). `database/CLAUDE.md`, "The move to MongoDB", maps each one.
+
 Audit of `journey-templates` (commit 61aa4c4) against the two specs dated 2026-09-25, and what this change adds:
 
 - `cairn-account-use-cases-2026-09-25.json`: UC-REG-15 (delete my account), UC-REG-16 (download all my data), and changes to UC-REG-07 and UC-REG-08.
@@ -7,7 +9,7 @@ Audit of `journey-templates` (commit 61aa4c4) against the two specs dated 2026-0
 
 **Before** is the state at 61aa4c4: **Met**, **Partial**, **Conflict** (the code did the opposite of the spec), or **Missing**. **Now**: **Done** means built and covered by an automated test. **Client** means the API exposes what's needed but the check can only be met in the app UI. **Open** means not done, with the reason.
 
-Tests: `api/tests/test_account_lifecycle.py` (database, row-level security) and `api/tests/test_account_lifecycle_rules.py` (no database). Database invariants: the 0011 sections of `db/tests/verify.sql`. Schema: migration `0011_account_lifecycle_notifications.sql`.
+Tests: `api/tests/test_account_lifecycle.py` (database, as the cairnApp user) and `api/tests/test_account_lifecycle_rules.py` (no database). Database invariants: the 0011 sections of `api/tests/test_data_security.py`. Schema: migration `0011_account_lifecycle_notifications.sql`.
 
 ## Summary
 
@@ -54,13 +56,13 @@ Tests: `api/tests/test_account_lifecycle.py` (database, row-level security) and 
 - Step 2, a store subscription is information only, with a link to each store's instructions: `test_reg15_a_store_subscription_is_information_only`. Cairn doesn't record which store, so both links are shown.
 - Step 3, where the confirmation goes, masked: same test as step 1. `mask_email` keeps the domain, so an Apple relay address is recognizable.
 - Step 4, one button, "Delete my account and everything in it". No reason and no retention offer: same test, plus `test_deletion_copy_never_asks_why_or_tries_to_keep_the_user`.
-- Step 5, delete immediately, cases in a hold included, with tasks, answers, conversation text, and notification preferences: `test_reg15_deletes_everything_now_including_held_cases_and_sends_one_confirmation`, `verify.sql`.
+- Step 5, delete immediately, cases in a hold included, with tasks, answers, conversation text, and notification preferences: `test_reg15_deletes_everything_now_including_held_cases_and_sends_one_confirmation`, `test_data_security.py`.
 - Step 6, Apple token revocation (TN3194): queued as before. `cairn_api/identity_cleanup.py` does the REST call. Same test.
-- Step 7, one email, then purge the address: pending case confirmations are dropped so exactly one goes out. The row carries no user id and is deleted once sent. Same test, `verify.sql`.
+- Step 7, one email, then purge the address: pending case confirmations are dropped so exactly one goes out. The row carries no user id and is deleted once sent. Same test, `test_data_security.py`.
 - Step 8, sign out: the response has `signed_out: true` and `next_step.action = signed_out`, and every later call gets `registration_required`. **Client**: clear the session and return to the signed-out state.
 - Alternate flow, risk of harm in chat [SAFETY]: `POST /v1/me/messages`. The first turn is 988, the Veterans Crisis Line for a veteran, and 911, with no account action. Asked again, the main flow runs with no extra questions and the crisis lines stay on screen: `test_reg15_asked_in_chat_with_a_risk_of_harm_signal_puts_safety_first_then_proceeds`. Nothing about it is stored (decision 7). The turn is tracked in the client-held `AccountChatSession`.
 - Alternate flow, read-only account: `test_reg15_a_read_only_account_can_delete_for_free`.
-- Rule, logged without deleted content: audit rows hold ids only. The confirmation log has no content column (`verify.sql`).
+- Rule, logged without deleted content: audit rows hold ids only. The confirmation log has no content column (`test_data_security.py`).
 - Rule, always available from Settings (5.1.1(v)): no gate on onboarding, acknowledgments, or status: `test_always_available_even_when_an_acknowledgment_changed`.
 
 ### UC-REG-16 Download all my data
@@ -81,7 +83,7 @@ Tests: `api/tests/test_account_lifecycle.py` (database, row-level security) and 
 - SMS: not offered and refused by the API and the database. **Open**: card 50 and legal review.
 - Distress: the setup happens inside UC-CASE-12, where UC-CASE-14 already applies.
 - Rules. Notification text is short and private: `test_uc19_notifications_are_short_private_and_at_the_chosen_pace`, `test_outbound_messages_are_short_private_and_never_repeat_content`. Nothing is sent that wasn't chosen: the sender only reads `notification_preferences` and the confirmations queue. Never used for marketing: no code path reads preferences except the sender and the user's own reads, noted on the table.
-- Pace: at most one message per journey per run. `daily_max` and `weekly_max` are rolling 24-hour and 7-day windows. A step coming up is sent once per task. Inactivity is sent once per quiet stretch. Nothing goes to drafts, paused journeys, cases set to be deleted, or read-only accounts: `verify.sql`.
+- Pace: at most one message per journey per run. `daily_max` and `weekly_max` are rolling 24-hour and 7-day windows. A step coming up is sent once per task. Inactivity is sent once per quiet stretch. Nothing goes to drafts, paused journeys, cases set to be deleted, or read-only accounts: `test_data_security.py`.
 - Data: per journey (`case_id`). Open question card 50: per journey or account-wide.
 
 ### UC-CASE-20 Change how Cairn keeps in touch
@@ -96,7 +98,7 @@ Tests: `api/tests/test_account_lifecycle.py` (database, row-level security) and 
 - Where it goes, shown before confirming: `test_uc21_where_the_confirmation_goes_is_shown_before_confirming`, and step 3 of UC-REG-15.
 - Exactly one confirmation after the action: `test_uc21_delete_now_sends_exactly_one_private_confirmation_then_purges_the_address`, `test_uc21_a_failed_send_is_retried_and_still_sent_only_once`. A crash between sending and recording could repeat one message after 15 minutes. That's documented in the function, and a repeat is safer than never confirming.
 - By email, short, private, never repeating deleted content: `test_outbound_messages_are_short_private_and_never_repeat_content`.
-- Logged without content: `action_confirmation_log`, `verify.sql`.
+- Logged without content: `action_confirmation_log`, `test_data_security.py`.
 - Open, card 50: should confirmations follow an SMS or push choice instead of email?
 
 ### Changes to existing use cases

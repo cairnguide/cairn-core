@@ -1,7 +1,7 @@
 """How and when Cairn keeps in touch (UC-CASE-19, UC-CASE-20).
 
-Spec: database/docs/cairn-case-creation-use-cases-2026-09-25.json. The schema is
-migration 0011 (cairn.notification_preferences, one row per journey).
+Spec: database/docs/cairn-case-creation-use-cases-2026-09-25.json. Stored in the
+notification_preferences collection, one document per journey (database/db/schema.py).
 
 Rules this module keeps:
 - No choice, or skipping, means in_app_only. Nothing is sent outside the app (D-2026-09-25-N2).
@@ -15,12 +15,9 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from psycopg import sql
-
 from . import account as acct
 from .copy_store import Copy
 from .db import Session
-from .errors import case_access_denied
 from .schemas import (
     NotificationChannel,
     NotificationChoice,
@@ -40,14 +37,10 @@ IN_APP_ONLY = NotificationChoice(channels=[NotificationChannel.in_app_only])
 CHANNEL_ORDER = [NotificationChannel.email, NotificationChannel.push, NotificationChannel.in_app_only]
 REASON_ORDER = [NotificationReason.due_date_upcoming, NotificationReason.inactivity]
 
-_COLUMNS = ("case_id, channels, reasons, due_date_lead_days, inactivity_days, frequency, push_permission_granted, "
-            "updated_at")
-
-
 # ------------------------------------------------------------------ reads
 
 def load(s: Session, case_id: UUID) -> dict | None:
-    return s.one(f"SELECT {_COLUMNS} FROM cairn.notification_preferences WHERE case_id = %s", (case_id,))
+    return s.notification_preferences(case_id)
 
 
 def choice_of(row: dict | None) -> NotificationChoice:
@@ -59,9 +52,8 @@ def choice_of(row: dict | None) -> NotificationChoice:
 
 
 def any_email_choice(s: Session) -> bool:
-    """Whether the user chose email for any of their journeys. The trial reminder follows this (0011)."""
-    return s.one("SELECT EXISTS (SELECT 1 FROM cairn.notification_preferences p JOIN cairn.cases c ON c.id = p.case_id "
-                 "WHERE c.created_by = cairn.current_user_id() AND 'email' = ANY (p.channels)) AS x")["x"]
+    """Whether the user chose email for any of their journeys. The trial reminder follows this."""
+    return s.any_email_choice()
 
 
 # ------------------------------------------------------------------ plain language
@@ -130,19 +122,13 @@ def questions(copy: Copy, masked_email: str) -> list[NotificationQuestion]:
 
 def display_names(s: Session, copy: Copy) -> dict[UUID, str]:
     """What to call the person for each of the user's cases. Conversation only, never a legal name."""
-    rows = s.all("SELECT c.id, c.name_fallback, a.value #>> '{}' AS display_name FROM cairn.cases c "
-                 "LEFT JOIN cairn.case_intake_answers a ON a.case_id = c.id AND a.field_key = 'display_name' "
-                 "AND a.answer_state = 'answered' WHERE c.created_by = cairn.current_user_id() "
-                 "ORDER BY c.created_at")
+    rows = s.display_names()
     return {r["id"]: r["display_name"] or copy[r["name_fallback"]] for r in rows}
 
 
 def same_as_candidate(s: Session, case_id: UUID) -> UUID | None:
     """UC-CASE-18 change. The user's first other journey that has a choice, offered first."""
-    row = s.one("SELECT c.id FROM cairn.cases c JOIN cairn.notification_preferences p ON p.case_id = c.id "
-                "WHERE c.created_by = cairn.current_user_id() AND c.id <> %s ORDER BY c.created_at LIMIT 1",
-                (case_id,))
-    return row["id"] if row else None
+    return s.same_as_candidate(case_id)
 
 
 def shortcuts(s: Session, copy: Copy, case_id: UUID, names: dict[UUID, str]) -> list[Option]:
@@ -167,18 +153,7 @@ def save(s: Session, case_id: UUID, choice: NotificationChoice, *, push_granted:
     values = {"channels": [c.value for c in choice.channels], "reasons": [r.value for r in choice.reasons],
               "due_date_lead_days": choice.due_date_lead_days, "inactivity_days": choice.inactivity_days,
               "frequency": choice.frequency.value, "push_permission_granted": granted and wants_push}
-    if row is None:
-        cols = ["case_id", *values]
-        saved = s.one(sql.SQL("INSERT INTO cairn.notification_preferences ({}) VALUES ({}) RETURNING case_id").format(
-            sql.SQL(", ").join(map(sql.Identifier, cols)), sql.SQL(", ").join(map(sql.Placeholder, cols))),
-            {"case_id": case_id, **values})
-    else:
-        query = sql.SQL("UPDATE cairn.notification_preferences SET {} WHERE case_id = {} RETURNING case_id")
-        saved = s.one(query.format(
-            sql.SQL(", ").join(sql.SQL("{} = {}").format(sql.Identifier(k), sql.Placeholder(k)) for k in values),
-            sql.Placeholder("case_id")), {"case_id": case_id, **values})
-    if saved is None:
-        raise case_access_denied()
+    s.save_notification_preferences(case_id, values)
     # Opaque ids only. Never the choice or the address.
     s.audit("notification_preferences_saved", case_id, "case", case_id)
     return load(s, case_id)
@@ -186,13 +161,11 @@ def save(s: Session, case_id: UUID, choice: NotificationChoice, *, push_granted:
 
 def ensure_default(s: Session, case_id: UUID) -> None:
     """Every started journey has a row. Skipped or never asked means in_app_only (UC-CASE-19 postconditions)."""
-    s.conn.execute("INSERT INTO cairn.notification_preferences (case_id) VALUES (%s) ON CONFLICT (case_id) DO NOTHING",
-                   (case_id,))
+    s.ensure_default_preferences(case_id)
 
 
 def owned_cases(s: Session) -> list[dict]:
-    return s.all("SELECT id, status, created_at FROM cairn.cases WHERE created_by = cairn.current_user_id() "
-                 "ORDER BY created_at")
+    return s.owned_cases()
 
 
 def masked_account_email(account: dict) -> str:

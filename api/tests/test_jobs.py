@@ -35,7 +35,7 @@ def test_an_unknown_job_is_not_found():
 
 
 def test_a_job_without_its_provider_is_skipped_not_failed(monkeypatch):
-    for name in ("CAIRN_OWNER_DATABASE_URL", "CAIRN_SMTP_HOST"):
+    for name in ("CAIRN_JOBS_MONGODB_URI", "CAIRN_SMTP_HOST"):
         monkeypatch.delenv(name, raising=False)
     r = _client(jobs.JOBS).post("/jobs/outbound")
     assert r.status_code == 200

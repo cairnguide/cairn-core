@@ -5,7 +5,6 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Body, Depends, Request
-from psycopg import sql
 
 from .. import account as acct
 from .. import intake
@@ -77,8 +76,7 @@ def list_cases(request: Request, identity: Identity = Depends(get_identity)) -> 
         s.require_user()
         ready = acct.require_ready(s, request, write=False)
         c = intake.ctx(s, request, ready.account)
-        ids = [r["id"] for r in s.all("SELECT id FROM cairn.cases WHERE created_by = cairn.current_user_id() "
-                                      "ORDER BY last_activity_at DESC")]
+        ids = [r["id"] for r in s.owned_cases(newest_activity_first=True)]
         items = []
         for case_id in ids:
             case, answers = intake.load_case(s, case_id), intake.load_answers(s, case_id)
@@ -137,7 +135,7 @@ def get_case(case_id: UUID, request: Request, identity: Identity = Depends(get_i
     summary="Record the deceased's legal identity, inside the task that needs it",
     description=(
         "Just in time only. full_legal_name and date_of_birth are never part of case creation "
-        "(never_collect_at_case_creation). Refused while the case is a draft. The database refuses it too."
+        "(never_collect_at_case_creation). Refused while the case is a draft. The data layer refuses it too."
     ),
     responses={**_DENIED, 409: {"description": "The case is still a draft."}},
 )
@@ -152,17 +150,10 @@ def patch_deceased(case_id: UUID, req: DeceasedIdentityPatch, request: Request,
             raise ApiError(409, "journey_not_started", "This is only needed once the journey has started.")
         intake.require_case_write(c, case)
         fields = {f: getattr(req, f) for f in req.model_fields_set}
-        row = s.one("INSERT INTO cairn.deceased (case_id) VALUES (%s) ON CONFLICT (case_id) DO NOTHING RETURNING id",
-                    (case_id,))
-        if row:
-            s.audit("deceased_added", case_id, "deceased", row["id"])
-        assignments = sql.SQL(", ").join(
-            sql.SQL("{} = {}").format(sql.Identifier(f), sql.Placeholder(f)) for f in sorted(fields))
-        updated = s.one(sql.SQL("UPDATE cairn.deceased SET {} WHERE case_id = {} RETURNING id").format(
-            assignments, sql.Placeholder("case_id")), {**fields, "case_id": case_id})
-        if updated is None:
-            raise case_access_denied()
-        s.audit("deceased_updated", case_id, "deceased", updated["id"])
+        deceased_id, created = s.save_deceased(case_id, fields)
+        if created:
+            s.audit("deceased_added", case_id, "deceased", deceased_id)
+        s.audit("deceased_updated", case_id, "deceased", deceased_id)
         answers = intake.load_answers(s, case_id)
         step = NextStep(action="view_journey", prompt=c.copy["readback_saved"])
         return CaseResponse(case=intake.case_out(c, case, answers),
@@ -173,12 +164,12 @@ def patch_deceased(case_id: UUID, req: DeceasedIdentityPatch, request: Request,
 
 # ------------------------------------------------------------------ deleting a case (UC-END-13, UC-CASE-21)
 # Always free, on drafts, active, and read-only cases (D-2026-09-25-F1). Only the
-# owner can delete. The database does the deleting and queues the confirmation.
+# owner can delete. The data layer does the deleting and queues the confirmation.
 
 def _deletion_ctx(s, request: Request, case_id: UUID) -> tuple[intake.Ctx, dict]:
     c = intake.ctx(s, request, acct.load_account(s))
     case = intake.load_case(s, case_id)
-    if not s.one("SELECT cairn.is_case_member(%s, ARRAY['owner']) AS ok", (case_id,))["ok"]:
+    if not s.is_case_member(case_id, ("owner",)):
         raise case_access_denied()
     return c, case
 
@@ -229,7 +220,7 @@ def delete_case(case_id: UUID, req: CaseDeletionIn, request: Request,
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
         c, _ = _deletion_ctx(s, request, case_id)
-        when = s.one("SELECT cairn.request_case_deletion(%s, %s) AS at", (case_id, req.mode))["at"]
+        when = s.request_case_deletion(case_id, req.mode)
         if req.mode == "now":
             ack = c.copy["case_deleted_now"]
             return CaseDeletionResponse(deleted=True, deletion_scheduled_for=None, acknowledgment=ack,
@@ -253,7 +244,7 @@ def keep_case(case_id: UUID, request: Request, identity: Identity = Depends(get_
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
         c, _ = _deletion_ctx(s, request, case_id)
-        s.one("SELECT cairn.cancel_case_deletion(%s) AS kept", (case_id,))
+        s.cancel_case_deletion(case_id)
         ack = c.copy["case_deletion_cancelled"]
         return CaseDeletionResponse(deleted=False, deletion_scheduled_for=None, acknowledgment=ack,
                                     next_step=NextStep(action="view_case", prompt=ack))

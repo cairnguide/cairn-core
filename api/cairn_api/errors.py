@@ -1,14 +1,14 @@
 """Error responses in RFC 9457 problem details form (application/problem+json).
 
 Nothing here echoes user input. Database messages are never passed through
-because their detail text can contain the failing row, which would put names
-and dates of birth into a response or a log.
+because their detail text can contain the failing document (a validation
+error's errInfo lists the values it considered), which would put names and
+dates of birth into a response or a log.
 """
 from __future__ import annotations
 
 import logging
 
-import psycopg
 from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -34,7 +34,23 @@ def case_access_denied() -> ApiError:
                     "You don't have access to this case, or it doesn't exist.")
 
 
-# Plain-language messages for named constraints the user can actually trip.
+class RuleViolation(Exception):
+    """A rule the data layer (store.py) enforces, in place of a PostgreSQL policy, function, or trigger.
+
+    kind is one of:
+      insufficient_privilege  not a member of the case, or the account can't make this change
+      prerequisite            an earlier step isn't done (onboarding order, a journey already started)
+      invalid_parameter       a value the rule doesn't know (an unknown step, template, or mode)
+      check_violation         a value outside its allowed shape. constraint names the rule.
+    """
+
+    def __init__(self, kind: str, constraint: str | None = None):
+        super().__init__(kind)
+        self.kind = kind
+        self.constraint = constraint
+
+
+# Plain-language messages for named rules the user can actually trip.
 CONSTRAINT_MESSAGES = {
     "death_not_before_birth":
         "The date of death is earlier than the date of birth. Please check both dates.",
@@ -43,30 +59,39 @@ CONSTRAINT_MESSAGES = {
     "state_code_check": "Please choose a state from the list.",
 }
 
+# MongoDB server error codes. https://www.mongodb.com/docs/manual/reference/error-codes/
+UNAUTHORIZED = 13
+WRITE_CONFLICT = 112
+DOCUMENT_VALIDATION_FAILURE = 121
 
-def map_db_error(exc: psycopg.Error) -> ApiError:
-    state = exc.sqlstate or ""
-    constraint = getattr(exc.diag, "constraint_name", None)
-    # Log the error class and constraint only. Never the message or detail.
-    log.warning("database error sqlstate=%s constraint=%s", state, constraint)
 
-    if state == "23514":  # check_violation, including domain checks
-        if constraint in CONSTRAINT_MESSAGES:
-            return ApiError(422, "invalid_value", CONSTRAINT_MESSAGES[constraint], constraint=constraint)
-        if constraint == "tri_state_check":
-            # The client can only send yes, no, or unknown. Treat this as a client bug.
-            return ApiError(400, "client_bug", "The app sent an answer the server doesn't accept.")
+def map_db_error(exc: Exception) -> ApiError:
+    from pymongo.errors import DuplicateKeyError, OperationFailure, PyMongoError
+
+    if isinstance(exc, RuleViolation):
+        # Log the rule only. Never a value.
+        log.warning("data rule refused kind=%s constraint=%s", exc.kind, exc.constraint)
+        if exc.kind == "insufficient_privilege":
+            return case_access_denied()
+        if exc.kind == "prerequisite":
+            return ApiError(409, "out_of_order", "There's an earlier step to finish first.")
+        if exc.kind == "check_violation" and exc.constraint in CONSTRAINT_MESSAGES:
+            return ApiError(422, "invalid_value", CONSTRAINT_MESSAGES[exc.constraint], constraint=exc.constraint)
         return ApiError(422, "invalid_value", "One of the values wasn't accepted. Please check and try again.")
-    if state == "23505":
+
+    code = getattr(exc, "code", None)
+    labels = [label for label in ("TransientTransactionError", "UnknownTransactionCommitResult")
+              if isinstance(exc, PyMongoError) and exc.has_error_label(label)]
+    # Log the error class and code only. Never the message or errInfo.
+    log.warning("database error type=%s code=%s labels=%s", type(exc).__name__, code, ",".join(labels))
+    if isinstance(exc, DuplicateKeyError):
         return ApiError(409, "already_exists", "This record already exists.")
-    if state == "23502":
-        return ApiError(422, "missing_value", "A required answer is missing.")
-    if state == "55000":  # object_not_in_prerequisite_state, from cairn.advance_onboarding
-        return ApiError(409, "out_of_order", "There's an earlier step to finish first.")
-    if state == "42501":  # insufficient_privilege, including row-level security rejections
+    if code == DOCUMENT_VALIDATION_FAILURE:
+        return ApiError(422, "invalid_value", "One of the values wasn't accepted. Please check and try again.")
+    if code == WRITE_CONFLICT or labels:
+        return ApiError(409, "try_again", "Something else changed this at the same moment. Please try again.")
+    if isinstance(exc, OperationFailure) and code == UNAUTHORIZED:
         return case_access_denied()
-    if state.startswith("22"):
-        return ApiError(422, "invalid_value", "One of the values wasn't in a format we could read.")
     return ApiError(500, "internal_error", "Something went wrong on our side. Your information was not changed.")
 
 

@@ -1,10 +1,12 @@
 # Case creation gap audit: UC-CASE-01 to UC-CASE-18
 
+> **2026-10-01:** the database moved from PostgreSQL to MongoDB. SQL tables, row-level security policies, and functions named below now live in `database/db/schema.py` (collections, validators, roles) and `api/cairn_api/store.py` (the case boundary). `database/CLAUDE.md`, "The move to MongoDB", maps each one.
+
 Audit of the case creation code on `journey-templates` (commit 27ffef6) against `cairn-case-creation-use-cases.json` spec 0.3.0 (copied to `docs/cairn-case-creation-use-cases.json`), and what this change adds.
 
 **Before** is the state at 27ffef6: **Met**, **Partial**, **Conflict** (the code did the opposite of the spec), or **Missing**. **Now**: **Done** means built and covered by an automated test. **Client** means the API exposes what's needed but the check can only be met in the app UI. **Open** means not done, with the reason.
 
-Tests: `api/tests/test_case_creation.py` (database, row-level security) and `api/tests/test_case_creation_rules.py` (no database). Database invariants: `db/tests/verify.sql`. Criteria tagged [SAFETY] or [PRIVACY] are release blockers, and every one has a test.
+Tests: `api/tests/test_case_creation.py` (database, as the cairnApp user) and `api/tests/test_case_creation_rules.py` (no database). Database invariants: `api/tests/test_data_security.py`. Criteria tagged [SAFETY] or [PRIVACY] are release blockers, and every one has a test.
 
 ## Summary
 
@@ -84,7 +86,7 @@ Existing tables were extended. Nothing was renamed or dropped (migration `0010_c
 ## Per use case and acceptance criterion
 
 ### UC-CASE-01 Start a new case
-- Creating a case sets draft and does not set or change trial_started_at: `test_uc01_new_case_is_a_draft_and_does_not_start_the_trial`, `verify.sql`.
+- Creating a case sets draft and does not set or change trial_started_at: `test_uc01_new_case_is_a_draft_and_does_not_start_the_trial`, `test_data_security.py`.
 - First message has an acknowledgment and at most one question: same test. The two intake modes are the only options.
 - [PRIVACY] Free-text intake persists only data_fields keys: `test_uc01_own_words_read_back_and_only_data_fields_are_saved`, `test_uc01_confirmations_refuse_anything_outside_data_fields`, `test_unknown_intake_fields_are_rejected`. Free text is never stored at all. Proposals are read back and saved only on confirmation, each checked like a button answer, then checked again by the database.
 - Built: `POST /v1/cases`, `POST .../intake/messages`, `POST .../intake/confirmations`, `POST .../intake/continue`.
@@ -108,7 +110,7 @@ Existing tables were extended. Nothing was renamed or dropped (migration `0010_c
 - Outside the US (out of scope): explained kindly, case kept, funeral home and attorney suggested, attorney task added: `test_uc04_outside_us_keeps_the_case_and_suggests_help`.
 
 ### UC-CASE-05 How it happened
-- [PRIVACY] Only the enum is persisted. Free text is never stored or logged: `test_uc05_only_the_enum_is_stored_and_free_text_is_never_logged` (API, log capture, and a direct database write refused by `intake_value_valid`), `test_uc05_medical_cause_never_becomes_a_circumstance`, `verify.sql`.
+- [PRIVACY] Only the enum is persisted. Free text is never stored or logged: `test_uc05_only_the_enum_is_stored_and_free_text_is_never_logged` (API, log capture, and a direct database write refused by `intake_value_valid`), `test_uc05_medical_cause_never_becomes_a_circumstance`, `test_data_security.py`.
 - No follow-up after prefer_not_to_say, and no painful repeat: `test_uc05_confirm_without_repeating_and_no_follow_up_after_prefer_not_to_say`.
 - Explains before asking, in the user's voice (voice_samples_uc_case_05): `test_uc05_explains_before_asking_in_every_voice_and_fiduciary_can_skip_it`.
 - Volunteered cause: acknowledged simply, no follow-up, not stored, sensitivity raised for the session, suicide loss resources offered once: `test_uc05_volunteered_suicide_loss_is_acknowledged_and_resources_offered_once`, `test_uc05_suicide_loss_is_a_volunteered_cause_not_a_risk_to_the_user`.
@@ -134,7 +136,7 @@ Existing tables were extended. Nothing was renamed or dropped (migration `0010_c
 
 ### UC-CASE-10 Pause and come back later
 - Pausing never starts the free period. No draft reminder is sent: `test_uc10_pause_saves_says_28_days_and_never_starts_trial_or_reminders`. There is no draft reminder at all, so nothing can be sent without an opt-in.
-- [PRIVACY] Idle drafts are fully deleted with answers and conversation text. Active and read-only cases are never touched: `test_uc10_cleanup_deletes_idle_drafts_only`, `verify.sql`.
+- [PRIVACY] Idle drafts are fully deleted with answers and conversation text. Active and read-only cases are never touched: `test_uc10_cleanup_deletes_idle_drafts_only`, `test_data_security.py`.
 - Any answer, edit, or open resets the 28 days: `test_uc10_any_answer_edit_or_open_resets_the_28_days`.
 - The pause message says so: same pause test. Resume greets and says where they left off: `test_uc10_return_greets_and_says_where_they_left_off`.
 - Open (operations): run `SELECT cairn.purge_inactive_drafts();` as the owner at least daily. Open (policy): add the 28-day draft deletion to the retention schedule in CAIRN-POL-PRIV-01 (`policy_updates_required`). [LEGAL REVIEW REQUIRED]
@@ -143,7 +145,7 @@ Existing tables were extended. Nothing was renamed or dropped (migration `0010_c
 - Own words shown where free text was given, except circumstance, which shows its label: `test_uc11_review_uses_own_words_except_circumstance`. Two groups, Edit on every line, "Does this look right?".
 
 ### UC-CASE-12 Start the journey
-- trial_started_at set once, at the first Start journey, never by drafts or edits. trial_ends_at is exactly 28 days later: `test_uc12_preview_then_start_starts_trial_once_in_local_time`, `test_trial_starts_at_the_first_start_journey_not_at_case_creation`, `verify.sql`.
+- trial_started_at set once, at the first Start journey, never by drafts or edits. trial_ends_at is exactly 28 days later: `test_uc12_preview_then_start_starts_trial_once_in_local_time`, `test_trial_starts_at_the_first_start_journey_not_at_case_creation`, `test_data_security.py`.
 - [PRIVACY] No payment form, field, or SDK: `test_uc12_start_journey_never_asks_for_payment`, `test_no_payment_code_in_the_api`.
 - Pre-button notice visible before Start is enabled: Start requires the notice's version, and a stale one is refused (409) without starting anything. Same test.
 - Confirmation shows the end date in the user's time zone, and the trial_ends_soon reminder is scheduled 3 days before the end: same test.
@@ -178,7 +180,7 @@ Existing tables were extended. Nothing was renamed or dropped (migration `0010_c
 
 ### UC-CASE-18 Second case
 - trial_started_at and trial_ends_at unchanged by a second Start journey. The existing end date is shown: `test_uc18_second_case_acknowledges_another_loss_and_keeps_the_trial`.
-- Read-only accounts can create and edit a draft but can't start without a subscription. The subscription prompt shows only there: `test_uc18_read_only_account_can_draft_but_not_start_without_a_subscription`, `verify.sql`.
+- Read-only accounts can create and edit a draft but can't start without a subscription. The subscription prompt shows only there: `test_uc18_read_only_account_can_draft_but_not_start_without_a_subscription`, `test_data_security.py`.
 
 ## Global rules
 

@@ -6,8 +6,6 @@ from datetime import date, datetime, timezone
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from psycopg.types.json import Jsonb
-
 from .db import Session
 from .schemas import (
     CertificateOrderRecord,
@@ -57,24 +55,10 @@ OPEN_STATUSES = {TaskStatus.not_started.value, TaskStatus.check_on_this.value, T
                  TaskStatus.not_today.value}
 SET_ASIDE_STATUSES = {TaskStatus.skipped.value, TaskStatus.not_applicable.value}
 
-# Context item keys from db/optional/context_items_jsonb.sql.
+# Context item keys (database/db/schema.py, context_items).
 CERT_ORDER = "CERT_ORDER"
 BANK_NOTICES = "BANK_NOTICES"
 MAX_NOTICES = 100  # keeps the payload well under the 32 KB column limit
-
-_TASK_SELECT = """
-SELECT ct.id, ct.status, ct.due_on, ct.snoozed_until, ct.completed_at, ct.selected,
-       t.task_key, t.version AS template_version, t.title, t.plain_summary,
-       t.journey_week, t.sort_order, t.attorney_referral, t.attorney_referral_note, t.why_now,
-       t.counsel_reviewed_at, t.jurisdiction, t.id AS template_id
-FROM cairn.case_tasks ct
-JOIN cairn.task_templates t ON t.id = ct.template_id
-"""
-_TASK_ORDER = " ORDER BY t.journey_week, t.sort_order, ct.due_on NULLS LAST, t.task_key"
-# The journey shows what the rules currently select, plus anything the user has
-# already worked on, so a changed answer never hides progress (UC-CASE-09).
-_VISIBLE = " AND (ct.selected OR ct.status IN ('in_progress', 'done'))"
-
 
 @dataclass
 class TaskContext:
@@ -112,11 +96,12 @@ def task_summary(row: dict, context: TaskContext | None = None) -> TaskSummary:
 
 
 def load_tasks(s: Session, case_id: UUID) -> list[dict]:
-    return s.all(_TASK_SELECT + " WHERE ct.case_id = %s" + _VISIBLE + _TASK_ORDER, (case_id,))
+    """In journey order. A changed answer never hides a task the user has worked on (UC-CASE-09)."""
+    return s.load_tasks(case_id)
 
 
 def load_task(s: Session, case_id: UUID, task_id: UUID) -> dict | None:
-    return s.one(_TASK_SELECT + " WHERE ct.case_id = %s AND ct.id = %s", (case_id, task_id))
+    return s.load_task(case_id, task_id)
 
 
 def pick_next_action(rows: list[dict], now: datetime | None = None) -> dict | None:
@@ -153,28 +138,16 @@ def is_paused(case_row: dict, now: datetime | None = None) -> bool:
 # ------------------------------------------------------------------ context records
 
 def read_context(s: Session, case_id: UUID, key: str) -> dict | None:
-    row = s.one("SELECT payload FROM cairn.context_items WHERE case_id = %s AND item_key = %s", (case_id, key))
-    return row["payload"] if row else None
+    return s.read_context(case_id, key)
 
 
 def write_context(s: Session, case_id: UUID, key: str, payload: dict) -> None:
-    s.conn.execute(
-        "INSERT INTO cairn.context_items (case_id, item_key, payload) VALUES (%s, %s, %s) "
-        "ON CONFLICT (case_id, item_key) DO UPDATE SET payload = EXCLUDED.payload",
-        (case_id, key, Jsonb(payload)),
-    )
+    s.write_context(case_id, key, payload)
 
 
 def lock_context(s: Session, case_id: UUID, key: str, empty: dict) -> dict:
-    """Read a context item for update, creating it first so concurrent writers serialize."""
-    s.conn.execute(
-        "INSERT INTO cairn.context_items (case_id, item_key, payload) VALUES (%s, %s, %s) "
-        "ON CONFLICT (case_id, item_key) DO NOTHING",
-        (case_id, key, Jsonb(empty)),
-    )
-    row = s.one("SELECT payload FROM cairn.context_items WHERE case_id = %s AND item_key = %s FOR UPDATE",
-                (case_id, key))
-    return row["payload"] if row else dict(empty)
+    """Read a context item for update, creating it first. A concurrent writer gets a conflict, not a lost update."""
+    return s.lock_context(case_id, key, empty)
 
 
 def certificate_order(s: Session, case_id: UUID) -> CertificateOrderRecord | None:

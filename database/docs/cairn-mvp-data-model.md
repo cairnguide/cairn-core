@@ -1,5 +1,7 @@
 # Cairn MVP Data Model
 
+> **2026-10-01:** the database moved from PostgreSQL to MongoDB. SQL tables, row-level security policies, and functions named below now live in `database/db/schema.py` (collections, validators, roles) and `api/cairn_api/store.py` (the case boundary). `database/CLAUDE.md`, "The move to MongoDB", maps each one.
+
 Scope: sign up, create a case, collect information about the user and the deceased, and generate a personalized four-week journey of first steps (death certificates, banks, funeral arrangements, and related tasks). No document upload at MVP.
 
 This is a cloud-agnostic conceptual model. It is a reduced version of the full conceptual model in this folder.
@@ -181,7 +183,8 @@ From `cairn-case-creation-use-cases-2026-09-25.json` (UC-CASE-19 to UC-CASE-21) 
 
 | # | Decision | Status |
 |---|---|---|
-| 1 | Journey data stays in the relational database. `applies_when` rules are stored as JSON in a JSONB column, which gives flexible rules without a second database. | Adopted for MVP |
+| 1 | Journey data stays in the relational database. `applies_when` rules are stored as JSON in a JSONB column, which gives flexible rules without a second database. | Superseded by 1a |
+| 1a | 2026-10-01: superseded. Everything moved to MongoDB. `applies_when` is a document field on `task_templates`, and citations are embedded in their template. | Adopted |
 | 2 | Journey templates and citations are authored as versioned files in a repository (content-as-code). A deploy job loads them into read-only `TASK_TEMPLATE` and `TEMPLATE_CITATION` tables. | Adopted for MVP |
 | 3 | A derived, read-optimized journey snapshot in the document store for AI context assembly. | Deferred, see triggers below |
 

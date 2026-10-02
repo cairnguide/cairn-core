@@ -88,20 +88,18 @@ def register(req: RegistrationRequest, request: Request, response: Response,
         raise ApiError(403, "email_not_verified", copy["email_check_inbox"])
 
     with request.app.state.db.session() as s:
-        existing = s.one("SELECT cairn.resolve_user(%s) AS id", (identity.subject,))["id"]
+        existing = s.resolve_user(identity.subject)
         if not existing:
             # Called only with the verified email from the caller's own token.
             # Accounts are never linked automatically across providers.
-            taken_by = s.one("SELECT cairn.sign_in_method_for_email(%s) AS method", (identity.email,))["method"]
+            taken_by = s.sign_in_method_for_email(identity.email)
             if taken_by:
                 raise account_exists(copy, taken_by)
-        user_id = s.one("SELECT cairn.create_account(%s, %s, %s, %s, %s) AS id",
-                        (identity.subject, identity.email, identity.sign_in_method.value,
-                         req.name_from_provider, req.time_zone))["id"]
-        s.conn.execute("SELECT set_config('app.user_id', %s, true)", (str(user_id),))
+        user_id = s.create_account(identity.subject, identity.email, identity.sign_in_method.value,
+                                   req.name_from_provider, req.time_zone)
         s.user_id = user_id
         if existing and req.time_zone:
-            s.conn.execute("UPDATE cairn.users SET time_zone = %s WHERE id = %s", (req.time_zone, user_id))
+            s.update_account(time_zone=req.time_zone)
         if not existing:
             s.audit("user_registered", object_type="user", object_id=user_id)
         result = onboarding.response(s, request, resumed=bool(existing))

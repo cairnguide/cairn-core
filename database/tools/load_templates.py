@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""Validate and load content-as-code task templates and journey selection rules into the database.
+"""Validate and load content-as-code task templates and journey selection rules into MongoDB.
 
 Reads content/tasks/<jurisdiction>/<task_key>.json files, validates them against
 content/schema/task-template.schema.json, and inserts new immutable versions into
-cairn.task_templates and cairn.template_citations.
+the task_templates collection, each with its citations.
 
 Also reads content/journeys/*.json (the case creation spec's journey_selection:
 base paths, add-ons, and what completed_items mark done), validates them against
 content/schema/journey-selection.schema.json, checks that every task they name
-has a template, and inserts new immutable versions into cairn.journey_templates.
+has a template, and inserts new immutable versions into the journey_templates collection.
 
-Connection: CAIRN_LOADER_DSN (preferred) or DATABASE_URL. The session switches to
-the least-privilege cairn_loader role before writing anything.
+Connection: CAIRN_LOADER_MONGODB_URI, a login user that holds only the cairnLoader
+role (it can add template versions and flip their active flag, nothing else).
+CAIRN_MONGODB_DB names the database, cairn by default.
 
 Release gate (default on, from the data model decision log):
   * counsel_reviewed_at must be set on every template
@@ -161,83 +162,90 @@ def load_and_validate_journeys(content_dir: pathlib.Path, task_keys: set[str], a
     return journeys, errors
 
 
-def load_into_db(templates, git_release: str, dsn: str, journeys=()):
-    import psycopg
-    from psycopg.types.json import Jsonb
+def _timestamp(value: str | None):
+    """counsel_reviewed_at is a date or an ISO date and time. Stored as a UTC BSON date."""
+    from datetime import datetime, timezone
+    if value is None:
+        return None
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def load_into_db(templates, git_release: str, uri: str, journeys=(), db_name: str = "cairn"):
+    """Adds new template and journey versions in one transaction. Connect as the cairnLoader user.
+
+    Rows already loaded are immutable: the same content is skipped, different content is an error,
+    and an older version than one already loaded is refused. Loading a version switches off the
+    active flag of the older ones, which is the only change ever made to a loaded row.
+    """
+    import uuid
+    from datetime import datetime, timezone
+
+    from pymongo import MongoClient
 
     inserted = skipped = 0
-    with psycopg.connect(dsn) as conn:
-        with conn.transaction():
-            conn.execute("SET LOCAL ROLE cairn_loader")
+    now = datetime.now(timezone.utc)
+    with MongoClient(uri, uuidRepresentation="standard", tz_aware=True) as client:
+        db = client[db_name]
+
+        def run(cs):
+            nonlocal inserted, skipped
+            inserted = skipped = 0
             for rel, doc in templates:
                 digest = hashlib.sha256(canonical(doc).encode("utf-8")).hexdigest()
-                row = conn.execute(
-                    "SELECT content_hash FROM cairn.task_templates WHERE task_key = %s AND version = %s",
-                    (doc["task_key"], doc["version"]),
-                ).fetchone()
+                row = db.task_templates.find_one({"task_key": doc["task_key"], "version": doc["version"]},
+                                                 {"content_hash": 1}, session=cs)
                 if row:
-                    if row[0] == digest:
+                    if row["content_hash"] == digest:
                         skipped += 1
                         continue
                     raise SystemExit(
                         f"{rel}: task_key {doc['task_key']} version {doc['version']} is already loaded "
                         "with different content. Templates are immutable. Bump the version."
                     )
-                newest = conn.execute(
-                    "SELECT max(version) FROM cairn.task_templates WHERE task_key = %s",
-                    (doc["task_key"],),
-                ).fetchone()[0]
-                if newest is not None and doc["version"] < newest:
-                    raise SystemExit(f"{rel}: version {doc['version']} is older than loaded version {newest}")
-
-                tid = conn.execute(
-                    """INSERT INTO cairn.task_templates
-                         (task_key, version, title, plain_summary, journey_week, sort_order,
-                          due_offset_days, jurisdiction, applies_when, attorney_referral,
-                          attorney_referral_note, why_now, counsel_reviewed_at, content_hash, git_release)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-                    (
-                        doc["task_key"], doc["version"], doc["title"], doc["plain_summary"],
-                        doc["journey_week"], doc.get("sort_order", 0), doc["due_offset_days"],
-                        doc["jurisdiction"], Jsonb(doc["applies_when"]), doc["attorney_referral"],
-                        doc.get("attorney_referral_note"), doc.get("why_now"), doc["counsel_reviewed_at"],
-                        digest, git_release,
-                    ),
-                ).fetchone()[0]
-                for c in doc["citations"]:
-                    conn.execute(
-                        """INSERT INTO cairn.template_citations
-                             (template_id, authority_name, url, jurisdiction, last_verified_on)
-                           VALUES (%s,%s,%s,%s,%s)""",
-                        (tid, c["authority_name"], c["url"], c["jurisdiction"], c["last_verified_on"]),
-                    )
-                conn.execute(
-                    "UPDATE cairn.task_templates SET active = false WHERE task_key = %s AND version < %s",
-                    (doc["task_key"], doc["version"]),
-                )
+                newest = db.task_templates.find_one({"task_key": doc["task_key"]}, {"version": 1},
+                                                    sort=[("version", -1)], session=cs)
+                if newest is not None and doc["version"] < newest["version"]:
+                    raise SystemExit(f"{rel}: version {doc['version']} is older than loaded version "
+                                     f"{newest['version']}")
+                db.task_templates.insert_one({
+                    "_id": uuid.uuid4(), "task_key": doc["task_key"], "version": doc["version"],
+                    "title": doc["title"], "plain_summary": doc["plain_summary"],
+                    "journey_week": doc["journey_week"], "sort_order": doc.get("sort_order", 0),
+                    "due_offset_days": doc["due_offset_days"], "jurisdiction": doc["jurisdiction"],
+                    "applies_when": doc["applies_when"], "attorney_referral": doc["attorney_referral"],
+                    "attorney_referral_note": doc.get("attorney_referral_note"), "why_now": doc.get("why_now"),
+                    "counsel_reviewed_at": _timestamp(doc["counsel_reviewed_at"]),
+                    "citations": [{k: c[k] for k in ("authority_name", "url", "jurisdiction", "last_verified_on")}
+                                  for c in doc["citations"]],
+                    "content_hash": digest, "git_release": git_release, "active": True, "loaded_at": now,
+                }, session=cs)
+                db.task_templates.update_many({"task_key": doc["task_key"], "version": {"$lt": doc["version"]}},
+                                              {"$set": {"active": False}}, session=cs)
                 inserted += 1
             for rel, doc in journeys:
                 digest = hashlib.sha256(canonical(doc).encode("utf-8")).hexdigest()
-                row = conn.execute("SELECT content_hash FROM cairn.journey_templates WHERE version = %s",
-                                   (doc["version"],)).fetchone()
+                row = db.journey_templates.find_one({"version": doc["version"]}, {"content_hash": 1}, session=cs)
                 if row:
-                    if row[0] == digest:
+                    if row["content_hash"] == digest:
                         skipped += 1
                         continue
                     raise SystemExit(f"{rel}: journey selection version {doc['version']} is already loaded "
                                      "with different content. Journey templates are immutable. Bump the version.")
-                newest = conn.execute("SELECT max(version) FROM cairn.journey_templates").fetchone()[0]
-                if newest is not None and doc["version"] < newest:
-                    raise SystemExit(f"{rel}: version {doc['version']} is older than loaded version {newest}")
-                conn.execute(
-                    """INSERT INTO cairn.journey_templates
-                         (version, definition, counsel_reviewed_at, content_hash, git_release)
-                       VALUES (%s,%s,%s,%s,%s)""",
-                    (doc["version"], Jsonb(doc), doc["counsel_reviewed_at"], digest, git_release),
-                )
-                conn.execute("UPDATE cairn.journey_templates SET active = false WHERE version < %s",
-                             (doc["version"],))
+                newest = db.journey_templates.find_one({}, {"version": 1}, sort=[("version", -1)], session=cs)
+                if newest is not None and doc["version"] < newest["version"]:
+                    raise SystemExit(f"{rel}: version {doc['version']} is older than loaded version "
+                                     f"{newest['version']}")
+                db.journey_templates.insert_one({
+                    "_id": uuid.uuid4(), "version": doc["version"], "definition": doc,
+                    "counsel_reviewed_at": _timestamp(doc["counsel_reviewed_at"]), "content_hash": digest,
+                    "git_release": git_release, "active": True, "loaded_at": now}, session=cs)
+                db.journey_templates.update_many({"version": {"$lt": doc["version"]}}, {"$set": {"active": False}},
+                                                 session=cs)
                 inserted += 1
+
+        with client.start_session() as cs:
+            cs.with_transaction(run)
     return inserted, skipped
 
 
@@ -266,11 +274,12 @@ def main() -> int:
     if not args.git_release:
         print("--git-release is required when loading.", file=sys.stderr)
         return 2
-    dsn = os.environ.get("CAIRN_LOADER_DSN") or os.environ.get("DATABASE_URL")
-    if not dsn:
-        print("Set CAIRN_LOADER_DSN or DATABASE_URL.", file=sys.stderr)
+    uri = os.environ.get("CAIRN_LOADER_MONGODB_URI")
+    if not uri:
+        print("Set CAIRN_LOADER_MONGODB_URI to the cairnLoader user's connection string.", file=sys.stderr)
         return 2
-    inserted, skipped = load_into_db(templates, args.git_release, dsn, journeys)
+    inserted, skipped = load_into_db(templates, args.git_release, uri, journeys,
+                                     os.environ.get("CAIRN_MONGODB_DB", "cairn"))
     print(f"Loaded {inserted} new template or journey version(s), {skipped} unchanged.")
     return 0
 

@@ -18,8 +18,6 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from fastapi import Request
-from psycopg import sql
-from psycopg.types.json import Jsonb
 from pydantic import TypeAdapter, ValidationError
 
 from . import account as acct
@@ -53,19 +51,6 @@ FIELD_ORDER = list(FieldKey)
 STATE_LABELS = {code: name.title() for name, code in reversed(list(STATE_NAMES.items()))}
 STATE_LABELS["DC"] = "Washington, DC"
 
-_CASE_SELECT = """
-SELECT c.id, c.status, c.journey_template_key, c.journey_template_version, c.journey_started_at,
-       c.journey_started_on, c.last_intake_step, c.last_activity_at, c.death_not_yet_occurred, c.skip_explainers,
-       c.name_fallback, c.attorney_triggers, c.shown_notices, c.tasks_paused_until, c.created_at, c.created_by,
-       CASE WHEN c.status = 'draft'
-            THEN c.last_activity_at + make_interval(days => cairn.setting_int('draft_retention_days')) END
-         AS draft_expires_at,
-       c.deletion_requested_at + make_interval(days => cairn.setting_int('case_deletion_hold_days'))
-         AS deletion_scheduled_for
-FROM cairn.cases c WHERE c.id = %s
-"""
-
-
 # ------------------------------------------------------------------ context
 
 @dataclass
@@ -91,21 +76,18 @@ def ctx(s: Session, request: Request, account: dict) -> Ctx:
 # ------------------------------------------------------------------ reads
 
 def load_case(s: Session, case_id: UUID) -> dict:
-    row = s.one(_CASE_SELECT, (case_id,))
+    row = s.load_case(case_id)
     if row is None:
         raise case_access_denied()
     return row
 
 
 def load_answers(s: Session, case_id: UUID) -> dict[str, dict]:
-    rows = s.all("SELECT field_key, answer_state, value, own_words FROM cairn.case_intake_answers "
-                 "WHERE case_id = %s", (case_id,))
-    return {r["field_key"]: r for r in rows}
+    return s.load_answers(case_id)
 
 
 def load_deceased(s: Session, case_id: UUID) -> dict | None:
-    return s.one("SELECT id, legal_first_name, legal_middle_name, legal_last_name, date_of_birth "
-                 "FROM cairn.deceased WHERE case_id = %s", (case_id,))
+    return s.load_deceased(case_id)
 
 
 def display_name(case: dict, answers: dict, copy: Copy) -> str:
@@ -134,7 +116,7 @@ def require_case_write(c: Ctx, case: dict) -> None:
     """A draft stays editable on a read-only account (UC-CASE-18). An active case needs a writable account."""
     if case["status"] != "draft":
         acct.require_ready(c.s, c.request, write=True)
-    if not c.s.one("SELECT cairn.is_case_member(%s, ARRAY['owner', 'co_executor']) AS ok", (case["id"],))["ok"]:
+    if not c.s.is_case_member(case["id"], ("owner", "co_executor")):
         raise case_access_denied()
 
 
@@ -142,25 +124,19 @@ def require_case_write(c: Ctx, case: dict) -> None:
 
 def create_draft(s: Session) -> UUID:
     """UC-CASE-01. Case and owner membership in one transaction. Never starts the trial (DEC-01)."""
-    uid = s.require_user()
-    case_id = s.one("INSERT INTO cairn.cases (created_by) VALUES (%s) RETURNING id", (uid,))["id"]
-    s.conn.execute("INSERT INTO cairn.case_members (case_id, user_id, role, status) VALUES (%s, %s, 'owner', 'active')",
-                   (case_id, uid))
+    case_id = s.create_draft()
     s.audit("case_created", case_id, "case", case_id)
     return case_id
 
 
 def touch(s: Session, case_id: UUID) -> None:
     """Any open of a draft resets its 28 days (DEC-07)."""
-    s.conn.execute("UPDATE cairn.cases SET last_activity_at = now() WHERE id = %s", (case_id,))
+    s.touch(case_id)
 
 
 def update_case(s: Session, case_id: UUID, **cols) -> None:
-    assignments = sql.SQL(", ").join(sql.SQL("{} = {}").format(sql.Identifier(k), sql.Placeholder(k)) for k in cols)
-    row = s.one(sql.SQL("UPDATE cairn.cases SET {}, last_activity_at = now() WHERE id = {} RETURNING id").format(
-        assignments, sql.Placeholder("case_id")), {**cols, "case_id": case_id})
-    if row is None:
-        raise case_access_denied()
+    """Fields the app may set, and the activity clock. A case the caller can't change is refused."""
+    s.update_case(case_id, **cols)
 
 
 def parse_value(field: FieldKey, value: object, today: date) -> object:
@@ -182,13 +158,7 @@ def save_answer(s: Session, case_id: UUID, field: FieldKey, state: AnswerState, 
                 own_words: str | None) -> None:
     if field == FieldKey.circumstance:
         own_words = None  # only the enum is ever stored for circumstance
-    s.conn.execute(
-        "INSERT INTO cairn.case_intake_answers (case_id, field_key, answer_state, value, own_words) "
-        "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (case_id, field_key) DO UPDATE SET "
-        "answer_state = EXCLUDED.answer_state, value = EXCLUDED.value, own_words = EXCLUDED.own_words",
-        (case_id, field.value, state.value, Jsonb(value) if value is not None else None,
-         str(own_words) if own_words else None),
-    )
+    s.save_answer(case_id, field.value, state.value, value, str(own_words) if own_words else None)
     # Opaque ids only. Never the field value.
     s.audit(f"intake_{field.value}_saved", case_id, "case", case_id)
 
@@ -298,14 +268,11 @@ def answer_label(copy: Copy, field: str, row: dict | None) -> str:
 
 def journey_definition(s: Session, version: int | None = None) -> dict:
     """The pinned rules for a started case, or the newest active rules for a draft."""
-    if version is None:
-        row = s.one("SELECT definition FROM cairn.journey_templates WHERE active ORDER BY version DESC LIMIT 1")
-    else:
-        row = s.one("SELECT definition FROM cairn.journey_templates WHERE version = %s", (version,))
-    if row is None:
+    definition = s.journey_definition(version)
+    if definition is None:
         raise ApiError(503, "journey_unavailable", "The journey steps aren't available right now. "
                                                    "Everything you've shared is saved.")
-    return row["definition"]
+    return definition
 
 
 def selection(s: Session, case: dict, answers: dict) -> tuple[dict, js.Selection]:
@@ -316,21 +283,11 @@ def selection(s: Session, case: dict, answers: dict) -> tuple[dict, js.Selection
 
 def templates(s: Session, keys: list[str]) -> dict[str, dict]:
     """The newest active version of each task template, with citations."""
-    rows = s.all(
-        "SELECT DISTINCT ON (t.task_key) t.id, t.task_key, t.version, t.title, t.plain_summary, t.journey_week, "
-        "  t.sort_order, t.due_offset_days, t.attorney_referral, t.attorney_referral_note, t.why_now "
-        "FROM cairn.task_templates t WHERE t.active AND t.task_key = ANY(%s) ORDER BY t.task_key, t.version DESC",
-        (keys,))
-    out = {r["task_key"]: r for r in rows}
+    out = s.templates(keys)
     missing = set(keys) - set(out)
     if missing:
         raise ApiError(503, "journey_unavailable", "The journey steps aren't available right now. "
                                                    "Everything you've shared is saved.")
-    cites = s.all("SELECT template_id, authority_name, url, jurisdiction, last_verified_on "
-                  "FROM cairn.template_citations WHERE template_id = ANY(%s) ORDER BY authority_name",
-                  ([r["id"] for r in rows],))
-    for r in out.values():
-        r["citations"] = [x for x in cites if x["template_id"] == r["id"]]
     return out
 
 
@@ -451,31 +408,21 @@ def sync_tasks(s: Session, case: dict, answers: dict, sel: js.Selection) -> None
     deleted, and a task already in progress or done stays visible. Newly
     checked completed_items mark their open tasks done.
     """
-    existing = {r["task_key"]: r for r in s.all(
-        "SELECT ct.id, ct.status, ct.selected, t.task_key FROM cairn.case_tasks ct "
-        "JOIN cairn.task_templates t ON t.id = ct.template_id WHERE ct.case_id = %s", (case["id"],))}
+    existing = {r["task_key"]: r for r in s.task_states(case["id"])}
     missing = [k for k in sel.task_keys if k not in existing]
     tmpl = templates(s, missing) if missing else {}
     anchor = anchor_date(answers, case["journey_started_on"])
     for k in missing:
         due = max(anchor + timedelta(days=tmpl[k]["due_offset_days"]), case["journey_started_on"])
-        status = sel.initial_status[k]
-        s.conn.execute(
-            "INSERT INTO cairn.case_tasks (case_id, template_id, status, due_on, selected) "
-            "VALUES (%s, %s, %s, %s, true)",
-            (case["id"], tmpl[k]["id"], "not_started" if status == "done" else status, due))
-        if status == "done":
-            s.conn.execute("UPDATE cairn.case_tasks SET status = 'done', completed_at = now() "
-                           "WHERE case_id = %s AND template_id = %s", (case["id"], tmpl[k]["id"]))
+        s.add_task(case["id"], tmpl[k], sel.initial_status[k], due)
     for k, row in existing.items():
         want = k in sel.task_keys
         if row["selected"] != want:
-            s.conn.execute("UPDATE cairn.case_tasks SET selected = %s WHERE id = %s", (want, row["id"]))
+            s.update_task(case["id"], row["id"], selected=want)
         if want and sel.initial_status[k] == "done" and row["status"] in ("not_started", "check_on_this"):
-            s.conn.execute("UPDATE cairn.case_tasks SET status = 'done', completed_at = now() WHERE id = %s",
-                           (row["id"],))
+            s.update_task(case["id"], row["id"], status="done")
         elif want and sel.initial_status[k] == "check_on_this" and row["status"] == "not_started":
-            s.conn.execute("UPDATE cairn.case_tasks SET status = 'check_on_this' WHERE id = %s", (row["id"],))
+            s.update_task(case["id"], row["id"], status="check_on_this")
     if case["journey_template_key"] != sel.path_key:
         update_case(s, case["id"], journey_template_key=sel.path_key)
     s.audit("journey_tasks_synced", case["id"], "case", case["id"])

@@ -1,25 +1,25 @@
-"""UC-REG-15, UC-REG-16, and UC-CASE-19 to UC-CASE-21 against a real database with row-level security.
+"""UC-REG-15, UC-REG-16, and UC-CASE-19 to UC-CASE-21 against a real MongoDB database, as the cairnApp user.
 
 Specs: database/docs/cairn-account-use-cases-2026-09-25.json and
 database/docs/cairn-case-creation-use-cases-2026-09-25.json. Case deletion with a
 7-day hold is UC-END-13, which those specs rely on. Each test names what it covers.
 Rules that need no database are in test_account_lifecycle_rules.py.
 
-Skipped unless CAIRN_TEST_ADMIN_URL points at a scratch PostgreSQL 15+ server.
+Skipped unless CAIRN_TEST_MONGODB_URI points at a scratch MongoDB replica set.
 Fake data only.
 """
 from __future__ import annotations
 
 import json
 from datetime import date, datetime, timedelta, timezone
+from uuid import UUID
 
-import psycopg
 import pytest
 
-from cairn_api import outbound
+from cairn_api import maintenance, outbound
 from cairn_api.copy_store import load_case_copy, load_copy
 
-from .conftest import active_case, answer, as_user, new_draft, register, start_journey
+from .conftest import active_case, answer, as_user, expire_trial, new_draft, register, start_journey, user_id
 
 COPY = load_copy()
 CASE_COPY = load_case_copy()
@@ -28,29 +28,12 @@ EMAIL_WEEKLY = {"choice": {"channels": ["email"], "reasons": ["inactivity"], "in
                            "frequency": "weekly_max"}}
 
 
-def owner_sql(url, query, params=()):
-    with psycopg.connect(url, autocommit=True) as conn:
-        cur = conn.execute(query, params)
-        return cur.fetchall() if cur.description else None
-
-
-def user_id(api, subject):
-    return owner_sql(api.scratch_url, "SELECT id FROM cairn.users WHERE idp_subject = %s", (subject,))[0][0]
-
-
-def expire_trial(api, subject):
-    with psycopg.connect(api.scratch_url) as conn:
-        conn.execute("ALTER TABLE cairn.users DISABLE TRIGGER users_trial_set_once")
-        conn.execute("UPDATE cairn.users SET trial_started_at = trial_started_at - interval '29 days', "
-                     "trial_ends_at = trial_ends_at - interval '29 days' WHERE idp_subject = %s", (subject,))
-        conn.execute("ALTER TABLE cairn.users ENABLE TRIGGER users_trial_set_once")
-
-
 def prefs_row(api, case_id):
-    rows = owner_sql(api.scratch_url, "SELECT channels, reasons, due_date_lead_days, inactivity_days, frequency, "
-                                      "push_permission_granted FROM cairn.notification_preferences WHERE case_id = %s",
-                     (case_id,))
-    return rows[0] if rows else None
+    row = api.db.notification_preferences.find_one({"_id": UUID(case_id)})
+    if row is None:
+        return None
+    return (row["channels"], row["reasons"], row["due_date_lead_days"], row["inactivity_days"], row["frequency"],
+            row["push_permission_granted"])
 
 
 def set_prefs(api, subject, case_id, body):
@@ -60,8 +43,8 @@ def set_prefs(api, subject, case_id, body):
 
 
 def outbox(api, email):
-    return owner_sql(api.scratch_url, "SELECT action_type, user_id FROM cairn.action_confirmation_outbox "
-                                      "WHERE email = %s ORDER BY queued_at", (email,))
+    return [(r["action_type"], r["user_id"])
+            for r in api.db.action_confirmation_outbox.find({"email": email}, sort=[("queued_at", 1)])]
 
 
 class FakeMailer:
@@ -79,7 +62,17 @@ class FakeMailer:
 
 
 def send_outbound(api, mailer):
-    return outbound.run_once(api.scratch_url, mailer, COPY, CASE_COPY)
+    return outbound.run_once(api.jobs_db, mailer, COPY, CASE_COPY)
+
+
+def due_tomorrow(api, case_id):
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    api.db.case_tasks.update_many({"case_id": UUID(case_id)}, {"$set": {"due_on": tomorrow}})
+
+
+def add_conversation(api, case_id, text):
+    api.db.context_items.insert_one({"case_id": UUID(case_id), "item_key": "CONVO_SUMMARY", "payload": {"text": text},
+                                     "updated_at": datetime.now(timezone.utc), "expires_at": None})
 
 
 def named_case(api, subject, name="Dan", **answers):
@@ -139,7 +132,7 @@ def test_uc19_skipped_or_never_asked_is_in_app_only_and_nothing_is_sent(api):
     # Starting a journey with no choice at all stores in_app_only too.
     cid2, _ = named_case(api, "nt04")
     assert prefs_row(api, cid2) == (["in_app_only"], [], None, None, "daily_max", False)
-    owner_sql(api.scratch_url, "UPDATE cairn.case_tasks SET due_on = current_date + 1 WHERE case_id = %s", (cid2,))
+    due_tomorrow(api, cid2)
     mailer = FakeMailer()
     send_outbound(api, mailer)
     assert mailer.to("nt04@example.test") == []
@@ -213,8 +206,8 @@ def test_uc12_confirmation_says_the_reminder_goes_the_way_the_user_chose(api):
 def test_uc19_trial_reminder_email_only_with_an_email_choice(api):
     register(api, "nt09")
     in_app, _ = named_case(api, "nt09")
-    owner_sql(api.scratch_url, "UPDATE cairn.trial_reminders SET due_at = now() - interval '1 minute' "
-                               "WHERE user_id = %s AND kind = 'trial_day_21'", (user_id(api, "nt09"),))
+    api.db.trial_reminders.update_one({"user_id": user_id(api, "nt09"), "kind": "trial_day_21"},
+                                      {"$set": {"due_at": datetime.now(timezone.utc) - timedelta(minutes=1)}})
     mailer = FakeMailer()
     send_outbound(api, mailer)
     assert mailer.to("nt09@example.test") == []
@@ -231,7 +224,7 @@ def test_uc19_notifications_are_short_private_and_at_the_chosen_pace(api):
     register(api, "nt10")
     cid, _ = named_case(api, "nt10", name="Zebulon", veteran_status="yes", circumstance="accident_or_unexpected")
     set_prefs(api, "nt10", cid, KEEP_IT_SIMPLE)
-    owner_sql(api.scratch_url, "UPDATE cairn.case_tasks SET due_on = current_date + 1 WHERE case_id = %s", (cid,))
+    due_tomorrow(api, cid)
     mailer = FakeMailer()
     send_outbound(api, mailer)
     [(subject, body)] = mailer.to("nt10@example.test")  # one message for the journey, not one per task
@@ -240,7 +233,7 @@ def test_uc19_notifications_are_short_private_and_at_the_chosen_pace(api):
         assert private.lower() not in (subject + body).lower()
     send_outbound(api, mailer)  # daily_max
     assert len(mailer.to("nt10@example.test")) == 1
-    sent = owner_sql(api.scratch_url, "SELECT reason, channel FROM cairn.notification_log WHERE case_id = %s", (cid,))
+    sent = [(r["reason"], r["channel"]) for r in api.db.notification_log.find({"case_id": UUID(cid)})]
     assert sent == [("due_date_upcoming", "email")]
 
 
@@ -375,19 +368,16 @@ def test_uc21_delete_now_sends_exactly_one_private_confirmation_then_purges_the_
     r = api.post(f"/v1/cases/{cid}/deletion", json={"mode": "now"}, headers=as_user("dc02")).json()
     assert r["deleted"] is True and r["acknowledgment"] == CASE_COPY["case_deleted_now"]
     assert api.get(f"/v1/cases/{cid}", headers=as_user("dc02")).status_code == 403
-    assert owner_sql(api.scratch_url, "SELECT count(*) FROM cairn.case_intake_answers WHERE case_id = %s",
-                     (cid,))[0][0] == 0
+    assert api.db.case_intake_answers.count_documents({"case_id": UUID(cid)}) == 0
     assert [a for a, _ in outbox(api, "dc02@example.test")] == ["case_deleted_now"]
-    before = owner_sql(api.scratch_url, "SELECT count(*) FROM cairn.action_confirmation_log "
-                                        "WHERE action_type = 'case_deleted_now'")[0][0]
+    before = api.db.action_confirmation_log.count_documents({"action_type": "case_deleted_now"})
     mailer = FakeMailer()
     send_outbound(api, mailer)
     send_outbound(api, mailer)
     [(subject, body)] = mailer.to("dc02@example.test")
     assert body == COPY["email_case_deleted_now"] and "Zebulon" not in subject + body
     assert outbox(api, "dc02@example.test") == []  # the address is purged once sent
-    after = owner_sql(api.scratch_url, "SELECT count(*) FROM cairn.action_confirmation_log "
-                                       "WHERE action_type = 'case_deleted_now'")[0][0]
+    after = api.db.action_confirmation_log.count_documents({"action_type": "case_deleted_now"})
     assert after > before
 
 
@@ -428,9 +418,9 @@ def test_hold_keeps_the_case_for_7_days_can_be_cancelled_and_confirms_when_delet
     assert api.get(f"/v1/cases/{cid}", headers=h).json()["case"]["deletion_scheduled_for"] is None
     # Hold again, and let the hold run out.
     api.post(f"/v1/cases/{cid}/deletion", json={"mode": "hold"}, headers=h)
-    owner_sql(api.scratch_url, "UPDATE cairn.cases SET deletion_requested_at = now() - interval '7 days' "
-                               "WHERE id = %s", (cid,))
-    assert owner_sql(api.scratch_url, "SELECT cairn.purge_held_cases()")[0][0] >= 1
+    api.db.cases.update_one({"_id": UUID(cid)},
+                            {"$set": {"deletion_requested_at": datetime.now(timezone.utc) - timedelta(days=7)}})
+    assert maintenance.purge_held_cases(api.jobs_db) >= 1
     assert api.get(f"/v1/cases/{cid}", headers=h).status_code == 403
     assert [a for a, _ in outbox(api, "dc04@example.test")] == ["case_deleted_after_hold"]
 
@@ -467,7 +457,7 @@ def test_reg15_explains_everything_shows_where_the_confirmation_goes_and_offers_
 
 def test_reg15_a_store_subscription_is_information_only(api):
     register(api, "da02")
-    owner_sql(api.scratch_url, "UPDATE cairn.users SET status = 'subscribed' WHERE idp_subject = 'da02'")
+    api.db.users.update_one({"idp_subject": "da02"}, {"$set": {"status": "subscribed"}})
     note = api.get("/v1/me/deletion", headers=as_user("da02")).json()["subscription_note"]
     assert note["text"] == COPY["deletion_store_subscription"] and "?" not in note["text"]
     assert note["source_urls"] == ["https://support.apple.com/en-us/HT202039",
@@ -487,8 +477,7 @@ def test_reg15_deletes_everything_now_including_held_cases_and_sends_one_confirm
     answer(api, subject, active, "display_name", "Dan")
     start_journey(api, subject, active)
     api.put(f"/v1/cases/{active}/notification-preferences", json=KEEP_IT_SIMPLE, headers=h)
-    owner_sql(api.scratch_url, "INSERT INTO cairn.context_items (case_id, item_key, payload) "
-                               "VALUES (%s, 'CONVO_SUMMARY', '{\"text\": \"fake conversation\"}')", (active,))
+    add_conversation(api, active, "fake conversation")
     held = api.post("/v1/cases", headers=h).json()["case"]["id"]
     api.post(f"/v1/cases/{held}/deletion", json={"mode": "hold"}, headers=h)
     api.post(f"/v1/cases/{draft}/deletion", json={"mode": "now"}, headers=h)  # a pending case confirmation
@@ -499,26 +488,25 @@ def test_reg15_deletes_everything_now_including_held_cases_and_sends_one_confirm
     body = r.json()
     assert body["signed_out"] is True and body["next_step"]["action"] == "signed_out"
     assert api.get("/v1/me", headers=h).json()["code"] == "registration_required"
-    for table in ("cases", "case_intake_answers", "case_tasks", "notification_preferences", "notification_log",
-                  "context_items"):
-        column = "id" if table == "cases" else "case_id"
-        n = owner_sql(api.scratch_url, f"SELECT count(*) FROM cairn.{table} WHERE {column} = ANY(%s)",
-                      ([active, held, draft],))[0][0]
-        assert n == 0, table
-    for table in ("users", "consents", "trial_reminders"):
-        column = "id" if table == "users" else "user_id"
-        assert owner_sql(api.scratch_url, f"SELECT count(*) FROM cairn.{table} WHERE {column} = %s", (uid,))[0][0] == 0
+    ids = [UUID(c) for c in (active, held, draft)]
+    for collection in ("cases", "notification_preferences", "case_intake_answers", "case_tasks", "notification_log",
+                       "context_items", "deceased"):
+        field = "_id" if collection in ("cases", "notification_preferences") else "case_id"
+        assert api.db[collection].count_documents({field: {"$in": ids}}) == 0, collection
+    for collection in ("users", "consents", "trial_reminders"):
+        field = "_id" if collection == "users" else "user_id"
+        assert api.db[collection].count_documents({field: uid}) == 0, collection
     # Exactly one confirmation, with nothing that links it to the account, then the address is purged.
     assert outbox(api, email) == [("account_deleted", None)]
-    assert owner_sql(api.scratch_url, "SELECT provider FROM cairn.identity_deletion_requests WHERE idp_subject = %s",
-                     (subject,)) == [("apple",)]  # Apple token revocation (TN3194) is queued
+    # Apple token revocation (TN3194) is queued.
+    assert [r["provider"] for r in api.db.identity_deletion_requests.find({"idp_subject": subject})] == ["apple"]
     mailer = FakeMailer()
     send_outbound(api, mailer)
     assert mailer.to(email) == [(COPY["email_subject_confirmation"], COPY["email_account_deleted"])]
     assert outbox(api, email) == []
     # Logged without content: ids only.
-    rows = owner_sql(api.scratch_url, "SELECT action, object_type FROM cairn.audit_events WHERE actor_id = %s "
-                                      "AND action = 'account_deleted'", (uid,))
+    rows = [(r["action"], r["object_type"])
+            for r in api.db.audit_events.find({"actor_id": uid, "action": "account_deleted"})]
     assert rows == [("account_deleted", "user")]
 
 
@@ -588,10 +576,8 @@ def test_reg16_the_download_has_everything_and_never_a_sensitive_number(api):
     set_prefs(api, "dx02", cid, KEEP_IT_SIMPLE)
     api.patch(f"/v1/cases/{cid}/deceased", json={"legal_first_name": "Daniel", "legal_last_name": "Fakerton"},
               headers=as_user("dx02"))
-    owner_sql(api.scratch_url, "UPDATE cairn.deceased SET ssn_last4 = '4821' WHERE case_id = %s", (cid,))
-    owner_sql(api.scratch_url, "INSERT INTO cairn.context_items (case_id, item_key, payload) VALUES (%s, "
-                               "'CONVO_SUMMARY', %s)",
-              (cid, json.dumps({"text": "We talked about the bank. Card 4111 1111 1111 1111, SSN 123-45-6789."})))
+    api.db.deceased.update_one({"case_id": UUID(cid)}, {"$set": {"ssn_last4": "4821"}})
+    add_conversation(api, cid, "We talked about the bank. Card 4111 1111 1111 1111, SSN 123-45-6789.")
     draft = new_draft(api, "dx02")["case"]["id"]
     r = api.get("/v1/me/data-export/file", headers=as_user("dx02"))
     assert r.status_code == 200
@@ -639,11 +625,11 @@ def test_reg16_asked_in_chat(api):
 def test_pausing_says_the_free_days_keep_counting_and_offers_to_change_notifications(api):
     register(api, "pz01")
     cid, _ = named_case(api, "pz01")
-    before = owner_sql(api.scratch_url, "SELECT trial_ends_at FROM cairn.users WHERE idp_subject = 'pz01'")
+    before = api.db.users.find_one({"idp_subject": "pz01"})["trial_ends_at"]
     r = api.post(f"/v1/cases/{cid}/journey/pause", json={"pause_days": 14}, headers=as_user("pz01")).json()
     texts = [n["text"] for n in r["notes"]]
     assert CASE_COPY["pause_trial_note"] in texts and CASE_COPY["pause_notifications_offer"] in texts
-    assert owner_sql(api.scratch_url, "SELECT trial_ends_at FROM cairn.users WHERE idp_subject = 'pz01'") == before
+    assert api.db.users.find_one({"idp_subject": "pz01"})["trial_ends_at"] == before
 
 
 @pytest.mark.parametrize("path", ["/v1/me/deletion", "/v1/me/data-export", "/v1/me/data-export/file",
