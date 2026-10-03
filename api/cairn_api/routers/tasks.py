@@ -34,8 +34,7 @@ def _load(s: Session, case_id: UUID, task_id: UUID) -> dict:
 def _task_response(s: Session, case_id: UUID, task_id: UUID, notes=None) -> TaskResponse:
     row = _load(s, case_id, task_id)
     summary = journey.task_summary(row)
-    citations = s.all("SELECT authority_name, url, jurisdiction, last_verified_on FROM cairn.template_citations "
-                      "WHERE template_id = %s ORDER BY jurisdiction <> 'US', authority_name", (row["template_id"],))
+    citations = s.template_citations(row["template_id"])
     # UC-CASE-04 and DEC-05. The certificate office comes from where the death happened, never residence.
     death_state = journey_selection.certificate_office_state(intake.load_answers(s, case_id))
     reviewed = row["counsel_reviewed_at"] is not None
@@ -59,13 +58,7 @@ def _task_response(s: Session, case_id: UUID, task_id: UUID, notes=None) -> Task
 
 
 def _set_status(s: Session, case_id: UUID, task_id: UUID, status: TaskStatus) -> None:
-    row = s.one(
-        "UPDATE cairn.case_tasks SET status = %(status)s, "
-        "  completed_at = CASE WHEN %(status)s::text = 'done' THEN coalesce(completed_at, now()) ELSE NULL END "
-        "WHERE case_id = %(case_id)s AND id = %(task_id)s RETURNING id",
-        {"status": status.value, "case_id": case_id, "task_id": task_id},
-    )
-    if row is None:
+    if not s.update_task(case_id, task_id, status=status.value):
         raise case_access_denied()
     s.audit("task_status_changed", case_id, "case_task", task_id)
 
@@ -97,9 +90,7 @@ def update_task(case_id: UUID, task_id: UUID, req: TaskUpdateRequest, request: R
         if req.status is not None:
             _set_status(s, case_id, task_id, req.status)
         if "snoozed_until" in req.model_fields_set:
-            row = s.one("UPDATE cairn.case_tasks SET snoozed_until = %s WHERE case_id = %s AND id = %s RETURNING id",
-                        (req.snoozed_until, case_id, task_id))
-            if row is None:
+            if not s.update_task(case_id, task_id, snoozed_until=req.snoozed_until):
                 raise case_access_denied()
             s.audit("task_snoozed" if req.snoozed_until else "task_unsnoozed", case_id, "case_task", task_id)
         return _task_response(s, case_id, task_id)
@@ -161,7 +152,5 @@ def record_institution_notice(case_id: UUID, task_id: UUID, req: InstitutionNoti
 
 def _set_status_if_open(s: Session, case_id: UUID, task_id: UUID) -> None:
     """Recording one institution without finishing the task moves it to in progress."""
-    row = s.one("UPDATE cairn.case_tasks SET status = 'in_progress' "
-                "WHERE case_id = %s AND id = %s AND status = 'not_started' RETURNING id", (case_id, task_id))
-    if row is not None:
+    if s.update_task(case_id, task_id, status="in_progress", only_from=("not_started",)):
         s.audit("task_status_changed", case_id, "case_task", task_id)

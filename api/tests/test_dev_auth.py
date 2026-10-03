@@ -1,6 +1,6 @@
 """Development sign-in (cairn_api/dev_auth.py), the test login seed, and CORS.
 
-The contract tests need no database. The last test needs CAIRN_TEST_ADMIN_URL.
+The contract tests need no database. The last test needs CAIRN_TEST_MONGODB_URI.
 """
 import dataclasses
 import sys
@@ -88,10 +88,12 @@ def test_settings_refuse_weak_dev_secret_and_wildcard_cors():
 
 
 def test_seed_refuses_remote_hosts(monkeypatch, capsys):
-    monkeypatch.setenv("DATABASE_URL", "postgresql://owner@db.example.test/cairn")
+    monkeypatch.setenv("CAIRN_ADMIN_MONGODB_URI", "mongodb://admin:pw@db.example.test:27017/?replicaSet=rs0")
     monkeypatch.setattr(sys, "argv", ["seed_test_db.py"])
     assert seed_test_db.main() == 2
     assert "Refusing" in capsys.readouterr().err
+    monkeypatch.setenv("CAIRN_ADMIN_MONGODB_URI", "mongodb+srv://admin:pw@cluster0.example.test/")
+    assert seed_test_db.main() == 2
 
 
 def _cors_client(settings: Settings) -> TestClient:
@@ -112,32 +114,52 @@ def test_cors_allows_only_listed_origins():
 
 # ------------------------------------------------------------------ integration
 
-def test_sign_up_with_a_test_login(scratch_db_url):
+def test_sign_up_with_a_test_login(scratch_db):
     """The documented local flow: seed, get a dev token, register, and resume."""
+    from urllib.parse import urlsplit
+
     from cairn_api.db import Database
 
     settings = dataclasses.replace(SETTINGS, dev_auth_secret=SECRET)
-    db = Database(scratch_db_url, session_role="cairn_app", min_size=1, max_size=2)
-    with TestClient(create_app(settings=settings, database=db, verifier=Auth0Stub())) as c:
-        login = {"username": "new.user", "password": "test-login-password"}
-        seed_test_db.seed(scratch_db_url, login["password"], reset=True)
+    api_user = urlsplit(scratch_db.uris["cairnApp"]).username
+    db = Database(scratch_db.uris["cairnApp"], scratch_db.name, min_size=1, max_size=2)
+    login = {"username": "new.user", "password": "test-login-password"}
+    try:
+        with TestClient(create_app(settings=settings, database=db, verifier=Auth0Stub())) as c:
+            # Before the seed, the API's user can't read the logins and says how to add them.
+            assert c.post("/v1/dev/token", json=login).json()["code"] == "test_logins_missing"
+            seed_test_db.seed(scratch_db.admin_uri, scratch_db.name, login["password"], reset=True,
+                              api_user=api_user)
 
-        assert c.post("/v1/dev/token", json={**login, "password": "wrong"}).status_code == 401
-        assert c.post("/v1/dev/token", json={**login, "username": "nobody"}).status_code == 401
-        token = c.post("/v1/dev/token", json=login).json()["access_token"]
-        auth = {"Authorization": f"Bearer {token}"}
+            assert c.post("/v1/dev/token", json={**login, "password": "wrong"}).status_code == 401
+            assert c.post("/v1/dev/token", json={**login, "username": "nobody"}).status_code == 401
+            token = c.post("/v1/dev/token", json=login).json()["access_token"]
+            auth = {"Authorization": f"Bearer {token}"}
 
-        r = c.post("/v1/registrations", json={"time_zone": "America/New_York"}, headers=auth)
-        assert r.status_code == 201, r.text
-        assert r.json()["account"]["email"] == "new.user@example.test"
-        assert c.post("/v1/registrations", json={}, headers=auth).status_code == 200
+            r = c.post("/v1/registrations", json={"time_zone": "America/New_York"}, headers=auth)
+            assert r.status_code == 201, r.text
+            assert r.json()["account"]["email"] == "new.user@example.test"
+            assert c.post("/v1/registrations", json={}, headers=auth).status_code == 200
 
-        # test.user was created by the seed, so it resumes rather than creating an account.
-        token = c.post("/v1/dev/token", json={**login, "username": "Test.User"}).json()["access_token"]
-        r = c.post("/v1/registrations", json={}, headers={"Authorization": f"Bearer {token}"})
-        assert r.status_code == 200, r.text
-        assert r.json()["account"]["onboarding_step"] == "account_created"
+            # test.user was created by the seed, so it resumes rather than creating an account.
+            token = c.post("/v1/dev/token", json={**login, "username": "Test.User"}).json()["access_token"]
+            r = c.post("/v1/registrations", json={}, headers={"Authorization": f"Bearer {token}"})
+            assert r.status_code == 200, r.text
+            assert r.json()["account"]["onboarding_step"] == "account_created"
 
-        # --reset puts new.user back, so sign-up can be tried again.
-        seed_test_db.seed(scratch_db_url, login["password"], reset=True)
-        assert c.post("/v1/registrations", json={}, headers=auth).status_code == 201
+            # --reset puts new.user back, so sign-up can be tried again.
+            seed_test_db.seed(scratch_db.admin_uri, scratch_db.name, login["password"], reset=True,
+                              api_user=api_user)
+            assert c.post("/v1/registrations", json={}, headers=auth).status_code == 201
+
+            # The extra role reads the logins and nothing else in the dev database.
+            from pymongo import MongoClient
+            from pymongo.errors import OperationFailure
+            with MongoClient(scratch_db.uris["cairnApp"]) as app_client:
+                dev = app_client[seed_test_db.dev_db_name(scratch_db.name)]
+                with pytest.raises(OperationFailure):
+                    dev.test_logins.insert_one({"_id": "x"})
+    finally:
+        dev = scratch_db.admin_client[seed_test_db.dev_db_name(scratch_db.name)]
+        dev.command("dropAllRolesFromDatabase")
+        scratch_db.admin_client.drop_database(dev.name)

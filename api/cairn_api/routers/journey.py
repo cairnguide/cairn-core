@@ -1,7 +1,7 @@
 """UC-CASE-12 and UC-CASE-13 (see the journey that fits, choose how Cairn keeps in touch, start it, choose a
 first task), plus stepping back from tasks (UC-12) and status across the case (UC-13).
 """
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
@@ -196,7 +196,7 @@ def start(case_id: UUID, req: StartJourneyIn, request: Request,
         ready = acct.require_ready(s, request, write=False)
         c = intake.ctx(s, request, ready.account)
         case = intake.load_case(s, case_id)
-        if not s.one("SELECT cairn.is_case_member(%s, ARRAY['owner']) AS ok", (case_id,))["ok"]:
+        if not s.is_case_member(case_id, ("owner",)):
             raise case_access_denied()
         if ready.account["status"] == "read_only":
             raise ApiError(403, "account_read_only", c.copy["subscription_needed_new_journey"],
@@ -212,8 +212,7 @@ def start(case_id: UUID, req: StartJourneyIn, request: Request,
 
         answers = intake.load_answers(s, case_id)
         _, sel = intake.selection(s, case, answers)
-        trial_started_now = s.one("SELECT cairn.start_journey(%s, %s, %s) AS started",
-                                  (case_id, sel.template_version, sel.path_key))["started"]
+        trial_started_now = s.start_journey(case_id, sel.template_version, sel.path_key)
         case = intake.load_case(s, case_id)
         intake.sync_tasks(s, case, answers, sel)
         # No choice made at step 3 means in_app_only (UC-CASE-19).
@@ -290,9 +289,8 @@ def first_task(case_id: UUID, req: FirstTaskIn, request: Request,
         if req.choice == "small_task":
             return FirstTaskResponse(case=out, acknowledgment=c.copy["small_task_open"], task=None,
                                      next_step=NextStep(action="small_task", prompt=c.copy["small_task_example"]))
-        row = s.one("UPDATE cairn.case_tasks SET status = 'in_progress' WHERE case_id = %s AND id = %s "
-                    "AND status IN ('not_started', 'check_on_this', 'not_today') RETURNING id", (case_id, req.choice))
-        if row:
+        if s.update_task(case_id, req.choice, status="in_progress",
+                         only_from=("not_started", "check_on_this", "not_today")):
             s.audit("task_status_changed", case_id, "case_task", req.choice)
         task = journey.load_task(s, case_id, req.choice)
         if task is None:
@@ -336,10 +334,8 @@ def pause_journey(case_id: UUID, request: Request, req: PauseRequest | None = No
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
         ready = acct.require_ready(s, request, write=True)
-        row = s.one("UPDATE cairn.cases SET tasks_paused_until = now() + make_interval(days => %s) "
-                    "WHERE id = %s AND status <> 'draft' RETURNING id", (days, case_id))
-        if row is None:
-            raise case_access_denied()
+        s.update_case(case_id, activity=False, started_only=True,
+                      tasks_paused_until=s.now + timedelta(days=days))
         s.audit("journey_paused", case_id, "case", case_id)
         c = intake.ctx(s, request, ready.account)
         notes = [Note(kind="info", text=c.copy["pause_notifications_offer"])]
@@ -355,9 +351,7 @@ def resume_journey(case_id: UUID, request: Request, identity: Identity = Depends
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
         ready = acct.require_ready(s, request, write=True)
-        row = s.one("UPDATE cairn.cases SET tasks_paused_until = NULL WHERE id = %s RETURNING id", (case_id,))
-        if row is None:
-            raise case_access_denied()
+        s.update_case(case_id, activity=False, tasks_paused_until=None)
         s.audit("journey_resumed", case_id, "case", case_id)
         return _journey_view(s, request, ready.account, case_id, notes=[messages.RESUMED])
 

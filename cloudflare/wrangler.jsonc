@@ -1,9 +1,9 @@
 // Cloudflare deployment for the Cairn API. See README.md, "Deploy to Cloudflare".
 //
 // One Worker, two container classes built from the same image (../Dockerfile):
-//   CairnApi   serves every public request. Holds the app role's DATABASE_URL.
-//   CairnJobs  runs the scheduled jobs on the cron triggers below. Holds the OWNER connection
-//              string and provider secrets. The Worker never routes public traffic to it.
+//   CairnApi   serves every public request. Holds MONGODB_URI, the cairnApp user's connection string.
+//   CairnJobs  runs the scheduled jobs on the cron triggers below. Holds CAIRN_JOBS_MONGODB_URI (the
+//              cairnJobs user) and provider secrets. The Worker never routes public traffic to it.
 //
 // Secrets are not in this file. Set them with `npx wrangler secret put NAME` (see README.md).
 {
@@ -66,6 +66,7 @@
     "CAIRN_JOURNEY_MAP_URL": "https://cairn.example/first-weeks",
     "CAIRN_SUPPORT_URL": "https://cairn.example/support",
     "CAIRN_AI_PROVIDER_NAME": "Example AI Provider",
+    "CAIRN_MONGODB_DB": "cairn",
     "CAIRN_DB_POOL_MIN": "1",
     "CAIRN_DB_POOL_MAX": "5",
     "CAIRN_SMTP_PORT": "587"

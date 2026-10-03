@@ -1,7 +1,8 @@
 """Runtime settings, read from the environment.
 
-Credentials are never committed. DATABASE_URL must use a login role that is a
-member of cairn_app. Never the owner role, and never a role with BYPASSRLS.
+Credentials are never committed. MONGODB_URI must belong to a login user that
+holds only the cairnApp role (database/db/schema.py). Never an administrator,
+never the jobs or loader user, and never a user with bypassDocumentValidation.
 """
 import os
 import pathlib
@@ -32,10 +33,9 @@ def secret_from_env(name: str) -> str | None:
 
 @dataclass(frozen=True)
 class Settings:
-    database_url: str
-    # Role the pooled connections switch to. Keeps the session to cairn_app
-    # privileges even if the login role was granted anything extra.
-    db_session_role: str
+    mongodb_uri: str
+    # The Cairn database on that deployment. The cairnApp role is scoped to it.
+    mongodb_db: str
     pool_min_size: int
     pool_max_size: int
     # Auth0 (open question 6 in database/CLAUDE.md, resolved). Auth0 owns
@@ -73,7 +73,7 @@ class Settings:
     # clients and for a web client served from the API's own origin.
     cors_origins: tuple[str, ...] = ()
     # Development only. When set, POST /v1/dev/token exchanges a test login from the dev-only
-    # cairn_dev schema (database/tools/seed_test_db.py) for a token signed with this secret, so
+    # cairn_dev database (database/tools/seed_test_db.py) for a token signed with this secret, so
     # registration can be tried without an Auth0 tenant. Never set it anywhere real users are.
     # The Cloudflare Worker never forwards it (cloudflare/src/index.ts).
     dev_auth_secret: str | None = None
@@ -107,8 +107,8 @@ def cors_origins_from_env() -> tuple[str, ...]:
 
 def load_settings() -> Settings:
     return Settings(
-        database_url=_require("DATABASE_URL"),
-        db_session_role=os.environ.get("CAIRN_DB_SESSION_ROLE", "cairn_app"),
+        mongodb_uri=_require("MONGODB_URI"),
+        mongodb_db=os.environ.get("CAIRN_MONGODB_DB", "cairn"),
         pool_min_size=int(os.environ.get("CAIRN_DB_POOL_MIN", "1")),
         pool_max_size=int(os.environ.get("CAIRN_DB_POOL_MAX", "10")),
         auth0_domain=_require("CAIRN_AUTH0_DOMAIN"),

@@ -102,13 +102,10 @@ def acknowledge(consent_type: ConsentType, req: AcknowledgmentIn, request: Reque
         if req.document_version != current:
             raise ApiError(422, "acknowledgment_outdated", copy["acknowledgment_version_changed"],
                            document_version=current)
-        s.conn.execute(
-            "INSERT INTO cairn.consents (user_id, purpose, policy_version, auth_provider, client) "
-            "VALUES (%s, %s, %s, %s, %s)",
-            (uid, consent_type.value, current, identity.sign_in_method.value, req.client))
+        s.add_consent(consent_type.value, current, identity.sign_in_method.value, req.client)
         s.audit("consent_granted", object_type="user", object_id=uid)
         if not acct.step_reached(acct.load_account(s), CONSENT_STEP[consent_type]):
-            s.one("SELECT cairn.advance_onboarding(%s)", (CONSENT_STEP[consent_type].value,))
+            s.advance_onboarding(CONSENT_STEP[consent_type].value)
         return onboarding.response(s, request)
 
 
@@ -142,9 +139,8 @@ def save_preferred_name(req: PreferredNameIn, request: Request,
         if onboarding.shows_distress(req.preferred_name, req.name_pronunciation):
             return onboarding.response(s, request, screen=onboarding.paused_screen(copy, distress=True),
                                        next_step=onboarding.paused_step(copy))
-        s.conn.execute("UPDATE cairn.users SET preferred_name = %s, name_pronunciation = %s WHERE id = %s",
-                       (req.preferred_name, req.name_pronunciation, uid))
-        s.one("SELECT cairn.advance_onboarding('preferred_name_saved')")
+        s.update_account(preferred_name=req.preferred_name, name_pronunciation=req.name_pronunciation)
+        s.advance_onboarding("preferred_name_saved")
         s.audit("preferred_name_saved", object_type="user", object_id=uid)
         return onboarding.response(s, request)
 
@@ -170,8 +166,8 @@ def choose_voice(req: VoiceChoiceIn, request: Request,
         uid = s.require_user()
         if (done := _at_screen(s, request, ScreenId.personality)) is not None:
             return done
-        s.conn.execute("UPDATE cairn.users SET voice = %s WHERE id = %s", (voice.value, uid))
-        s.one("SELECT cairn.advance_onboarding('complete')")
+        s.update_account(voice=voice.value)
+        s.advance_onboarding("complete")
         s.audit("onboarding_completed", object_type="user", object_id=uid)
         account = acct.load_account(s)
         confirm = copy[f"voice_{voice.value}_confirm"].format(preferred_name=account["preferred_name"])

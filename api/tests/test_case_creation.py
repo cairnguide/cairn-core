@@ -1,10 +1,10 @@
-"""UC-CASE-01 to UC-CASE-18 acceptance criteria against a real database with row-level security.
+"""UC-CASE-01 to UC-CASE-18 acceptance criteria against a real MongoDB database, as the cairnApp user.
 
 Spec: database/docs/cairn-case-creation-use-cases.json. Each test names the use
 case it covers. [SAFETY] and [PRIVACY] criteria are release blockers.
 Rules that need no database are in test_case_creation_rules.py.
 
-Skipped unless CAIRN_TEST_ADMIN_URL points at a scratch PostgreSQL 15+ server.
+Skipped unless CAIRN_TEST_MONGODB_URI points at a scratch MongoDB replica set.
 Fake data only.
 """
 from __future__ import annotations
@@ -12,46 +12,67 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
-import psycopg
 import pytest
+from pymongo.errors import WriteError
 
+from cairn_api import maintenance
 from cairn_api.copy_store import load_case_copy
+from cairn_api.errors import RuleViolation
+from cairn_api.store import Session
 
-from .conftest import active_case, answer, as_user, find_task, new_draft, register, start_journey, task_keys
+from .conftest import (
+    active_case,
+    answer,
+    as_user,
+    expire_trial,
+    find_task,
+    new_draft,
+    register,
+    start_journey,
+    task_keys,
+    user_id,
+)
 
 COPY = load_case_copy()
 FIELDS = ("user_role", "display_name", "date_of_death", "place_of_death", "residence_state", "circumstance",
           "veteran_status", "estate_plan_status", "completed_items")
 
 
-# Row ids and timestamps are random hex and digits, so they can contain a short fragment such as "4111" or
-# "078" by chance. Leak checks remove them first. No sensitive number has either shape, so nothing real is hidden.
-RANDOM_MATERIAL = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}"
-                             r"|\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}(?::?\d{2})?)?", re.I)
+# Ids, timestamps, and the driver's DEBUG bookkeeping are random hex and digits, so they can contain a
+# short fragment such as "4111" or "078" by chance. Leak checks remove them first. No sensitive number has
+# any of these shapes, and pymongo's logged commands keep every stored value, so nothing real is hidden.
+RANDOM_MATERIAL = re.compile("|".join([
+    r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}",                                     # UUIDs
+    r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}(?::?\d{2})?)?",     # ISO timestamps
+    r"\b[0-9a-f]{24}\b",                                                                # ObjectIds
+    r'\\?"base64\\?": \\?"[A-Za-z0-9+/=]*',                                             # binary ids
+    r'\\?"(?:requestId|operationId|driverConnectionId|serverConnectionId|serverPort|durationMS|txnNumber|t|i)'
+    r'\\?": [0-9.e+-]+',                                                                # driver counters, clocks
+    r"\brtt: [0-9.e+-]+",                                                               # round-trip time
+]), re.I)
 
 
 def without_random_material(text: str) -> str:
     return RANDOM_MATERIAL.sub("<random>", text)
 
 
-def owner_sql(url, query, params=()):
-    with psycopg.connect(url, autocommit=True) as conn:
-        cur = conn.execute(query, params)
-        return cur.fetchall() if cur.description else None
-
-
 def trial(api, subject):
-    return owner_sql(api.scratch_url, "SELECT trial_started_at, trial_ends_at FROM cairn.users WHERE idp_subject = %s",
-                     (subject,))[0]
+    u = api.db.users.find_one({"idp_subject": subject})
+    return (u["trial_started_at"], u["trial_ends_at"])
 
 
 def answer_rows(api, case_id):
-    return {r[0]: r[1:] for r in owner_sql(api.scratch_url, "SELECT field_key, answer_state, value, own_words "
-                                                            "FROM cairn.case_intake_answers WHERE case_id = %s",
-                                           (case_id,))}
+    return {r["field_key"]: (r["answer_state"], r["value"], r["own_words"])
+            for r in api.db.case_intake_answers.find({"case_id": UUID(case_id)})}
+
+
+def case_doc(api, case_id) -> str:
+    """The whole stored case, as text, for checking that nothing sensitive was kept."""
+    return json.dumps(api.db.cases.find_one({"_id": UUID(case_id)}), default=str)
 
 
 def say(api, subject, case_id, text, session=None):
@@ -195,8 +216,7 @@ def test_uc03_display_name_is_used_but_never_as_a_legal_name(api):
     start_journey(api, "cc03", cid)
     status = api.get(f"/v1/cases/{cid}/status", headers=as_user("cc03")).json()
     assert status["deceased_name"] == "Grandpa Joe"
-    assert owner_sql(api.scratch_url, "SELECT legal_first_name, legal_last_name FROM cairn.deceased "
-                                      "WHERE case_id = %s", (cid,)) == []
+    assert api.db.deceased.count_documents({"case_id": UUID(cid)}) == 0
 
 
 def test_uc03_skipped_name_uses_your_loved_one_or_the_person_who_died(api):
@@ -294,9 +314,10 @@ def test_uc05_only_the_enum_is_stored_and_free_text_is_never_logged(api, caplog)
     r = api.put(f"/v1/cases/{cid}/intake/answers/circumstance", headers=as_user("cc05"),
                 json={"state": "answered", "value": "sudden_natural", "own_words": "a heart attack"})
     assert r.status_code == 422
-    with pytest.raises(psycopg.errors.CheckViolation):
-        owner_sql(api.scratch_url, "UPDATE cairn.case_intake_answers SET value = '\"heart attack\"' "
-                                   "WHERE case_id = %s AND field_key = 'circumstance'", (cid,))
+    with pytest.raises(WriteError) as refused:  # the validator refuses it, even for an administrator
+        api.db.case_intake_answers.update_one({"case_id": UUID(cid), "field_key": "circumstance"},
+                                              {"$set": {"value": "heart attack"}})
+    assert refused.value.code == 121
 
 
 def test_uc05_confirm_without_repeating_and_no_follow_up_after_prefer_not_to_say(api):
@@ -321,7 +342,7 @@ def test_uc05_volunteered_suicide_loss_is_acknowledged_and_resources_offered_onc
     assert "suicide" not in json.dumps(turn["proposals"] or [])
     again = say(api, "cc05c", cid, "His suicide was a shock.", session=turn["session"])
     assert not any(s["id"] == "loss_survivor_resources" for s in again["support"])
-    rows = json.dumps(owner_sql(api.scratch_url, "SELECT row_to_json(c) FROM cairn.cases c WHERE id = %s", (cid,)))
+    rows = case_doc(api, cid)
     assert "suicide" not in rows and "loss_survivor" not in rows
 
 
@@ -450,8 +471,7 @@ def test_uc09_change_on_active_case_keeps_progress(api):
     assert "confirm_named_executor" not in keys             # untouched add-on set aside
     assert find_task(after, "find_the_will")["status"] == "in_progress"  # progress kept
     assert find_task(after, "notify_banks")["status"] == "done"          # unaffected task kept
-    assert owner_sql(api.scratch_url, "SELECT count(*) FROM cairn.case_tasks WHERE case_id = %s",
-                     (cid,))[0][0] >= len(journey["weeks"][0]["tasks"])  # nothing deleted
+    assert api.db.case_tasks.count_documents({"case_id": UUID(cid)}) >= len(journey["weeks"][0]["tasks"])
 
 
 # ------------------------------------------------------------------ UC-CASE-10
@@ -465,8 +485,7 @@ def test_uc10_pause_saves_says_28_days_and_never_starts_trial_or_reminders(api):
     assert turn["next_step"]["prompt"] == COPY["pause"] and "28 days" in COPY["pause"]
     assert turn["case"]["last_intake_step"] == "display_name"
     assert trial(api, "cc10") == (None, None)
-    assert owner_sql(api.scratch_url, "SELECT count(*) FROM cairn.trial_reminders r JOIN cairn.users u "
-                                      "ON u.id = r.user_id WHERE u.idp_subject = 'cc10'")[0][0] == 0
+    assert api.db.trial_reminders.count_documents({"user_id": user_id(api, "cc10")}) == 0
     say(api, "cc10", cid, "I need a break")
     assert trial(api, "cc10") == (None, None)
 
@@ -482,11 +501,9 @@ def test_uc10_return_greets_and_says_where_they_left_off(api):
 
 
 def _age_draft(api, case_id, days):
-    with psycopg.connect(api.scratch_url) as conn:
-        conn.execute("ALTER TABLE cairn.cases DISABLE TRIGGER cases_guard")
-        conn.execute("UPDATE cairn.cases SET last_activity_at = now() - make_interval(days => %s) WHERE id = %s",
-                     (days, case_id))
-        conn.execute("ALTER TABLE cairn.cases ENABLE TRIGGER cases_guard")
+    """Moves a case's last activity into the past. Only a test does this: the API always writes the server time."""
+    api.db.cases.update_one({"_id": UUID(case_id)},
+                            {"$set": {"last_activity_at": datetime.now(timezone.utc) - timedelta(days=days)}})
 
 
 def test_uc10_any_answer_edit_or_open_resets_the_28_days(api):
@@ -497,8 +514,8 @@ def test_uc10_any_answer_edit_or_open_resets_the_28_days(api):
                 lambda: answer(api, "cc10c", cid, "user_role", "friend")):
         _age_draft(api, cid, 27)
         act()
-        age = owner_sql(api.scratch_url, "SELECT now() - last_activity_at FROM cairn.cases WHERE id = %s", (cid,))
-        assert age[0][0] < timedelta(minutes=1)
+        age = datetime.now(timezone.utc) - api.db.cases.find_one({"_id": UUID(cid)})["last_activity_at"]
+        assert age < timedelta(minutes=1)
 
 
 def test_uc10_cleanup_deletes_idle_drafts_only(api):
@@ -507,8 +524,9 @@ def test_uc10_cleanup_deletes_idle_drafts_only(api):
     register(api, "cc10d")
     old = new_draft(api, "cc10d")["case"]["id"]
     answer(api, "cc10d", old, "display_name", "Fakey")
-    owner_sql(api.scratch_url, "INSERT INTO cairn.context_items (case_id, item_key, payload) "
-                               "VALUES (%s, 'CONVO_SUMMARY', '{\"text\": \"fake conversation\"}')", (old,))
+    api.db.context_items.insert_one({"case_id": UUID(old), "item_key": "CONVO_SUMMARY",
+                                     "payload": {"text": "fake conversation"},
+                                     "updated_at": datetime.now(timezone.utc), "expires_at": None})
     fresh = new_draft(api, "cc10d")["case"]["id"]
     started, _ = active_case(api, "cc10d")
     _age_draft(api, old, 28)
@@ -516,16 +534,15 @@ def test_uc10_cleanup_deletes_idle_drafts_only(api):
     _age_draft(api, started, 400)
     before = trial(api, "cc10d")
 
-    owner_sql(api.scratch_url, "SELECT cairn.purge_inactive_drafts()")
-    remaining = {r[0] for r in owner_sql(api.scratch_url, "SELECT c.id::text FROM cairn.cases c JOIN cairn.users u "
-                                                          "ON u.id = c.created_by WHERE u.idp_subject = 'cc10d'")}
+    maintenance.purge_inactive_drafts(api.jobs_db)
+    uid = user_id(api, "cc10d")
+    remaining = {str(c["_id"]) for c in api.db.cases.find({"created_by": uid})}
     assert old not in remaining and {fresh, started} <= remaining
-    for table in ("case_intake_answers", "context_items", "case_members"):
-        assert owner_sql(api.scratch_url, f"SELECT count(*) FROM cairn.{table} WHERE case_id = %s", (old,))[0][0] == 0
+    for collection in ("case_intake_answers", "context_items", "case_tasks"):
+        assert api.db[collection].count_documents({"case_id": UUID(old)}) == 0, collection
     assert trial(api, "cc10d") == before
-    audit = owner_sql(api.scratch_url, "SELECT actor_id, action, object_type, object_id FROM cairn.audit_events "
-                                       "WHERE case_id = %s AND action = 'draft_case_expired'", (old,))
-    uid = owner_sql(api.scratch_url, "SELECT id FROM cairn.users WHERE idp_subject = 'cc10d'")[0][0]
+    audit = [(a["actor_id"], a["action"], a["object_type"], a["object_id"])
+             for a in api.db.audit_events.find({"case_id": UUID(old), "action": "draft_case_expired"})]
     assert audit == [(None, "draft_case_expired", "user", uid)]
 
 
@@ -589,10 +606,9 @@ def test_uc12_preview_then_start_starts_trial_once_in_local_time(api):
     case = started["case"]
     assert case["status"] == "active" and case["journey_template_key"] == "general"
     assert case["journey_template_version"] == 1 and case["journey_started_at"]
-    reminder = owner_sql(api.scratch_url, "SELECT r.due_at FROM cairn.trial_reminders r JOIN cairn.users u "
-                                          "ON u.id = r.user_id WHERE u.idp_subject = 'cc12' "
-                                          "AND r.kind = 'trial_ends_soon'")
-    assert reminder == [(ends - timedelta(days=3),)]
+    reminder = [r["due_at"] for r in api.db.trial_reminders.find({"user_id": user_id(api, "cc12"),
+                                                                  "kind": "trial_ends_soon"})]
+    assert reminder == [ends - timedelta(days=3)]
 
 
 def test_uc12_not_yet_keeps_the_draft_and_the_trial_unstarted(api):
@@ -640,17 +656,18 @@ def test_uc13_first_task_choice_never_auto_starts_and_not_today_leaves_none_in_p
     assert started["next_step"]["prompt"] == "What feels doable right now?"
     values = [o["value"] for o in started["next_step"]["options"]]
     assert values[1:] == ["small_task", "not_today"] and len(values) == 3
-    in_progress = "SELECT count(*) FROM cairn.case_tasks WHERE case_id = %s AND status = 'in_progress'"
-    assert owner_sql(api.scratch_url, in_progress, (cid,))[0][0] == 0
+    def in_progress():
+        return api.db.case_tasks.count_documents({"case_id": UUID(cid), "status": "in_progress"})
+    assert in_progress() == 0
 
     r = api.post(f"/v1/cases/{cid}/journey/first-task", json={"choice": "not_today"}, headers=as_user("cc13")).json()
     assert r["acknowledgment"] == COPY["not_today"] and r["case"]["status"] == "active"
-    assert owner_sql(api.scratch_url, in_progress, (cid,))[0][0] == 0
+    assert in_progress() == 0
 
     other = api.get(f"/v1/cases/{cid}/journey", headers=as_user("cc13")).json()["weeks"][3]["tasks"][0]
     r = api.post(f"/v1/cases/{cid}/journey/first-task", json={"choice": other["id"]}, headers=as_user("cc13")).json()
     assert r["task"]["id"] == other["id"] and r["acknowledgment"] is None  # opened without comment
-    assert owner_sql(api.scratch_url, in_progress, (cid,))[0][0] == 1
+    assert in_progress() == 1
 
 
 # ------------------------------------------------------------------ UC-CASE-14
@@ -713,8 +730,7 @@ def test_uc14_distress_is_never_persisted(api):
     register(api, "cc14e")
     cid = new_draft(api, "cc14e")["case"]["id"]
     say(api, "cc14e", cid, "I can't do this, I want to die")
-    dump = json.dumps(owner_sql(api.scratch_url, "SELECT row_to_json(c) FROM cairn.cases c WHERE id = %s", (cid,)),
-                      default=str)
+    dump = case_doc(api, cid)
     assert "risk" not in dump and "distress" not in dump and "die" not in dump
     assert answer_rows(api, cid) == {}
 
@@ -737,10 +753,9 @@ def test_uc15_sensitive_numbers_are_redacted_before_storage_logs_and_reply(api, 
     assert "[removed]" in turn["masked_text"]
     confirm(api, "cc15", cid, turn)
     answer(api, "cc15", cid, "display_name", "Aunt 078-05-1120")
-    dump = json.dumps([owner_sql(api.scratch_url, f"SELECT row_to_json(t) FROM cairn.{t} t WHERE case_id = %s",
-                                 (cid,)) for t in ("case_intake_answers", "audit_events")], default=str)
-    dump += json.dumps(owner_sql(api.scratch_url, "SELECT row_to_json(c) FROM cairn.cases c WHERE id = %s", (cid,)),
-                       default=str)
+    dump = json.dumps([list(api.db[c].find({"case_id": UUID(cid)})) for c in ("case_intake_answers", "audit_events")],
+                      default=str)
+    dump += case_doc(api, cid)
     dump, logs = without_random_material(dump), without_random_material(caplog.text)
     for fragment in ("078-05-1120", "078051120", "4111", "000123456789"):
         assert fragment not in dump and fragment not in logs, fragment
@@ -784,12 +799,11 @@ def test_uc17_death_not_yet_offers_a_draft_and_never_starts_the_journey(api):
     assert "start_journey" not in [o["value"] for o in preview["next_step"]["options"]]
     r = api.post(f"/v1/cases/{cid}/journey/start", json={"pre_button_notice_version": "x"}, headers=as_user("cc17"))
     assert r.status_code == 409
-    with pytest.raises(psycopg.errors.ObjectNotInPrerequisiteState):
-        with psycopg.connect(api.scratch_url) as conn:
-            uid = conn.execute("SELECT id FROM cairn.users WHERE idp_subject = 'cc17'").fetchone()[0]
-            conn.execute("SET ROLE cairn_app")
-            conn.execute("SELECT set_config('app.user_id', %s, false)", (str(uid),))
-            conn.execute("SELECT cairn.start_journey(%s, 1, 'general')", (cid,))
+    # The data layer refuses it too, not only the endpoint.
+    db = api.app.state.db
+    with pytest.raises(RuleViolation) as refused, db.client.start_session() as cs, cs.start_transaction():
+        Session(db.db, cs, user_id(api, "cc17")).start_journey(UUID(cid), 1, "general")
+    assert refused.value.kind == "prerequisite"
     assert trial(api, "cc17") == (None, None)
 
 
@@ -814,11 +828,7 @@ def test_uc18_second_case_acknowledges_another_loss_and_keeps_the_trial(api):
 def test_uc18_read_only_account_can_draft_but_not_start_without_a_subscription(api):
     register(api, "cc18b")
     active_case(api, "cc18b")
-    with psycopg.connect(api.scratch_url) as conn:
-        conn.execute("ALTER TABLE cairn.users DISABLE TRIGGER users_trial_set_once")
-        conn.execute("UPDATE cairn.users SET trial_started_at = trial_started_at - interval '29 days', "
-                     "trial_ends_at = trial_ends_at - interval '29 days' WHERE idp_subject = 'cc18b'")
-        conn.execute("ALTER TABLE cairn.users ENABLE TRIGGER users_trial_set_once")
+    expire_trial(api, "cc18b")
     draft = new_draft(api, "cc18b")["case"]["id"]
     turn = answer(api, "cc18b", draft, "display_name", "Fakey")
     assert turn["case"]["status"] == "draft"
@@ -827,7 +837,7 @@ def test_uc18_read_only_account_can_draft_but_not_start_without_a_subscription(a
     assert preview["next_step"]["prompt"] == COPY["subscription_needed_new_journey"]
     r = api.post(f"/v1/cases/{draft}/journey/start", json={"pre_button_notice_version": "x"}, headers=as_user("cc18b"))
     assert r.status_code == 403 and r.json()["next_step"]["action"] == "choose_subscription"
-    assert owner_sql(api.scratch_url, "SELECT status FROM cairn.cases WHERE id = %s", (draft,)) == [("draft",)]
+    assert api.db.cases.find_one({"_id": UUID(draft)})["status"] == "draft"
 
 
 # ------------------------------------------------------------------ access

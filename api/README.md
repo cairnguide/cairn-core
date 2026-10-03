@@ -1,9 +1,9 @@
 # Cairn API (MVP)
 
-HTTP API for the MVP use cases in `database/docs/cairn-mvp-use-cases.md`, the registration use cases in `database/docs/cairn-registration-use-cases.json`, the case creation use cases in `database/docs/cairn-case-creation-use-cases.json`, and the 2026-09-25 changes to both (`database/docs/cairn-*-2026-09-25.json`, audited in `database/docs/account-lifecycle-gap-audit.md`), built on the schema in `database/db/migrations`. FastAPI generates the contract from the request and response models, which are the only way data enters or leaves the service.
+HTTP API for the MVP use cases in `database/docs/cairn-mvp-use-cases.md`, the registration use cases in `database/docs/cairn-registration-use-cases.json`, the case creation use cases in `database/docs/cairn-case-creation-use-cases.json`, and the 2026-09-25 changes to both (`database/docs/cairn-*-2026-09-25.json`, audited in `database/docs/account-lifecycle-gap-audit.md`), built on the MongoDB schema in `database/db/schema.py` and the data-access layer in `cairn_api/store.py`. FastAPI generates the contract from the request and response models, which are the only way data enters or leaves the service.
 
 - Swagger UI: `/docs` when running. Static contract: [`openapi.json`](openapi.json) (OpenAPI 3.1).
-- Requests reject unknown fields, trim whitespace, and validate against the same rules as the database (state codes, date order, lengths, allowed values).
+- Requests reject unknown fields, trim whitespace, and validate against the same rules as the database validators (state codes, date order, lengths, allowed values).
 - Errors use RFC 9457 problem details (`application/problem+json`) and never echo submitted values or database messages.
 - Any response that moves a conversation forward includes a `next_step` with one prompt, so clients ask one question at a time.
 
@@ -53,7 +53,8 @@ The repository [README](../README.md) has the full setup: `make setup` and `make
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -e 'api[test]'
-export DATABASE_URL=postgresql://cairn_api_login@host/cairn   # a login role that is a member of cairn_app
+export MONGODB_URI='mongodb+srv://cairn_api:...@cluster.example.mongodb.net/'   # a user with only the cairnApp role
+export CAIRN_MONGODB_DB=cairn              # optional: the database name. cairn by default
 export CAIRN_AUTH0_DOMAIN=... CAIRN_AUTH0_AUDIENCE=... CAIRN_CLAIM_NAMESPACE=...   # see auth0/README.md
 export CAIRN_TERMS_VERSION=... CAIRN_PRIVACY_VERSION=...
 export CAIRN_PRIVACY_POLICY_URL=... CAIRN_TERMS_URL=... CAIRN_JOURNEY_MAP_URL=... CAIRN_SUPPORT_URL=...
@@ -69,17 +70,17 @@ export CAIRN_DEV_AUTH_SECRET=...           # development only: turns on POST /v1
 .venv/bin/uvicorn cairn_api.main:app --app-dir api
 ```
 
-The database needs migrations 0001 to 0011 **and** the optional `context_items_jsonb` and `context_items_read_only` migrations, in that order (`db/apply.sh context_items_jsonb context_items_read_only`). UC-10 and UC-11 store their records in `context_items` (`CERT_ORDER` and `BANK_NOTICES`).
+The database must be a MongoDB 7.0 or newer replica set (Atlas always is), because every request runs in one multi-document transaction. Run `database/db/apply.py` on it first, then load the templates. See [database/README.md](../database/README.md). UC-10 and UC-11 store their records in `context_items` (`CERT_ORDER` and `BANK_NOTICES`).
 
 ## Tests
 
 ```bash
 cd api
 ../.venv/bin/pytest                                          # contract tests, no database
-CAIRN_TEST_ADMIN_URL=postgresql://admin@localhost/postgres ../.venv/bin/pytest   # plus the use case suite
+CAIRN_TEST_MONGODB_URI='mongodb://admin:admin@localhost:27017/?replicaSet=rs0' ../.venv/bin/pytest   # everything
 ```
 
-The use case suite creates a scratch database, applies the migrations, loads the templates, runs every use case as `cairn_app` under row-level security, and then drops the database.
+With `CAIRN_TEST_MONGODB_URI` set, the suite creates a scratch database, applies `database/db/schema.py`, creates one login user per role, loads the templates as the loader user, runs every use case with the API connected as the `cairnApp` user, and then drops the database, its users, and its roles. `tests/test_data_security.py` checks the roles, the validators, the case boundary, read-only accounts, deletion, and the jobs (it replaces `verify.sql`). The URI must belong to an administrator of a scratch replica set with authentication on (`make setup` gives you one).
 
 ## Registration copy
 
@@ -89,7 +90,7 @@ Sign-up and onboarding copy lives in [`cairn_api/content/registration-copy.json`
 
 Case creation follows `database/docs/cairn-case-creation-use-cases.json` (spec 0.3.0). `database/docs/case-creation-gap-audit.md` maps every acceptance criterion to its test.
 
-- A new case is a draft. The 28 free days start only at the first `POST .../journey/start` (DEC-01), inside `cairn.start_journey`. No payment information is asked for anywhere (DEC-02).
+- A new case is a draft. The 28 free days start only at the first `POST .../journey/start` (DEC-01), inside `store.Session.start_journey`. No payment information is asked for anywhere (DEC-02).
 - Nothing about the person who died is collected at creation beyond the spec's data_fields. Legal names, dates of birth, SSNs, account numbers, and medical details never are. Free text is redacted as it is parsed (`RedactedText`), never stored, and only confirmed field values are saved.
 - Journey selection rules are template data in `database/content/journeys/journey-selection.json`, loaded into `journey_templates`. `cairn_api/journey_selection.py` only evaluates them.
 - Every turn acknowledges first, asks at most one question, and has one `next_step`. Every question offers Skip for now and I'm not sure, and every response carries `read_aloud`.
@@ -102,30 +103,31 @@ Copy lives in [`cairn_api/content/case-creation-copy.json`](cairn_api/content/ca
 
 The personality step (UC-REG-12) offers the voices in [`voices/manifest.yaml`](../voices/manifest.yaml). The label, tagline, and sample reply on that screen come from the manifest and each voice's reference response. The choice is stored as `users.voice` and can be changed with `PATCH /v1/me`. "Choose for me" saves the manifest's `default_voice`.
 
-The app loads and checks the folder at startup and refuses to start if it can't: every file must exist inside the folder, each voice file's `id` and onboarding label must match the manifest, every reference response must answer the same user message, and the manifest must list exactly the ids in `schemas.Voice`. The database accepts only those ids too (`users_voice_known`, migration 0009), so every stored voice can be loaded. `VoiceCatalog.system_blocks` builds the prompt for a user's stored voice in the same cache order as `voices/assemble_prompt.py`. Nothing calls the model yet.
+The app loads and checks the folder at startup and refuses to start if it can't: every file must exist inside the folder, each voice file's `id` and onboarding label must match the manifest, every reference response must answer the same user message, and the manifest must list exactly the ids in `schemas.Voice`. The database accepts only those ids too (`VOICES` in `database/db/schema.py`, checked by the users validator), so every stored voice can be loaded. `VoiceCatalog.system_blocks` builds the prompt for a user's stored voice in the same cache order as `voices/assemble_prompt.py`. Nothing calls the model yet.
 
-Adding a voice means a new voice file and manifest entry, a new value in `schemas.Voice`, a migration that replaces `users_voice_known`, and a confirmation string `voice_<id>_confirm` in the copy file. `tests/test_voices.py` fails until all four agree.
+Adding a voice means a new voice file and manifest entry, a new value in `schemas.Voice`, the id added to `VOICES` in `database/db/schema.py` (then `database/db/apply.py`), and a confirmation string `voice_<id>_confirm` in the copy file. `tests/test_voices.py` fails until all four agree.
 
-## Scheduled jobs (owner role, not the app)
+## Scheduled jobs (the cairnJobs user, not the app)
 
 | Job | Function | Notes |
 |---|---|---|
-| Trial status | `cairn.expire_trials()`, job `expire_trials` | Reporting only. Read-only is enforced from `trial_ends_at` directly |
+| Trial status | `maintenance.expire_trials`, job `expire_trials` | Reporting only. Read-only is enforced from `trial_ends_at` directly |
 | Outbound email | `python api/scripts/send_outbound.py` or job `outbound` | Every 5 minutes. Deletion confirmations (one each, address purged once sent), trial reminders for users who chose email, and the notifications users chose. SMTP, provider not chosen yet. Register the sending domain with Apple's Private Email Relay Service |
-| Held case deletion (UC-END-13) | `cairn.purge_held_cases()`, job `purge_held_cases` | At least hourly. Deletes cases whose 7-day hold has ended and queues their confirmation |
-| Draft cleanup (DEC-07) | `cairn.purge_inactive_drafts()`, job `purge_inactive_drafts` | At least daily. Deletes drafts idle for `app_settings.draft_retention_days` (28), with their answers and context. Never touches active cases |
+| Held case deletion (UC-END-13) | `maintenance.purge_held_cases`, job `purge_held_cases` | At least hourly. Deletes cases whose 7-day hold has ended and queues their confirmation |
+| Draft cleanup (DEC-07) | `maintenance.purge_inactive_drafts`, job `purge_inactive_drafts` | At least daily. Deletes drafts idle for `app_settings.draft_retention_days` (28), with their answers and context. Never touches active cases |
 | Identity cleanup | `python api/scripts/identity_cleanup.py` or job `identity_cleanup` | Deletes Auth0 users and revokes Apple tokens after account deletion |
-| Stale accounts | `cairn.purge_stale_accounts(pending, no_case)` | Periods come from the retention schedule [LEGAL REVIEW REQUIRED] |
+| Stale accounts | `maintenance.purge_stale_accounts(db, pending, no_case)` | Periods come from the retention schedule [LEGAL REVIEW REQUIRED] |
 
 On Cloudflare, Cron Triggers in `cloudflare/wrangler.jsonc` run the first four through `cairn_api/jobs.py` (`POST /jobs/{name}` in the private jobs container). Stale account purging isn't scheduled until the retention periods are set.
 
 ## Security choices
 
-- Every request runs in one transaction with `app.user_id` set through the transaction-local `set_config`, and each pooled connection runs `SET search_path = cairn, pg_temp` and `SET ROLE cairn_app`.
-- Onboarding order, the trial start, and read-only are enforced in the database: `cairn.advance_onboarding` refuses skipped steps, a trigger on `cases` starts the trial in the same transaction as the first case and never resets it, and restrictive row-level security policies block case writes until onboarding is complete and after the trial ends. `consents` is append-only.
+- Every request runs in one MongoDB transaction (snapshot reads, majority writes) as one user, through `store.Session`. The caller lives on the session, never on the pooled connection. The API connects as a user that holds only the `cairnApp` role.
+- The case boundary is enforced in `store.Session`, the only module that reads or writes case data (a test fails if any other module touches MongoDB). Onboarding order, the trial start, and read-only are enforced there too: `advance_onboarding` refuses skipped steps, `start_journey` starts the trial in the same transaction as the first journey and writes `trial_started_at` only while it is unset, and every case write checks the account. `consents` and `audit_events` are append-only. Collection validators and the role's privileges are the backstop (see [database/README.md](../database/README.md)).
+- A write that collides with another request on the same document returns 409 `try_again` instead of waiting, because MongoDB aborts the second transaction rather than blocking it. Clients can retry it as is.
 - Accounts are created with Google, Apple, or an email address, all through Auth0 (see [auth0/README.md](../auth0/README.md)). Auth0 handles passwords, passkeys, and email confirmation. The API only verifies Auth0's signed token and refuses any other sign-in connection. The email address and sign-in method come from the token, never from the request body, and registration is refused until `email_verified` is true.
 - Every write adds an `audit_events` row in the same transaction. Reads of the deceased's details (`GET /v1/cases/{id}`, `/status`) are audited too.
-- The service logs only the SQL error class and constraint name. It never logs names, dates, or free text.
+- The service logs only the error class, code, and rule name. It never logs names, dates, free text, or a validator's error details (they include the values it rejected).
 - `ssn_last4` is never read or returned. Cause of death is not collected. Pausing has no reason field.
 - A missing case and a case you can't access both return the same 403, so case IDs can't be probed.
 
@@ -134,10 +136,10 @@ On Cloudflare, Cron Triggers in `cloudflare/wrangler.jsonc` run the first four t
 1. **Accounts aren't linked across sign-in methods.** An email that already has an account gets a 409 naming the method used last time. Linking a second method after signing in with the first (UC-REG-05) isn't built. Support merges accounts with `database/docs/support-account-merge.md`.
 2. **Fiduciary flag (UC-4, UC-8).** The spec says not to add a user-level column without sign-off. The relationship picked at case hand-off only shapes the response (`language_profile`). It's stored per case as `case_members.relationship`.
 3. **POA role confirmation (UC-3).** `confirm_current_role` offers `named_executor`, `next_of_kin`, and `not_sure` as client routing values only. The note that POA authority ends at death is marked `legal_review_required`. [LEGAL REVIEW REQUIRED]
-4. **`context_items` stays in Postgres** (open question 1). The optional migration is required as described above.
+4. **`context_items` is a MongoDB collection** (open question 1), in the same database as everything else.
 5. **Task categories and kinds** (UC-11, UC-13) are keyed by `task_key` in `cairn_api/journey.py`. They should become a `category` field in the template content schema.
 6. **Pause length** defaults to 30 days (maximum 90), because `tasks_paused_until` needs an end time. When it expires, the tasks come back on their own.
 7. **Case list for fiduciaries** is not built, as UC-8 asks. It should be tracked as its own ticket.
 8. **New templates** `order_death_certificates`, `choose_funeral_provider`, and `notify_banks` in `database/content/tasks/us/` are unreviewed drafts, like the existing samples. They need counsel review and `last_verified_on` dates before release.
 9. **Crisis plan.** UC-REG-14 must match Trello card 26, which has no written plan yet. The distress phrase list in `onboarding.py` and the draft pause wording need checking against it.
-10. **Subscriptions.** Nothing sells a subscription yet. `users.status = 'subscribed'` can only be set by the owner role until billing is built.
+10. **Subscriptions.** Nothing sells a subscription yet. `users.status = 'subscribed'` can only be set by an administrator until billing is built.

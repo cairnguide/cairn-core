@@ -1,10 +1,10 @@
-"""End-to-end checks for UC-10 to UC-13 against a real database with row-level security.
+"""End-to-end checks for UC-10 to UC-13 against a real MongoDB database, as the cairnApp user.
 
 Case creation (UC-CASE-01 to UC-CASE-18) replaced UC-5 to UC-9 and is in
 test_case_creation.py. Registration and onboarding (UC-REG-01 to UC-REG-14,
 UC-ACCT-01) are in test_registration_onboarding.py.
 
-Skipped unless CAIRN_TEST_ADMIN_URL points at a scratch PostgreSQL 15+ server.
+Skipped unless CAIRN_TEST_MONGODB_URI points at a scratch MongoDB replica set.
 Fake data only (example.test addresses, obviously fake names).
 """
 from datetime import date, timedelta

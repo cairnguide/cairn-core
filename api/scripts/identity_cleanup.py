@@ -1,10 +1,11 @@
 """Run the identity cleanup queue once (UC-ACCT-01). Schedule it, for example every 15 minutes.
 
-Connects as the OWNER role, never the app role. Every value comes from the
+Connects as the cairnJobs MongoDB user, never the app user. Every value comes from the
 environment and the secret manager. Nothing here is committed. On Cloudflare the
 same job runs through cairn_api.jobs instead (see the repository README).
 
-  CAIRN_OWNER_DATABASE_URL          owner connection string
+  CAIRN_JOBS_MONGODB_URI            the cairnJobs user's connection string
+  CAIRN_MONGODB_DB                  the Cairn database name, cairn by default
   CAIRN_AUTH0_DOMAIN                tenant or custom domain
   CAIRN_AUTH0_MGMT_CLIENT_ID        Management API client (read:users, read:user_idp_tokens, delete:users)
   CAIRN_AUTH0_MGMT_CLIENT_SECRET    (or CAIRN_AUTH0_MGMT_CLIENT_SECRET_FILE)
@@ -19,12 +20,12 @@ import sys
 import httpx
 
 from cairn_api.identity_cleanup import IdentityCleanup, run_once
-from cairn_api.jobs import cleanup_settings_from_env, owner_database_url
+from cairn_api.jobs import cleanup_settings_from_env, jobs_database
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     cfg = cleanup_settings_from_env()
     with httpx.Client(timeout=15) as http:
-        done, failed = run_once(owner_database_url(), IdentityCleanup(cfg, http))
+        done, failed = run_once(jobs_database(), IdentityCleanup(cfg, http))
     print(f"identity cleanup: {done} done, {failed} failed")
     sys.exit(1 if failed else 0)

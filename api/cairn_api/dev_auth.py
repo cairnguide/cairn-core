@@ -3,7 +3,7 @@
 Off unless CAIRN_DEV_AUTH_SECRET is set. When it is on:
 
 - POST /v1/dev/token checks a username and password against the dev-only
-  cairn_dev schema that database/tools/seed_test_db.py creates, and returns an
+  cairn_dev database that database/tools/seed_test_db.py creates, and returns an
   access token signed with that secret (HS256).
 - The API accepts those tokens alongside Auth0's. Auth0 tokens are RS256 and
   still go to the real verifier, so each algorithm only ever meets its own key.
@@ -11,8 +11,8 @@ Off unless CAIRN_DEV_AUTH_SECRET is set. When it is on:
 The dev token carries the same claims as the Auth0 Action (auth0/actions/cairn-claims.js),
 so everything after sign-in, starting with POST /v1/registrations, runs the real code.
 
-cairn_dev is never created by a migration, so a production database has no test
-logins, and the Cloudflare Worker never forwards CAIRN_DEV_AUTH_SECRET to the container.
+cairn_dev is never created by database/db/apply.py, so a production deployment has no
+test logins, and the Cloudflare Worker never forwards CAIRN_DEV_AUTH_SECRET to the container.
 """
 from __future__ import annotations
 
@@ -105,10 +105,10 @@ def dev_token(body: DevLogin, request: Request) -> DevToken:
     if not settings.dev_auth_secret:
         raise ApiError(404, "not_found", "Not found.")
     with request.app.state.db.session() as s:
-        if s.one("SELECT to_regprocedure('cairn_dev.test_login(text)') AS fn")["fn"] is None:
-            raise ApiError(503, "test_logins_missing",
-                           "There are no test logins in this database. Run: make seed-test-db")
-        row = s.one("SELECT * FROM cairn_dev.test_login(%s)", (body.username,))
+        seeded, row = s.test_login(body.username)
+    if not seeded:
+        raise ApiError(503, "test_logins_missing",
+                       "There are no test logins in this database. Run: make seed-test-db")
     if row is None or not verify_password(body.password, row["password_hash"]):
         raise ApiError(401, "invalid_login", "That username and password don't match a test login.")
     return DevToken(access_token=issue_token(settings.dev_auth_secret, settings.auth0_audience,

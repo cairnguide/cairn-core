@@ -30,7 +30,7 @@ jobs:
         run: ruff check --output-format=github .
 
       - name: Shell scripts (shellcheck)
-        run: shellcheck database/db/apply.sh database/db/tests/run.sh .github/scripts/*.sh scripts/*.sh
+        run: shellcheck .github/scripts/*.sh scripts/*.sh
 
       - name: GitHub Actions workflows (actionlint)
         run: actionlint

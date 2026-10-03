@@ -1,11 +1,14 @@
 """Test fixtures.
 
-Contract tests run with no database. Integration tests need a scratch
-PostgreSQL 15+ server and are skipped unless CAIRN_TEST_ADMIN_URL is set:
+Contract tests run with no database. Integration tests need a scratch MongoDB
+replica set (7.0 or newer) and are skipped unless CAIRN_TEST_MONGODB_URI is set:
 
-  CAIRN_TEST_ADMIN_URL=postgresql://admin@localhost/postgres pytest
+  CAIRN_TEST_MONGODB_URI='mongodb://admin:pw@localhost:27017/?replicaSet=rs0' pytest
 
-The admin URL must be able to create databases. Never point it at real data.
+The URI must belong to an administrator that can create databases, roles, and
+users. Each test session gets its own database, which is dropped at the end,
+with its users and roles. The API connects as a user that holds only the
+cairnApp role, exactly as in production. Never point it at real data.
 """
 from __future__ import annotations
 
@@ -13,6 +16,7 @@ import os
 import pathlib
 import sys
 import uuid
+from datetime import timedelta
 
 import pytest
 from fastapi import Header
@@ -27,7 +31,7 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 DB_DIR = REPO / "database"
 
 SETTINGS = Settings(
-    database_url="postgresql://unused", db_session_role="cairn_app", pool_min_size=1, pool_max_size=4,
+    mongodb_uri="mongodb://unused", mongodb_db="unused", pool_min_size=1, pool_max_size=4,
     auth0_domain="cairn-test.example.test", auth0_audience="https://api.cairn.example.test",
     claim_namespace="https://cairn.invalid/", email_connection="email",
     terms_version="terms-v1", privacy_version="privacy-v1",
@@ -67,52 +71,87 @@ def contract_client():
 
 # ------------------------------------------------------------------ integration
 
-def _apply_sql(conn, path: pathlib.Path) -> None:
-    conn.execute(path.read_text())
+def _import_database_tools():
+    for folder in (DB_DIR / "db", DB_DIR / "tools"):
+        if str(folder) not in sys.path:
+            sys.path.insert(0, str(folder))
+    import apply
+    import create_login_user
+    import load_templates
+    return apply, create_login_user, load_templates
+
+
+class Scratch:
+    """A scratch Cairn database: the admin handle for setup and assertions, and each role's login URI."""
+
+    def __init__(self, admin_uri: str):
+        from pymongo import MongoClient
+        self.name = f"cairn_api_test_{uuid.uuid4().hex[:8]}"
+        self.admin_client = MongoClient(admin_uri, uuidRepresentation="standard", tz_aware=True)
+        self.db = self.admin_client[self.name]
+        self.admin_uri = admin_uri
+        self.uris: dict[str, str] = {}
+
+    def login(self, role: str) -> str:
+        _, create_login_user, _ = _import_database_tools()
+        user, password = f"{role}_{uuid.uuid4().hex[:6]}", uuid.uuid4().hex
+        self.db.command("createUser", user, pwd=password, roles=[role])
+        self.uris[role] = create_login_user.user_uri(self.admin_uri, user, password, self.name)
+        return self.uris[role]
+
+    def drop(self):
+        self.db.command("dropAllUsersFromDatabase")
+        self.db.command("dropAllRolesFromDatabase")
+        self.admin_client.drop_database(self.name)
+        self.admin_client.close()
 
 
 @pytest.fixture(scope="session")
-def scratch_db_url():
-    admin_url = os.environ.get("CAIRN_TEST_ADMIN_URL")
-    if not admin_url:
-        pytest.skip("Set CAIRN_TEST_ADMIN_URL to run integration tests against a scratch Postgres server.")
-    from urllib.parse import urlsplit
-
-    import psycopg
-
-    name = f"cairn_api_test_{uuid.uuid4().hex[:8]}"
-    u = urlsplit(admin_url)
-    url = f"{u.scheme}://{u.netloc}/{name}" + (f"?{u.query}" if u.query else "")
-    with psycopg.connect(admin_url, autocommit=True) as admin:
-        admin.execute(f'CREATE DATABASE "{name}"')
+def scratch_db():
+    admin_uri = os.environ.get("CAIRN_TEST_MONGODB_URI")
+    if not admin_uri:
+        pytest.skip("Set CAIRN_TEST_MONGODB_URI to run integration tests against a scratch MongoDB replica set.")
+    apply, _, load_templates = _import_database_tools()
+    scratch = Scratch(admin_uri)
     try:
-        with psycopg.connect(url, autocommit=True) as conn:
-            for f in sorted((DB_DIR / "db" / "migrations").glob("*.sql")):
-                _apply_sql(conn, f)
-            _apply_sql(conn, DB_DIR / "db" / "optional" / "context_items_jsonb.sql")
-            _apply_sql(conn, DB_DIR / "db" / "optional" / "context_items_read_only.sql")
-        sys.path.insert(0, str(DB_DIR / "tools"))
-        import load_templates
+        apply.apply(scratch.db, log=lambda _: None)
+        for role in ("cairnApp", "cairnJobs", "cairnLoader"):
+            scratch.login(role)
         templates, errors = load_templates.load_and_validate(DB_DIR / "content", allow_unreviewed=True)
         journeys, journey_errors = load_templates.load_and_validate_journeys(
             DB_DIR / "content", {doc["task_key"] for _, doc in templates}, allow_unreviewed=True)
         assert not errors and not journey_errors, errors + journey_errors
-        load_templates.load_into_db(templates, "api-test", url, journeys)
-        yield url
+        load_templates.load_into_db(templates, "api-test", scratch.uris["cairnLoader"], journeys, scratch.name)
+        yield scratch
     finally:
-        with psycopg.connect(admin_url, autocommit=True) as admin:
-            admin.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+        scratch.drop()
 
 
 @pytest.fixture(scope="session")
-def api(scratch_db_url):
-    from cairn_api.db import Database
-    db = Database(scratch_db_url, session_role="cairn_app", min_size=1, max_size=4)
+def api(scratch_db):
+    from cairn_api.db import Database, client_for
+    db = Database(scratch_db.uris["cairnApp"], scratch_db.name, min_size=1, max_size=4)
     app = create_app(settings=SETTINGS, database=db, verifier=object())
     app.dependency_overrides[get_identity] = fake_identity
+    jobs_client = client_for(scratch_db.uris["cairnJobs"], app_name="cairn-test-jobs")
     with TestClient(app) as client:
-        client.scratch_url = scratch_db_url  # owner connection, for test setup and assertions only
+        client.db = scratch_db.db                     # administrator, for test setup and assertions only
+        client.jobs_db = jobs_client[scratch_db.name]  # the cairnJobs user, as the jobs container connects
+        client.scratch = scratch_db
         yield client
+    jobs_client.close()
+
+
+def user_id(api, subject: str):
+    return api.db.users.find_one({"idp_subject": subject})["_id"]
+
+
+def expire_trial(api, subject: str, days: int = 29) -> None:
+    """Moves an account's trial into the past. Only a test does this: the API never rewrites the trial."""
+    u = api.db.users.find_one({"idp_subject": subject})
+    shift = timedelta(days=days)
+    api.db.users.update_one({"_id": u["_id"]}, {"$set": {"trial_started_at": u["trial_started_at"] - shift,
+                                                          "trial_ends_at": u["trial_ends_at"] - shift}})
 
 
 def onboard(api, subject: str, method: str = "email", preferred_name: str = "Pat",

@@ -43,7 +43,7 @@ def _ctx(s: Session, request: Request) -> intake.Ctx:
 
 def _owned_case(c: intake.Ctx, case_id: UUID) -> dict:
     case = intake.load_case(c.s, case_id)
-    if not c.s.one("SELECT cairn.is_case_member(%s, ARRAY['owner', 'co_executor']) AS ok", (case_id,))["ok"]:
+    if not c.s.is_case_member(case_id, ("owner", "co_executor")):
         raise case_access_denied()
     return case
 
@@ -55,7 +55,7 @@ def _resolve(c: intake.Ctx, case_id: UUID, req: NotificationSetIn) -> Notificati
         return nt.KEEP_IT_SIMPLE
     if req.preset == NotificationPreset.skip:
         return nt.IN_APP_ONLY
-    # same_as: another of this user's journeys. Row-level security hides anyone else's.
+    # same_as: another of this user's journeys. The case boundary hides anyone else's.
     if req.same_as_case_id == case_id:
         raise ApiError(422, "validation_failed", "Choose a different journey to copy.")
     row = nt.load(c.s, req.same_as_case_id)

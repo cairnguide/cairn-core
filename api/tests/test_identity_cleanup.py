@@ -1,12 +1,11 @@
 """Identity cleanup after account deletion (UC-ACCT-01). No network: every call goes to a mock transport.
 
-The queue test needs CAIRN_TEST_ADMIN_URL (see conftest.py).
+The queue test needs CAIRN_TEST_MONGODB_URI (see conftest.py).
 """
 import json
 
 import httpx
 import jwt
-import psycopg
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -88,9 +87,8 @@ def test_queue_is_cleared_on_success_and_kept_on_failure(api):
         return httpx.Response(204)
 
     cleanup, _ = cleanup_with(handler)
-    done, failed = run_once(api.scratch_url, cleanup)
+    done, failed = run_once(api.jobs_db, cleanup)
     assert (done, failed) >= (1, 1)
-    with psycopg.connect(api.scratch_url) as conn:
-        rows = conn.execute("SELECT idp_subject, attempts, last_error FROM cairn.identity_deletion_requests "
-                            "WHERE idp_subject LIKE '%cleanup%'").fetchall()
+    rows = [(r["idp_subject"], r["attempts"], r["last_error"]) for r in api.db.identity_deletion_requests.find(
+        {"idp_subject": {"$regex": "cleanup"}})]
     assert rows == [("apple|001.cleanup-fail", 1, "auth0_lookup_failed")]

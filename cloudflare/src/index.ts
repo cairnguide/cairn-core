@@ -11,7 +11,8 @@ type Settings = Record<string, string>;
 // `wrangler secret put`. Anything unset is left out, and the Python side decides what's required.
 // Never add CAIRN_DEV_AUTH_SECRET: development sign-in must not be reachable on Cloudflare.
 const API_KEYS = [
-  "DATABASE_URL",
+  "MONGODB_URI",
+  "CAIRN_MONGODB_DB",
   "CAIRN_DB_POOL_MIN",
   "CAIRN_DB_POOL_MAX",
   "CAIRN_AUTH0_DOMAIN",
@@ -31,9 +32,10 @@ const API_KEYS = [
   "CAIRN_CORS_ORIGINS",
 ] as const;
 
-// The owner connection string and provider secrets reach only the jobs container.
+// The jobs user's connection string and provider secrets reach only the jobs container.
 const JOBS_KEYS = [
-  "CAIRN_OWNER_DATABASE_URL",
+  "CAIRN_JOBS_MONGODB_URI",
+  "CAIRN_MONGODB_DB",
   "CAIRN_SMTP_HOST",
   "CAIRN_SMTP_PORT",
   "CAIRN_SMTP_USERNAME",

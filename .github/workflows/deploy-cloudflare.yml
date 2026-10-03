@@ -1,11 +1,15 @@
-# Deploys Cairn to Cloudflare: database migrations, templates, then the Worker and container image.
+# Deploys Cairn to Cloudflare: the MongoDB schema, templates, then the Worker and container image.
 # Run it by hand from the Actions tab (Deploy to Cloudflare > Run workflow) once main is green.
 # One-time setup, including the secrets below, is in README.md under "Deploy to Cloudflare".
 #
 # Repository or "cloudflare" environment secrets:
 #   CLOUDFLARE_API_TOKEN       token with Workers Scripts, Containers, and Durable Objects edit rights
 #   CLOUDFLARE_ACCOUNT_ID
-#   CAIRN_OWNER_DATABASE_URL   owner connection string, for migrations and the template loader only
+#   CAIRN_ADMIN_MONGODB_URI    a database administrator, for database/db/apply.py only
+#   CAIRN_LOADER_MONGODB_URI   the cairnLoader user, for the template loader only
+# Repository or "cloudflare" environment variables:
+#   CAIRN_MONGODB_DB           the database name, cairn when unset
+#   CAIRN_MANAGE_ROLES         "false" on Atlas, where roles are managed in Atlas (database/README.md)
 name: Deploy to Cloudflare
 
 on:
@@ -16,7 +20,7 @@ on:
         type: boolean
         default: false
       skip_database:
-        description: "Skip migrations and templates (deploy code only)"
+        description: "Skip the schema and templates (deploy code only)"
         type: boolean
         default: false
 
@@ -45,20 +49,26 @@ jobs:
 
       - name: Install database tools
         if: ${{ !inputs.skip_database }}
-        run: |
-          pip install -r database/tools/requirements.txt
-          command -v psql || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
+        run: pip install -r database/tools/requirements.txt
 
-      - name: Apply migrations
+      - name: Apply the schema (collections, validators, indexes, settings)
         if: ${{ !inputs.skip_database }}
         env:
-          DATABASE_URL: ${{ secrets.CAIRN_OWNER_DATABASE_URL }}
-        run: database/db/apply.sh context_items_jsonb context_items_read_only
+          CAIRN_ADMIN_MONGODB_URI: ${{ secrets.CAIRN_ADMIN_MONGODB_URI }}
+          CAIRN_MONGODB_DB: ${{ vars.CAIRN_MONGODB_DB || 'cairn' }}
+          MANAGE_ROLES: ${{ vars.CAIRN_MANAGE_ROLES || 'true' }}
+        run: |
+          args=()
+          if [[ "$MANAGE_ROLES" == "false" ]]; then
+            args+=(--skip-roles)
+          fi
+          python database/db/apply.py "${args[@]}"
 
       - name: Load templates
         if: ${{ !inputs.skip_database }}
         env:
-          DATABASE_URL: ${{ secrets.CAIRN_OWNER_DATABASE_URL }}
+          CAIRN_LOADER_MONGODB_URI: ${{ secrets.CAIRN_LOADER_MONGODB_URI }}
+          CAIRN_MONGODB_DB: ${{ vars.CAIRN_MONGODB_DB || 'cairn' }}
           ALLOW_UNREVIEWED: ${{ inputs.allow_unreviewed_templates }}
         run: |
           args=(--git-release "${GITHUB_SHA::12}")

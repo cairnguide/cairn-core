@@ -1,7 +1,7 @@
 """Cairn voices (voices/): loading, validation, provisioning, and the user's stored voice (UC-REG-12).
 
 Tests that take the `contract_client` fixture, or no fixture, need no database. The rest
-need CAIRN_TEST_ADMIN_URL (see conftest.py). Fake data only.
+need CAIRN_TEST_MONGODB_URI (see conftest.py). Fake data only.
 """
 from __future__ import annotations
 
@@ -9,9 +9,7 @@ import dataclasses
 import importlib.util
 import re
 import shutil
-import uuid
 
-import psycopg
 import pytest
 import yaml
 from fastapi.testclient import TestClient
@@ -21,10 +19,10 @@ from cairn_api.main import create_app
 from cairn_api.schemas import Voice
 from cairn_api.voices import DEFAULT_DIR, SAFETY_MODES, VoiceError, load_voices
 
-from .conftest import DB_DIR, REPO, SETTINGS, _apply_sql, as_user, onboard
+from .conftest import DB_DIR, REPO, SETTINGS, as_user, onboard
 
 VOICES_DIR = REPO / "voices"
-MIGRATION = DB_DIR / "db" / "migrations" / "0009_user_voice.sql"
+SCHEMA = DB_DIR / "db" / "schema.py"
 MANIFEST = yaml.safe_load((VOICES_DIR / "manifest.yaml").read_text())
 
 
@@ -52,11 +50,12 @@ def test_manifest_paths_resolve_inside_the_voices_folder():
     assert (VOICES_DIR / MANIFEST["core"]).is_file()
 
 
-def test_voice_ids_match_the_database_constraint_and_default():
-    sql = MIGRATION.read_text()
-    listed = re.search(r"CHECK \(voice IN \(([^)]*)\)\)", sql).group(1)
-    assert [v.strip().strip("'") for v in listed.split(",")] == [v.value for v in Voice]
-    assert re.search(r"DEFAULT '(\w+)'", sql).group(1) == MANIFEST["default_voice"]
+def test_voice_ids_match_the_database_validator_and_default():
+    source = SCHEMA.read_text()
+    listed = re.search(r"^VOICES = \(([^)]*)\)", source, re.MULTILINE).group(1)
+    assert [v.strip().strip('"') for v in listed.split(",")] == [v.value for v in Voice]
+    store = (REPO / "api" / "cairn_api" / "store.py").read_text()
+    assert re.search(r'"voice": "(\w+)"', store).group(1) == MANIFEST["default_voice"]
 
 
 def test_every_voice_answers_the_same_situation():
@@ -235,8 +234,7 @@ def test_settings_reject_an_unknown_or_cleared_voice(contract_client, body):
 # ------------------------------------------------------------------ the user's voice (database)
 
 def _voice_of(api, subject):
-    with psycopg.connect(api.scratch_url, autocommit=True) as conn:
-        return conn.execute("SELECT voice FROM cairn.users WHERE idp_subject = %s", (subject,)).fetchone()[0]
+    return api.db.users.find_one({"idp_subject": subject})["voice"]
 
 
 @pytest.mark.parametrize("voice", list(Voice))
@@ -277,48 +275,7 @@ def test_the_stored_voice_provisions_the_prompt_and_follows_settings(api):
 def test_the_database_refuses_a_voice_outside_the_manifest(api):
     subject = "email|voice-refused"
     api.post("/v1/registrations", json={}, headers=as_user(subject))
-    with psycopg.connect(api.scratch_url, autocommit=True) as conn, pytest.raises(psycopg.errors.CheckViolation):
-        conn.execute("UPDATE cairn.users SET voice = 'gentle' WHERE idp_subject = %s", (subject,))
-
-
-# ------------------------------------------------------------------ migration 0009 (database)
-
-@pytest.fixture
-def pre_voice_db():
-    """A scratch database with migrations up to 0008, before users.voice existed."""
-    import os
-    from urllib.parse import urlsplit
-    admin_url = os.environ.get("CAIRN_TEST_ADMIN_URL")
-    if not admin_url:
-        pytest.skip("Set CAIRN_TEST_ADMIN_URL to run integration tests against a scratch Postgres server.")
-    name = f"cairn_voice_mig_{uuid.uuid4().hex[:8]}"
-    u = urlsplit(admin_url)
-    url = f"{u.scheme}://{u.netloc}/{name}" + (f"?{u.query}" if u.query else "")
-    with psycopg.connect(admin_url, autocommit=True) as admin:
-        admin.execute(f'CREATE DATABASE "{name}"')
-    try:
-        with psycopg.connect(url, autocommit=True) as conn:
-            for f in sorted((DB_DIR / "db" / "migrations").glob("*.sql")):
-                if f.name < "0009":
-                    _apply_sql(conn, f)
-        yield url
-    finally:
-        with psycopg.connect(admin_url, autocommit=True) as admin:
-            admin.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
-
-
-def test_migration_keeps_each_existing_choice_at_the_closest_voice(pre_voice_db):
-    with psycopg.connect(pre_voice_db, autocommit=True) as conn:
-        for p in ("gentle", "steady", "straightforward"):
-            conn.execute("INSERT INTO cairn.users (idp_subject, email, personality) VALUES (%s, %s, %s)",
-                         (f"email|mig-{p}", f"mig-{p}@example.test", p))
-        _apply_sql(conn, MIGRATION)
-        rows = dict(conn.execute("SELECT idp_subject, voice FROM cairn.users").fetchall())
-        assert rows == {"email|mig-gentle": "warm_patient", "email|mig-steady": "steady_direct",
-                        "email|mig-straightforward": "plain_practical"}
-        columns = {r[0] for r in conn.execute(
-            "SELECT column_name FROM information_schema.columns WHERE table_schema = 'cairn' "
-            "AND table_name = 'users'").fetchall()}
-        assert "voice" in columns and "personality" not in columns
-        assert conn.execute("SELECT has_column_privilege('cairn_app', 'cairn.users', 'voice', 'UPDATE')"
-                            ).fetchone()[0]
+    from pymongo.errors import WriteError
+    with pytest.raises(WriteError) as refused:
+        api.db.users.update_one({"idp_subject": subject}, {"$set": {"voice": "gentle"}})
+    assert refused.value.code == 121  # DocumentValidationFailure, even for an administrator
