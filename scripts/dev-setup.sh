@@ -6,6 +6,7 @@
 #   4. the cairn_api, cairn_jobs, and cairn_loader users, each with one role and a fresh random password
 #   5. the task and journey templates (drafts allowed, development only)
 #   6. .env, copied from .env.example on the first run, with MONGODB_URI and CAIRN_JOBS_MONGODB_URI filled in
+#   7. test logins (database/README.md) and CAIRN_DEV_AUTH_SECRET in .env, so sign-up works without Auth0
 #
 # Usage: scripts/dev-setup.sh
 # CAIRN_ADMIN_MONGODB_URI defaults to the devcontainer's MongoDB (admin:admin@localhost:27017). It needs
@@ -57,6 +58,16 @@ for key in ("MONGODB_URI", "CAIRN_JOBS_MONGODB_URI", "CAIRN_MONGODB_DB"):
 env.write_text(text)
 PY
 
+echo "== Test logins (development only)"
+# After the login users: create_login_user.py resets cairn_api's roles, and this adds the test login one back.
+if $PY database/tools/seed_test_db.py; then
+  if ! grep -q '^CAIRN_DEV_AUTH_SECRET=' .env; then
+    echo "CAIRN_DEV_AUTH_SECRET=$($PY -c 'import secrets; print(secrets.token_urlsafe(32))')" >> .env
+  fi
+else
+  echo "Skipped. Test logins are only added to a database on this machine." >&2
+fi
+
 if command -v npm >/dev/null && [[ -f cloudflare/package-lock.json ]]; then
   echo "== Cloudflare Worker dependencies"
   (cd cloudflare && npm ci --no-audit --no-fund --loglevel=error)
@@ -64,3 +75,4 @@ fi
 
 echo
 echo "Ready. Start the API with:  make run   (then open http://localhost:8000/docs)"
+echo "Sign in as a test user with:  make dev-token   (usernames and password in database/README.md)"

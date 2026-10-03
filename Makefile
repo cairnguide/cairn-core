@@ -5,8 +5,9 @@ VENV ?= .venv
 PY := $(VENV)/bin/python
 # The devcontainer's MongoDB administrator. Never point these targets at real data.
 MONGO_ADMIN_URI ?= mongodb://admin:admin@localhost:27017/?replicaSet=rs0
+LOGIN ?= test.user
 
-.PHONY: help setup db-apply run run-jobs job test test-db db-check lint openapi docker-build docker-run cf-install cf-types cf-check cf-dev cf-deploy cf-tail
+.PHONY: help setup db-apply seed-test-db dev-token run run-jobs job test test-db db-check lint openapi docker-build docker-run cf-install cf-types cf-check cf-dev cf-deploy cf-tail
 
 help: ## List the commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-14s %s\n", $$1, $$2}'
@@ -16,6 +17,14 @@ setup: ## One-time setup: .venv, MongoDB replica set, schema, login users, templ
 
 db-apply: ## Apply database/db/schema.py to the local database (collections, validators, indexes, roles)
 	CAIRN_ADMIN_MONGODB_URI='$(MONGO_ADMIN_URI)' $(PY) database/db/apply.py
+
+seed-test-db: ## Add the test logins to the local database (development only). ARGS=--reset starts them over
+	CAIRN_ADMIN_MONGODB_URI='$(MONGO_ADMIN_URI)' $(PY) database/tools/seed_test_db.py $(ARGS)
+
+dev-token: ## Print an access token for a test login while make run is up, for example: make dev-token LOGIN=new.user
+	@curl -fsS -X POST http://localhost:8000/v1/dev/token -H 'Content-Type: application/json' \
+	  -d '{"username": "$(LOGIN)", "password": "$(or $(CAIRN_TEST_PASSWORD),cairn-local-test-password)"}' \
+	  | $(PY) -c 'import json, sys; print(json.load(sys.stdin)["access_token"])'
 
 run: ## Run the API with reload on http://localhost:8000 (reads .env)
 	$(VENV)/bin/uvicorn cairn_api.main:app --app-dir api --env-file .env --reload --host 0.0.0.0 --port 8000

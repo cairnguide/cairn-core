@@ -82,3 +82,58 @@ The test suite needs an administrator URI for a scratch replica set (`CAIRN_TEST
 ## Changing the schema
 
 Edit `db/schema.py`, then run `db/apply.py`. Validators and indexes are declarative: apply updates validators in place with `collMod` and adds new indexes. It reports, and never drops, an index whose definition changed. A change that needs existing documents rewritten goes in `MIGRATIONS` in `db/apply.py` as a new, numbered function. Never edit one that has run anywhere: apply refuses a changed checksum, like the old SQL migrations.
+
+## Test logins (local development only)
+
+`make setup` adds two test logins to a local `cairn_dev` database next to `cairn`, so you can sign up and sign in without an Auth0 tenant. Cairn never stores real passwords. Auth0 owns sign-in. These are fake credentials for fake accounts, and they only work while the API runs with `CAIRN_DEV_AUTH_SECRET` set, which `make setup` writes to `.env`.
+
+| Username | Password | Email | What it's for |
+|---|---|---|---|
+| `test.user` | `cairn-local-test-password` | `test.user@example.test` | Has an account already, at the start of onboarding. `POST /v1/registrations` resumes it (200). |
+| `new.user` | `cairn-local-test-password` | `new.user@example.test` | Has a login but no account. `POST /v1/registrations` creates the account (201), so you can try the whole sign-up flow. |
+
+Usernames aren't case sensitive. To use a different password, set `CAIRN_TEST_PASSWORD` when you seed and when you run `make dev-token`.
+
+### Sign in and register
+
+With the API running (`make run`), get a token and create the account:
+
+```bash
+TOKEN=$(make -s dev-token LOGIN=new.user)
+```
+
+```bash
+curl -X POST http://localhost:8000/v1/registrations -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"time_zone": "America/New_York"}'
+```
+
+Or in the Swagger UI at http://localhost:8000/docs, select **Authorize** and paste the token from `make dev-token`. The token lasts 8 hours.
+
+Without `make`, call the token endpoint directly:
+
+```bash
+curl -X POST http://localhost:8000/v1/dev/token -H "Content-Type: application/json" -d '{"username": "new.user", "password": "cairn-local-test-password"}'
+```
+
+### Reset or re-create them
+
+Put both test accounts back to their starting state, deleting anything they created, so `new.user` can register again:
+
+```bash
+make seed-test-db ARGS=--reset
+```
+
+`make seed-test-db` on its own adds the logins without touching existing accounts. Both connect as the devcontainer's MongoDB administrator (`MONGO_ADMIN_URI` in the `Makefile`). By hand:
+
+```bash
+CAIRN_ADMIN_MONGODB_URI='mongodb://admin:admin@localhost:27017/?replicaSet=rs0' python3 tools/seed_test_db.py --reset
+```
+
+Run it again after `tools/create_login_user.py` resets the `cairn_api` user, because that removes the role that lets the API read the logins. `make setup` does this for you.
+
+### How it stays out of production
+
+- The logins live in a separate `cairn_dev` database that only `tools/seed_test_db.py` creates. `db/apply.py` and `db/schema.py` never mention it, so a real deployment has no `cairn_dev` database.
+- The collection stores a PBKDF2 hash, never the password, and its validator requires every email to end in `@example.test`.
+- The `cairnApp` role has no access to `cairn_dev`. The seed gives the local `cairn_api` user one extra role, `cairnDevTestLogins`, that can read `cairn_dev.test_logins` and nothing else.
+- `tools/seed_test_db.py` refuses any database host other than this machine, and any `mongodb+srv` (Atlas) address, unless you pass `--allow-remote`.
+- `POST /v1/dev/token` answers 404 unless `CAIRN_DEV_AUTH_SECRET` is set, and it's left out of the OpenAPI contract. The Cloudflare Worker never passes that setting to the container.

@@ -73,6 +73,7 @@ The setup ran `scripts/dev-setup.sh` for you. It:
 - created the `cairn_api`, `cairn_jobs`, and `cairn_loader` users, each with one role and a random password
 - loaded the task and journey templates as `cairn_loader` (drafts allowed, development only)
 - copied `.env.example` to `.env` and pointed `MONGODB_URI` and `CAIRN_JOBS_MONGODB_URI` at those users
+- added two test logins and a `CAIRN_DEV_AUTH_SECRET`, so you can sign up without Auth0 ([database/README.md](database/README.md#test-logins-local-development-only))
 
 If anything failed, run it again. It's safe to repeat:
 
@@ -116,7 +117,25 @@ make db-check
 
 ### 4. Try signed-in endpoints
 
-The endpoints under `/v1` other than `/v1/welcome`, `/v1/sign-in-methods`, and `/v1/policies` need an Auth0 access token.
+The endpoints under `/v1` other than `/v1/welcome`, `/v1/sign-in-methods`, and `/v1/policies` need an access token.
+
+#### With a test login (no Auth0 needed)
+
+`make setup` added two test logins. The usernames and password are in [database/README.md](database/README.md#test-logins-local-development-only). Get a token and create an account:
+
+```bash
+TOKEN=$(make -s dev-token LOGIN=new.user)
+```
+
+```bash
+curl -X POST http://localhost:8000/v1/registrations -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"time_zone": "America/New_York"}'
+```
+
+The answer is `201` and the first onboarding screen. In the Swagger UI, select **Authorize** and paste the token instead. To register `new.user` again, run `make seed-test-db ARGS=--reset`.
+
+Test logins work only while `CAIRN_DEV_AUTH_SECRET` is set. Never set it anywhere real users are. The Cloudflare Worker doesn't pass it to the container.
+
+#### With Auth0
 
 1. Follow [auth0/README.md](auth0/README.md) to set up a development tenant.
 2. Put the tenant's values in `.env`: `CAIRN_AUTH0_DOMAIN`, `CAIRN_AUTH0_AUDIENCE`, and `CAIRN_CLAIM_NAMESPACE`.
@@ -296,6 +315,7 @@ Edit the `vars` block in [`cloudflare/wrangler.jsonc`](cloudflare/wrangler.jsonc
 | `CAIRN_DB_POOL_MIN`, `CAIRN_DB_POOL_MAX` | Connections per API container. Keep `max_instances × CAIRN_DB_POOL_MAX` under your database's connection limit |
 | `CAIRN_API_INSTANCES` | How many API containers share traffic. Up to `max_instances` in the `containers` block |
 | `CAIRN_SMTP_PORT` | 587 unless your email provider says otherwise |
+| `CAIRN_CORS_ORIGINS` | Only for a web client served from another origin: its origins, comma-separated, for example `https://app.cairn.example`. Leave it out for native apps |
 
 Optional settings from [api/README.md](api/README.md), such as `CAIRN_OVERWHELM_SKIP_THRESHOLD`, can be added here too. Every name the containers receive is listed in `API_KEYS` and `JOBS_KEYS` in [`cloudflare/src/index.ts`](cloudflare/src/index.ts).
 
@@ -463,7 +483,9 @@ Run `make help` for this list. Everything the Makefile does is also written out 
 
 | Command | What it does |
 |---|---|
-| `make setup` | One-time setup: `.venv`, MongoDB replica set, schema, login users, templates, `.env` |
+| `make setup` | One-time setup: `.venv`, MongoDB replica set, schema, login users, templates, test logins, `.env` |
+| `make seed-test-db` | Add the test logins. `ARGS=--reset` puts the test accounts back to their starting state |
+| `make dev-token` | Print a token for a test login while `make run` is up. `LOGIN=new.user` for the one with no account |
 | `make run` | The API with reload on port 8000 |
 | `make run-jobs` | The jobs service on port 8001 (localhost only) |
 | `make job NAME=…` | Trigger one job on the local jobs service |
@@ -496,5 +518,9 @@ Run `make help` for this list. Everything the Makefile does is also written out 
 **`wrangler deploy` fails to build the image.** Docker has to be running. On Apple silicon, the build emulates `linux/amd64`, which is slower but works.
 
 **The first request is slow.** A container was starting. Raise `sleepAfter` in `cloudflare/src/index.ts` to keep containers warm longer.
+
+**`POST /v1/dev/token` returns 404.** `CAIRN_DEV_AUTH_SECRET` isn't set. Run `make setup` again, or add a random value of at least 32 characters to `.env`, then restart `make run`. A 503 means the test logins are missing: run `make seed-test-db`.
+
+**A browser client gets a CORS error.** Add its origin to `CAIRN_CORS_ORIGINS` (in `.env` locally, in `vars` on Cloudflare).
 
 **Every signed-in request returns 401.** The token's audience or issuer doesn't match `CAIRN_AUTH0_AUDIENCE` and `CAIRN_AUTH0_DOMAIN`, or it's a machine-to-machine token. See [Try signed-in endpoints](#4-try-signed-in-endpoints).

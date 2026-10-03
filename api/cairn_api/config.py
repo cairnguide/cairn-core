@@ -69,6 +69,14 @@ class Settings:
     # UC-CASE-14 overwhelm signal: this many skips in a row slows the session down.
     # Thresholds come from Trello card 26, which is not written yet.
     overwhelm_skip_threshold: int = 3
+    # Browser origins allowed to call the API (CORS). Empty allows none, which is right for native
+    # clients and for a web client served from the API's own origin.
+    cors_origins: tuple[str, ...] = ()
+    # Development only. When set, POST /v1/dev/token exchanges a test login from the dev-only
+    # cairn_dev database (database/tools/seed_test_db.py) for a token signed with this secret, so
+    # registration can be tried without an Auth0 tenant. Never set it anywhere real users are.
+    # The Cloudflare Worker never forwards it (cloudflare/src/index.ts).
+    dev_auth_secret: str | None = None
 
     def __post_init__(self):
         if self.estate_plan_mode != "add_on":
@@ -77,6 +85,10 @@ class Settings:
             raise RuntimeError("CAIRN_PRE_NEED_PATH: the pre-need path is not built (OPEN-DECISION-05).")
         if self.overwhelm_skip_threshold < 1:
             raise RuntimeError("CAIRN_OVERWHELM_SKIP_THRESHOLD must be at least 1.")
+        if self.dev_auth_secret is not None and len(self.dev_auth_secret) < 32:
+            raise RuntimeError("CAIRN_DEV_AUTH_SECRET must be at least 32 characters.")
+        if "*" in self.cors_origins:
+            raise RuntimeError("CAIRN_CORS_ORIGINS must list origins. A wildcard is refused.")
 
     @property
     def auth0_issuer(self) -> str:
@@ -85,6 +97,12 @@ class Settings:
     @property
     def auth0_jwks_url(self) -> str:
         return f"https://{self.auth0_domain}/.well-known/jwks.json"
+
+
+def cors_origins_from_env() -> tuple[str, ...]:
+    """CAIRN_CORS_ORIGINS, a comma-separated list such as https://app.cairn.example."""
+    raw = os.environ.get("CAIRN_CORS_ORIGINS", "")
+    return tuple(o.strip().rstrip("/") for o in raw.split(",") if o.strip())
 
 
 def load_settings() -> Settings:
@@ -110,4 +128,6 @@ def load_settings() -> Settings:
         estate_plan_mode=os.environ.get("CAIRN_ESTATE_PLAN_MODE", "add_on"),
         pre_need_path=os.environ.get("CAIRN_PRE_NEED_PATH", "not_built"),
         overwhelm_skip_threshold=int(os.environ.get("CAIRN_OVERWHELM_SKIP_THRESHOLD", "3")),
+        cors_origins=cors_origins_from_env(),
+        dev_auth_secret=secret_from_env("CAIRN_DEV_AUTH_SECRET"),
     )

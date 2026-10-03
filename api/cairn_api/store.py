@@ -34,7 +34,9 @@ from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from .errors import ApiError, RuleViolation
+from pymongo.errors import OperationFailure
+
+from .errors import UNAUTHORIZED, ApiError, RuleViolation
 
 # ------------------------------------------------------------------ conventions
 
@@ -271,6 +273,19 @@ class Session:
             "onboarding_step": "account_created", "status": "pending_onboarding",
             "trial_started_at": None, "trial_ends_at": None, "created_at": self.now})
         return uid
+
+    def test_login(self, username: str) -> tuple[bool, dict | None]:
+        """Development only: a test login for POST /v1/dev/token, from the separate <db>_dev database that
+        database/tools/seed_test_db.py creates. Returns (seeded, login). seeded is False when the API's
+        user can't read the logins, which means the seed never ran here. Read outside the transaction,
+        so a refusal can't abort it."""
+        try:
+            row = self._db.client[f"{self._db.name}_dev"].test_logins.find_one({"_id": username.lower()})
+        except OperationFailure as exc:
+            if exc.code == UNAUTHORIZED:
+                return False, None
+            raise
+        return True, row
 
     # -------------------------------------------------------------- the account
 

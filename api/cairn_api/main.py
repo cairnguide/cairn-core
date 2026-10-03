@@ -6,9 +6,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 
+from . import dev_auth
 from .auth import TokenVerifier
-from .config import Settings, load_settings
+from .config import Settings, cors_origins_from_env, load_settings
 from .copy_store import load_case_copy, load_copy
 from .db import Database
 from .errors import ApiError, api_error_handler, unhandled_error_handler, validation_error_handler
@@ -68,6 +70,11 @@ def create_app(settings: Settings | None = None, database: Database | None = Non
         app.state.db = database or Database(cfg.mongodb_uri, cfg.mongodb_db, cfg.pool_min_size, cfg.pool_max_size)
         app.state.token_verifier = verifier or TokenVerifier(cfg.auth0_issuer, cfg.auth0_audience,
                                                              cfg.auth0_jwks_url, cfg.claim_namespace)
+        if cfg.dev_auth_secret:
+            logging.getLogger("cairn_api").warning(
+                "Development sign-in is ON (CAIRN_DEV_AUTH_SECRET). Never run this way with real users.")
+            app.state.token_verifier = dev_auth.DevTokenVerifier(
+                app.state.token_verifier, cfg.dev_auth_secret, cfg.auth0_audience, cfg.claim_namespace)
         app.state.db.open()
         try:
             yield
@@ -79,7 +86,13 @@ def create_app(settings: Settings | None = None, database: Database | None = Non
     app.add_exception_handler(ApiError, api_error_handler)
     app.add_exception_handler(RequestValidationError, validation_error_handler)
     app.add_exception_handler(Exception, unhandled_error_handler)
-    for module in (registration, onboarding, account, cases, case_intake, journey, notifications, tasks):
+    # Middleware has to be added before startup, so CORS reads its origins here, not in lifespan.
+    cors_origins = settings.cors_origins if settings else cors_origins_from_env()
+    if cors_origins:
+        app.add_middleware(CORSMiddleware, allow_origins=list(cors_origins), allow_credentials=False,
+                           allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+                           allow_headers=["Authorization", "Content-Type"], max_age=600)
+    for module in (registration, onboarding, account, cases, case_intake, journey, notifications, tasks, dev_auth):
         app.include_router(module.router)
 
     @app.get("/healthz", include_in_schema=False)

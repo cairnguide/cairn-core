@@ -13,6 +13,7 @@ The database moved from PostgreSQL to MongoDB on 2026-10-01 (see "The move to Mo
 - `docs/cairn-registration-use-cases.json`: registration and onboarding (UC-REG-01 to UC-REG-14, UC-ACCT-01), spec 1.1.0. Replaces the registration part of UC-1 to UC-13. `docs/registration-gap-audit.md` records what is built and what is open. UC-REG-06 (age confirmation) is not built, by product decision: Cairn does not ask for or store the user's age.
 - `docs/cairn-case-creation-use-cases.json`: case creation (UC-CASE-01 to UC-CASE-18), spec 0.3.0. Replaces UC-5 to UC-9. `docs/case-creation-gap-audit.md` maps every acceptance criterion to its test and lists what is open.
 - `docs/cairn-case-creation-use-cases-2026-09-25.json` (draft 0.4 changes: UC-CASE-19 to UC-CASE-21, keeping in touch and confirmations) and `docs/cairn-account-use-cases-2026-09-25.json` (UC-REG-15 delete my account, which replaces UC-ACCT-01, and UC-REG-16 download all my data). `docs/account-lifecycle-gap-audit.md` maps them to tests and lists what is open, including UC-END-13, which these specs rely on but don't define.
+- `docs/backend-standup-gap-audit.md`: what it takes to stand up the API so a person can register, what was built for local sign-in (test logins, `POST /v1/dev/token`), and the work still to do outside the code.
 
 ## Decisions already made (ask the product owner before changing)
 
@@ -33,7 +34,7 @@ db/apply.py        makes a database match schema.py (CAIRN_ADMIN_MONGODB_URI, an
 content/schema/    JSON Schema for template files
 content/tasks/     template files, one folder per jurisdiction (us, nh, ...)
 content/journeys/  journey selection rules: base paths, add-ons, completed items (case creation spec)
-tools/             load_templates.py, create_login_user.py, move_from_postgres.py
+tools/             load_templates.py, create_login_user.py, move_from_postgres.py, seed_test_db.py (local test logins)
 docs/              data model documents
 ```
 
@@ -80,6 +81,7 @@ Install the tools' dependencies with `pip install -r tools/requirements.txt`.
 - The purges, claims, and sends are in `maintenance.py`, run by the jobs container as `cairnJobs`. The app role can't read `identity_deletion_requests`, `action_confirmation_outbox`, or `action_confirmation_log`, can't touch `job_locks`, and reads `app_settings` only.
 - Never log names, dates of birth, SSN digits, free-text fields, or a validator's error details (they contain the rejected values). Audit rows hold opaque IDs only.
 - Never commit credentials. Logins, passwords, and network rules are provisioned outside these scripts.
+- The only exception is the fake test logins that `tools/seed_test_db.py` writes, documented in `README.md`. They belong to the separate `cairn_dev` database, which `db/schema.py` never describes and which never exists outside a local or Codespaces deployment. Never add them to `db/schema.py` or `db/apply.py`, never give the `cairnDevTestLogins` role anything beyond `find` on `cairn_dev.test_logins`, never give `cairnApp` access to `cairn_dev`, and never pass `CAIRN_DEV_AUTH_SECRET` to a deployed API.
 - Never edit a data migration in `db/apply.py` that has run anywhere. Apply fails on a checksum change. Add a new one.
 - Tests and fixtures use fake data only (`example.test` domains, obviously fake names).
 
