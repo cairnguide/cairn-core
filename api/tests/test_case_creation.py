@@ -27,6 +27,16 @@ FIELDS = ("user_role", "display_name", "date_of_death", "place_of_death", "resid
           "veteran_status", "estate_plan_status", "completed_items")
 
 
+# Row ids and timestamps are random hex and digits, so they can contain a short fragment such as "4111" or
+# "078" by chance. Leak checks remove them first. No sensitive number has either shape, so nothing real is hidden.
+RANDOM_MATERIAL = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}"
+                             r"|\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}(?::?\d{2})?)?", re.I)
+
+
+def without_random_material(text: str) -> str:
+    return RANDOM_MATERIAL.sub("<random>", text)
+
+
 def owner_sql(url, query, params=()):
     with psycopg.connect(url, autocommit=True) as conn:
         cur = conn.execute(query, params)
@@ -721,7 +731,7 @@ def test_uc15_sensitive_numbers_are_redacted_before_storage_logs_and_reply(api, 
     turn = say(api, "cc15", cid, text)
     assert set(turn["redactions"]) == {"ssn", "card_number", "account_number"}
     assert COPY["redaction_explanation"] in turn["body"]
-    reply = json.dumps(turn)
+    reply = without_random_material(json.dumps(turn))
     for fragment in ("078-05-1120", "078", "1120", "4111", "1111", "000123456789", "6789"):
         assert fragment not in reply, fragment
     assert "[removed]" in turn["masked_text"]
@@ -731,8 +741,9 @@ def test_uc15_sensitive_numbers_are_redacted_before_storage_logs_and_reply(api, 
                                  (cid,)) for t in ("case_intake_answers", "audit_events")], default=str)
     dump += json.dumps(owner_sql(api.scratch_url, "SELECT row_to_json(c) FROM cairn.cases c WHERE id = %s", (cid,)),
                        default=str)
-    for fragment in ("078-05-1120", "4111", "000123456789"):
-        assert fragment not in dump and fragment not in caplog.text, fragment
+    dump, logs = without_random_material(dump), without_random_material(caplog.text)
+    for fragment in ("078-05-1120", "078051120", "4111", "000123456789"):
+        assert fragment not in dump and fragment not in logs, fragment
 
 
 # ------------------------------------------------------------------ UC-CASE-16
