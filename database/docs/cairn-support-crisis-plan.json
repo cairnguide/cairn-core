@@ -1,0 +1,178 @@
+{
+  "spec": "Cairn Support and Crisis Plan (card 26)",
+  "version": "0.2",
+  "date": "2026-09-29",
+  "status": "Decisions DEC-26-01 to DEC-26-05 confirmed by Mara 2026-09-29. Clinical review (DEC-26-06) confirmed and in progress: packet sent to a licensed clinician on 2026-10-02. Copy pending clinical and legal review.",
+  "public_page": "https://claude.ai/artifact/MiW54h7eLDxVUHLJ8RakEY",
+  "trello": "https://trello.com/c/PAA01d2O",
+  "decisions": [
+    {
+      "id": "DEC-26-01",
+      "topic": "Care rest pauses the free days",
+      "decision": "When a rest begins while safety_mode is overwhelm, acute_distress, or risk_of_harm, the 28-day free period stops counting. This includes a rest the user accepts at level 2, the automatic task pause at levels 3 and 4, and choosing 'I would like to talk to someone' on the paused screen. The clock restarts when the user returns to tasks or when the rest period they chose ends, whichever comes first. trial_ends_at moves later by the paused time. A rest started in normal mode (Take a break, or a pause the user asks for) keeps the clock running, and Cairn says so before pausing. Subscribed users hear nothing about billing.",
+      "date": "2026-09-29"
+    },
+    {
+      "id": "DEC-26-02",
+      "topic": "When Cairn offers rest in normal mode",
+      "decision": "After about 45 minutes of active use in one session, and after a heavy task is finished (for example a bank call, a certificate order, or funeral research). Offered at most once per session per trigger. Declining never brings it back in the same session.",
+      "date": "2026-09-29"
+    },
+    {
+      "id": "DEC-26-03",
+      "topic": "Overwhelm (level 2) threshold",
+      "decision": "Two overwhelm signals in one conversation, or three skipped questions in a row.",
+      "date": "2026-09-29"
+    },
+    {
+      "id": "DEC-26-04",
+      "topic": "Opt-in follow-up after level 3 or 4",
+      "decision": "Before the conversation ends, Cairn asks once: 'Would it be okay if I checked in with you tomorrow?' Only on a yes, Cairn sends one check-in the next day through the channel the user chose at journey setup. If the user chose 'Only when I open Cairn,' the check-in appears the next time they open Cairn. The check-in is the only message sent outside the user's notification reasons, and only because they said yes. Cairn never contacts anyone else.",
+      "date": "2026-09-29"
+    },
+    {
+      "id": "DEC-26-05",
+      "topic": "Ending language",
+      "decision": "Words like 'I'm done' or 'I can't do this anymore' that are not clearly about the paperwork are treated as risk_of_harm: the first reply shares 988 and asks directly and kindly whether the user is thinking about ending their life. 'I'm done' that directly follows a finished task or an ending request uses the three-choice question in UC-END-06, which always shows the 988 line. Resolves the card 50 dependency on card 26.",
+      "date": "2026-09-29"
+    },
+    {
+      "id": "DEC-26-06",
+      "topic": "Licensed clinical reviewer",
+      "decision": "CONFIRMED, IN REVIEW (updated 2026-10-04). The clinical review packet (phrase list, escalation protocol, reply scripts, test scenarios) was sent to Kenneth Fulkroad on 2026-10-02. A licensed clinician reviews the warning phrase list and every crisis reply before any real user. Sign-off date is recorded here when it arrives.",
+      "date": "2026-09-29"
+    }
+  ],
+  "safety_modes": [
+    {
+      "level": 1,
+      "mode": "normal",
+      "name": "Steady",
+      "tier": "conventional",
+      "indicators": ["normal pace", "about 45 minutes of active use", "a heavy task just finished"],
+      "trigger": "default",
+      "behavior": [
+        "Comfort-first turn contract: acknowledge, one question at most, offer rather than demand, one clear next action.",
+        "Take a break is on every screen, one tap, no confirmation.",
+        "Offer rest per DEC-26-02."
+      ],
+      "voice": "user.selected_voice",
+      "trial_clock": "keeps counting during a rest; Cairn says so before pausing"
+    },
+    {
+      "level": 2,
+      "mode": "overwhelm",
+      "name": "Heavy",
+      "tier": "contingency",
+      "indicators": ["'This is too much', 'I can't keep up'", "negative self-talk such as 'I keep getting this wrong' or 'I'm useless'", "skipped questions", "long pauses", "the same question asked repeatedly"],
+      "trigger": "DEC-26-03: two signals in one conversation, or three skipped questions in a row",
+      "behavior": [
+        "Stop asking questions and say so.",
+        "Offer three choices: rest now, one small thing, or just talk.",
+        "If the user chooses rest, it is a care rest (DEC-26-01). Cairn may say once: 'Your free days will pause while you rest.'"
+      ],
+      "voice": "user.selected_voice, softened",
+      "trial_clock": "stops during a care rest"
+    },
+    {
+      "level": 3,
+      "mode": "acute_distress",
+      "name": "Hurting",
+      "tier": "crisis",
+      "indicators": ["overwhelming grief right now", "panic, 'I can't breathe'", "'I can't do this'"],
+      "trigger": "any one signal",
+      "behavior": [
+        "Leave task mode. Tasks pause automatically (care rest).",
+        "Stay present. Ask nothing about logistics.",
+        "Offer 988 as a place to talk with a person, for any emotional distress, and grief support.",
+        "Say nothing about billing.",
+        "Return to tasks only when the user asks.",
+        "Offer the follow-up once (DEC-26-04)."
+      ],
+      "voice": "steady_care",
+      "trial_clock": "stops"
+    },
+    {
+      "level": 4,
+      "mode": "risk_of_harm",
+      "name": "Unsafe",
+      "tier": "crisis",
+      "indicators": ["any mention of wanting to die, not wanting to be here, or hurting oneself", "any mention of hurting someone else", "ending language not clearly about the paperwork (DEC-26-05)"],
+      "trigger": "any one signal. When unsure between levels, choose the higher one.",
+      "behavior": [
+        "First reply contains 988 (call, text, or chat at 988lifeline.org) and no task or intake question.",
+        "If veteran_status is yes, also the Veterans Crisis Line (dial 988 then press 1, or text 838255).",
+        "If words are unclear, ask directly and kindly: 'Are you thinking about ending your life?'",
+        "If anyone is in danger right now: 911.",
+        "Stop all tasks (care rest). No account action in the same turn.",
+        "Never ask for a promise to stay safe. Never describe methods. Never promise confidentiality or what a crisis line will do.",
+        "Return to tasks only when the user asks.",
+        "Offer the follow-up once (DEC-26-04)."
+      ],
+      "voice": "steady_care",
+      "trial_clock": "stops"
+    }
+  ],
+  "rest": {
+    "choices": ["For the rest of today", "A few days (3)", "A week (7)", "Until I come back"],
+    "while_resting": "No reminders of any kind are sent outside Cairn: no due-date, inactivity, or trial reminders. A trial reminder that falls during a normal-mode rest shows only inside Cairn.",
+    "on_return": "Show where the user left off in one line. Never ask them to explain the gap. If the free days were paused, say once: 'Your free days were paused while you rested. They now end on {trial_end_date}.'",
+    "copy": {
+      "offer_after_time": "We've covered a lot. Would this be a good place to rest?",
+      "offer_after_task": "That's a hard one, and you did it. Would this be a good place to rest, or would you like to see what's next?",
+      "rest_normal_clock_note": "Your free days keep counting while you rest. They end on {trial_end_date}.",
+      "rest_care_clock_note": "Your free days will pause while you rest."
+    }
+  },
+  "follow_up": {
+    "ask": "Would it be okay if I checked in with you tomorrow?",
+    "message_outside_cairn": "Checking in, as you asked. There's nothing you need to do today.",
+    "message_in_cairn": "Checking in, as you asked. There's nothing you need to do today. If it would help to talk with someone, you can call or text 988 any time.",
+    "rules": ["Sent once. Never repeated without a new yes.", "Never includes the name of the person who died, the circumstance, or any mention of a crisis.", "Cancelled if the user deletes the case or account."]
+  },
+  "loss_survivors": "If case circumstance is suicide, Cairn mentions AFSP loss survivor support once in week 1 and keeps it in Support resources. https://afsp.org/ive-lost-someone/",
+  "resources": {
+    "988": {"call_text": "988", "chat": "https://chat.988lifeline.org", "url": "https://988lifeline.org"},
+    "veterans_crisis_line": {"call": "988 then press 1", "text": "838255", "url": "https://www.veteranscrisisline.net"},
+    "crisis_text_line": {"text": "HOME to 741741", "spanish": "HOLA to 741741", "url": "https://www.crisistextline.org"},
+    "emergency": "911",
+    "afsp_loss_survivors": "https://afsp.org/ive-lost-someone/"
+  },
+  "data": {
+    "account.trial_ends_at": "moves later by paused time",
+    "account.trial_clock_paused_at": "timestamp, nullable. Set when a care rest starts. The reason is never stored.",
+    "case.tasks_paused_until": "existing field, reused for every rest",
+    "case.check_in_at": "timestamp, nullable. Set only on a yes to the follow-up. Cleared when sent.",
+    "safety_referral_count": "anonymous monthly count of crisis referrals for SB 243 reporting from July 1, 2027. No user or case id."
+  },
+  "governance": [
+    "Named Safety Lead owns the plan and the phrase list.",
+    "Two detection layers: reviewed phrase list and model reading. Either one raises the level.",
+    "Licensed clinical review before any real user (DEC-26-06, pending).",
+    "Card 48 eval set: every level 3 and 4 scenario must pass in all four voices before a release ships.",
+    "Quarterly review and after any safety concern. Public page changes are dated."
+  ],
+  "acceptance_criteria": [
+    "[SAFETY] In risk_of_harm, the first response contains 988 and no task or intake question.",
+    "[SAFETY] Veteran cases include the Veterans Crisis Line in risk_of_harm responses.",
+    "[SAFETY] In acute_distress and risk_of_harm, no billing or trial wording appears.",
+    "[TRIAL] trial_ends_at moves later by exactly the length of every care rest.",
+    "[TRIAL] A normal-mode rest never changes trial_ends_at.",
+    "[REST] No message is sent outside Cairn while tasks_paused_until is in the future, except an opted-in check-in or an action confirmation.",
+    "[OVERWHELM] Level 2 starts on the second signal or the third consecutive skip, not before.",
+    "[FOLLOW-UP] A check-in is sent only after an explicit yes, exactly once."
+  ],
+  "sources": [
+    "https://library.samhsa.gov/sites/default/files/advisory-model-standards-crisis-care-workers-pep25-07-017.pdf",
+    "https://www.nimh.nih.gov/health/publications/5-action-steps-to-help-someone-having-thoughts-of-suicide",
+    "https://www.nimh.nih.gov/funding/clinical-research/conducting-research-with-participants-at-elevated-risk-for-suicide-considerations-for-researchers",
+    "https://www.sciencedirect.com/science/article/abs/pii/S0165032716319474",
+    "https://www.nationalacademies.org/read/18338/chapter/5",
+    "https://nap.nationalacademies.org/read/8/chapter/2",
+    "https://legiscan.com/CA/text/SB243/id/3267669",
+    "https://988lifeline.org/get-help/",
+    "https://www.veteranscrisisline.net/",
+    "https://www.crisistextline.org/",
+    "https://afsp.org/ive-lost-someone/"
+  ]
+}

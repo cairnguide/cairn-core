@@ -1,0 +1,29 @@
+{
+  "task_key": "notify_federal_employee_benefits",
+  "version": 1,
+  "title": "Tell OPM if they worked for the federal government",
+  "plain_summary": "If they were a federal employee or retiree, report the death to the Office of Personnel Management (OPM). Survivor benefits may apply.",
+  "journey_week": 3,
+  "sort_order": 24,
+  "due_offset_days": 18,
+  "jurisdiction": "US",
+  "applies_when": {
+    "always": true
+  },
+  "attorney_referral": false,
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "Office of Personnel Management, Report an annuitant death",
+      "url": "https://www.opm.gov/support/retirement/how-to/report-an-annuitant-death/",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    },
+    {
+      "authority_name": "Office of Personnel Management, Report a federal employee death",
+      "url": "https://www.opm.gov/support/retirement/how-to/report-a-federal-employee-death/",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

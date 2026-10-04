@@ -131,6 +131,8 @@ class Ready:
 def require_ready(s: Session, request: Request, *, write: bool) -> Ready:
     """Onboarding finished, acknowledgments current, and (for writes) not read-only."""
     copy: Copy = request.app.state.copy
+    # A care rest that ended on its own starts the free days again before anything reads them (DEC-26-01).
+    s.settle_trial_clock()
     account = load_account(s)
     if account["onboarding_step"] != OnboardingStep.complete.value:
         raise ApiError(409, "onboarding_incomplete", copy["onboarding_incomplete"],

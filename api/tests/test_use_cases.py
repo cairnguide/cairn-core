@@ -11,12 +11,12 @@ from datetime import date, timedelta
 
 import pytest
 
-from .conftest import active_case, answer, as_user, find_task, register, task_keys
+from .conftest import active_case, answer, as_user, find_task, register
 
 
 def ready_case(api, subject, relationship=None):
     """A started journey with the place of death in NH. relationship is kept for readability of old tests."""
-    return active_case(api, subject, {"place_of_death": {"state": "NH"},
+    return active_case(api, subject, {"place_of_death": {"jurisdiction": "NH"},
                                       "date_of_death": {"precision": "exact",
                                                         "date": (date.today() - timedelta(days=2)).isoformat()}})
 
@@ -101,13 +101,15 @@ def test_uc13_status_across_the_case(api):
 
 def test_late_veteran_answer_adds_va_task_without_losing_progress(api):
     register(api, "late-vet")
-    cid, journey = active_case(api, "late-vet", {"place_of_death": {"state": "NH"}, "veteran_status": "no"})
-    assert "notify_va_if_veteran" not in task_keys(journey)
+    cid, journey = active_case(api, "late-vet", {"place_of_death": {"jurisdiction": "NH"}, "veteran_status": "no"})
+    # v2: never removed. No marks it probably not applicable.
+    assert find_task(journey, "notify_va_if_veteran")["probably_not_applicable"]
     funeral = find_task(journey, "choose_funeral_provider")
     api.patch(f"/v1/cases/{cid}/tasks/{funeral['id']}", headers=as_user("late-vet"), json={"status": "in_progress"})
     answer(api, "late-vet", cid, "veteran_status", "yes")
     after = api.get(f"/v1/cases/{cid}/journey", headers=as_user("late-vet")).json()
-    assert "notify_va_if_veteran" in task_keys(after)
+    va = find_task(after, "notify_va_if_veteran")
+    assert va["recommended"] and not va["probably_not_applicable"]
     assert find_task(after, "choose_funeral_provider")["status"] == "in_progress"
 
 

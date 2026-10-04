@@ -1,0 +1,29 @@
+{
+  "task_key": "irs_what_to_know_now",
+  "version": 1,
+  "title": "Know what the IRS will need later",
+  "plain_summary": "Nothing is due to the IRS right away. Their final income tax return is filed later, by the usual deadline. For now, keep any tax papers and tax mail you find in one place.",
+  "journey_week": 2,
+  "sort_order": 40,
+  "due_offset_days": 13,
+  "jurisdiction": "US",
+  "applies_when": {
+    "always": true
+  },
+  "attorney_referral": false,
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "Internal Revenue Service, File the final income tax returns of a deceased person",
+      "url": "https://www.irs.gov/individuals/file-the-final-income-tax-returns-of-a-deceased-person",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    },
+    {
+      "authority_name": "Internal Revenue Service, Deceased person",
+      "url": "https://www.irs.gov/individuals/deceased-person",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

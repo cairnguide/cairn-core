@@ -1,0 +1,29 @@
+{
+  "task_key": "notify_state_dmv",
+  "version": 1,
+  "title": "Contact the motor vehicle office",
+  "plain_summary": "Contact the motor vehicle office where they lived to cancel their driver's license or ID. Ask what's needed to move or sell their vehicle.",
+  "journey_week": 3,
+  "sort_order": 30,
+  "due_offset_days": 18,
+  "jurisdiction": "US",
+  "applies_when": {
+    "always": true
+  },
+  "attorney_referral": false,
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "USA.gov, Report a death",
+      "url": "https://www.usa.gov/report-a-death",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    },
+    {
+      "authority_name": "USA.gov, State motor vehicle services",
+      "url": "https://www.usa.gov/state-motor-vehicle-services",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

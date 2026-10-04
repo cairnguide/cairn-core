@@ -426,7 +426,8 @@ def test_after_the_trial_the_account_is_read_only_and_nothing_is_lost(api):
     assert me["notes"][0]["text"] == COPY["read_only_banner"]
     view = api.get(f"/v1/cases/{cid}", headers=h)
     assert view.status_code == 200 and view.json()["case"]["display_name"] == "Dan"
-    assert view.json()["case"]["status"] == "read_only"
+    # v2: read-only is the account's access, never a case status.
+    assert (view.json()["case"]["status"], view.json()["case"]["account_access"]) == ("active", "read_only")
     assert view.json()["notes"][0]["text"] == COPY["read_only_banner"]
     r = api.put(f"/v1/cases/{cid}/intake/answers/display_name", json={"state": "answered", "value": "Changed"},
                 headers=h)

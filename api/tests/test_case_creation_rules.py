@@ -1,14 +1,14 @@
 """Case creation rules that need no database: journey selection, redaction, safety, extraction, and copy.
 
-Spec: database/docs/cairn-case-creation-use-cases.json. Each test names the
+Spec: database/docs/cairn-case-creation-use-cases-v2.json (2.0.0), which defers to
+database/docs/cairn-support-crisis-plan.json for crisis levels and replies. Each test names the
 use case and acceptance criterion it covers. [SAFETY] and [PRIVACY] criteria
-are release blockers. The database-backed checks are in test_case_creation.py.
+are release blockers, and so is [LEGAL]. The database-backed checks are in test_case_creation.py.
 """
 from __future__ import annotations
 
 import ast
 import json
-import pathlib
 import re
 from datetime import date
 
@@ -20,17 +20,16 @@ from cairn_api.copy_store import load_case_copy
 from cairn_api.extraction import extract
 from cairn_api.intake import Ctx, question
 from cairn_api.redaction import REMOVED, luhn_valid, redact
-from cairn_api.schemas import FieldKey, IntakeMessageIn, IntakeSession, SafetyMode
+from cairn_api.schemas import FieldKey, IntakeMessageIn, IntakeSession, SafetyMode, TranscriptIn
 
 from .conftest import REPO
 
-SPEC = json.loads((REPO / "database" / "docs" / "cairn-case-creation-use-cases.json").read_text())
-# Draft 0.4 changes to the 0.3.0 spec (UC-CASE-19 to UC-CASE-21 and changes to UC-CASE-10, 12, 18).
-CHANGES = json.loads((REPO / "database" / "docs" / "cairn-case-creation-use-cases-2026-09-25.json").read_text())
-CHANGED = {c["id"]: c for c in CHANGES["changes_to_existing"]}
+SPEC = json.loads((REPO / "database" / "docs" / "cairn-case-creation-use-cases-v2.json").read_text())
+PLAN = json.loads((REPO / "database" / "docs" / "cairn-support-crisis-plan.json").read_text())
 DEFINITION = json.loads((REPO / "database" / "content" / "journeys" / "journey-selection.json").read_text())
 COPY = load_case_copy()
 UC = {u["id"]: u for u in SPEC["use_cases"]}
+VA_STEPS = ("notify_va_if_veteran", "notify_military_retiree_benefits")
 
 
 def facts(**answers) -> dict:
@@ -45,37 +44,85 @@ def pick(**answers) -> js.Selection:
 # ------------------------------------------------------------------ copy layer
 
 def test_spec_copy_is_verbatim():
-    """instructions_for_claude_code: copy lives in the copy layer, and the spec's copy is not reworded."""
-    expected = {f"question_{f['key']}": f["question_copy"] for f in SPEC["data_fields"]}
-    expected["pre_question_circumstance"] = next(f for f in SPEC["data_fields"]
-                                                 if f["key"] == "circumstance")["pre_question_copy"]
+    """instructions_for_claude_code: copy lives in the copy layer, and the specs' copy is not reworded."""
+    fields = {f["key"]: f for f in SPEC["data_fields"]}
+    expected = {f"question_{k}": f["question_copy"] for k, f in fields.items()}
+    expected["pre_question_circumstance"] = fields["circumstance"]["pre_question_copy"]
+    clause = UC["UC-CASE-12"]["copy"]["reminder_channel_clause_options"]
     expected.update({
         "intro": UC["UC-CASE-01"]["copy"]["intro"],
         "poa_authority_note": UC["UC-CASE-02"]["alternate_flows"][0]["copy"],
         "place_unknown": UC["UC-CASE-04"]["alternate_flows"][0]["copy"],
+        "level_2_after_skips": UC["UC-CASE-09"]["copy"]["level_2_after_skips"],
         "pause": UC["UC-CASE-10"]["copy"]["pause"],
         "resume_question": UC["UC-CASE-10"]["copy"]["resume_question"],
-        # Draft 0.4: the new pre-button notice, and the reminder sentence that follows the user's channel.
-        "pre_button_notice": CHANGED["UC-CASE-12"]["copy"]["before_button"],
-        "confirmation_first_case": UC["UC-CASE-12"]["copy"]["confirmation_first_case"].replace(
-            "We'll remind you a few days before your free time ends.", "{reminder_sentence}"),
-        "reminder_sentence_with_channel": CHANGED["UC-CASE-12"]["copy"]["reminder_sentence_with_channel"],
-        "reminder_sentence_in_app_only": CHANGED["UC-CASE-12"]["copy"]["reminder_sentence_in_app_only"],
+        "pre_button_notice": UC["UC-CASE-12"]["copy"]["pre_button_notice"],
+        "confirmation_first_case": UC["UC-CASE-12"]["copy"]["confirmation_first_case"],
+        "reminder_channel_clause_channel_chosen": clause["channel_chosen"],
+        "reminder_channel_clause_in_cairn_only": clause["in_cairn_only"],
         "not_today": UC["UC-CASE-13"]["alternate_flows"][0]["copy"],
-        "small_task_example": UC["UC-CASE-13"]["copy"]["small_task_example"],
-        "steady_care_example": UC["UC-CASE-14"]["copy"]["steady_care_example"],
+        "steady_care_example": SPEC["voice_samples"]["uc_case_05"]["steady_care"],
         "redaction_explanation": UC["UC-CASE-15"]["copy"]["explanation"],
         "draft_notice": UC["UC-CASE-17"]["copy"]["draft_notice"],
         "confirmation_existing_trial": UC["UC-CASE-18"]["copy"]["confirmation_existing_trial"],
+        "confirmation_subscribed": UC["UC-CASE-18"]["copy"]["confirmation_subscribed"],
+        "notifications_intro": UC["UC-CASE-19"]["copy"]["opening"],
+        "notification_example": UC["UC-CASE-19"]["copy"]["example_notification"],
+        "speech_first_use": UC["UC-CASE-22"]["copy"]["first_use"],
+        "ai_reminder": UC["UC-CASE-23"]["copy"]["ai_reminder"],
+        "rest_offer": UC["UC-CASE-23"]["copy"]["rest_offer"],
+        "under_18_message": UC["UC-CASE-24"]["copy"]["message"],
+        # The crisis plan's scripts. It wins where the two specs differ.
+        "rest_offer_after_time": PLAN["rest"]["copy"]["offer_after_time"],
+        "rest_offer_after_task": PLAN["rest"]["copy"]["offer_after_task"],
+        "rest_normal_clock_note": PLAN["rest"]["copy"]["rest_normal_clock_note"],
+        "rest_care_clock_note": PLAN["rest"]["copy"]["rest_care_clock_note"],
+        "check_in_question": PLAN["follow_up"]["ask"],
+        "check_in_outside_cairn": PLAN["follow_up"]["message_outside_cairn"],
+        "check_in_in_cairn": PLAN["follow_up"]["message_in_cairn"],
     })
-    expected.update({f"circumstance_question_{v}": t for v, t in SPEC["voice_samples_uc_case_05"].items()})
-    expected["notification_example"] = "You have a step coming up in Cairn."
-    uc19 = next(u for u in CHANGES["new_use_cases"] if u["id"] == "UC-CASE-19")
-    assert f"Example: '{expected['notification_example']}'" in uc19["rules"][0]
-    assert COPY.spec == expected
-    assert COPY["confirmation_first_case"].endswith("{reminder_sentence}")
-    assert COPY["keep_it_simple"] == uc19["shortcut"]["label"]
-    assert COPY.version == "0.4.0" and CHANGES["spec"].endswith("draft 0.4")
+    expected.update({f"circumstance_question_{v}": t for v, t in SPEC["voice_samples"]["uc_case_05"].items()})
+    expected.update({f"notifications_question_{v}": t for v, t in SPEC["voice_samples"]["uc_case_19"].items()})
+    quoted = {"rest_return_paused_note": PLAN["rest"]["on_return"],
+              "ask_about_suicide": next(b for b in PLAN["safety_modes"][3]["behavior"] if "directly" in b)}
+    assert {k: v for k, v in COPY.spec.items() if k not in quoted} == expected
+    for key, source in quoted.items():
+        assert f"'{COPY[key]}'" in source
+    assert COPY.version == SPEC["spec_version"]
+    assert [COPY[f"rest_{k}"] for k in ("today", "three_days", "week", "until_back")] == PLAN["rest"]["choices"]
+
+
+def test_web_only_copy_never_says_tap_or_phone():
+    """DEC-PLAT: the alpha is web browser only. 'tap' became 'select', phone notifications became browser ones."""
+    for text in COPY.all_strings:
+        assert not re.search(r"\btap\b|\bphone\b", text, re.I), text
+    assert COPY["channel_push"] == "Browser notifications"
+
+
+def _grade(text: str) -> float:
+    """Flesch-Kincaid grade level, with a simple syllable count."""
+    words = re.findall(r"[A-Za-z']+", text)
+    sentences = max(1, len(re.findall(r"[.!?]+", text)))
+    syllables = sum(max(1, len(re.findall(r"[aeiouy]+", w.lower().rstrip("e")))) for w in words)
+    return 0.39 * len(words) / sentences + 11.8 * syllables / max(1, len(words)) - 15.59
+
+
+def test_copy_is_about_grade_8():
+    """DEC-A11Y and UC-CASE-23: about a grade 8 reading level (Federal Plain Language Guidelines). Every reminder
+    and offer is at grade 8 or below, and the copy as a whole averages grade 8 or below."""
+    for key in ("ai_reminder", "rest_offer", "rest_offer_after_time", "rest_offer_after_task", "check_in_question"):
+        assert _grade(COPY[key]) <= 8, key
+    sentences = [x for x in COPY.all_strings if len(x.split()) >= 6]
+    assert sum(_grade(x) for x in sentences) / len(sentences) <= 8
+    assert not [x for x in sentences if _grade(x) > 12]
+
+
+def test_legal_wording_is_flagged_for_counsel():
+    """[LEGAL] UC-CASE-12: price and subscription wording needs counsel approval before launch."""
+    for key in ("confirmation_first_case", "subscription_needed_new_journey", "confirmation_subscribed"):
+        assert key in COPY.legal_review
+    assert "$14.99 a month" in COPY["confirmation_first_case"]
+    assert "$14.99 a month" in COPY["subscription_needed_new_journey"]
 
 
 def test_case_copy_follows_house_style():
@@ -135,12 +182,58 @@ def test_skipped_and_unsure_count_as_unknown():
         assert f["veteran_status"] == "unknown" and f["estate_plan_status"] == "unknown"
 
 
-def test_veteran_add_ons():
-    assert "notify_va_if_veteran" in pick(veteran_status="yes").task_keys
-    assert "notify_va_if_veteran" in pick(veteran_status="unknown").task_keys
-    assert "notify_va_if_veteran" not in pick(veteran_status="no").task_keys
-    assert "veterans_crisis_line" in pick(veteran_status="yes").support_resources
-    assert "veterans_crisis_line" not in pick(veteran_status="unknown").support_resources
+def test_uc06_va_and_military_retiree_steps_are_never_removed():
+    """UC-CASE-06: never removed. Yes recommends them and adds the Veterans Crisis Line. Unknown shows them with
+    'Check if they served'. No flags them probably_not_applicable, still visible."""
+    yes, unknown, no = pick(veteran_status="yes"), pick(veteran_status="unknown"), pick(veteran_status="no")
+    for sel in (yes, unknown, no):
+        assert set(VA_STEPS) <= set(sel.task_keys)
+    assert set(yes.recommended) >= set(VA_STEPS) and "veterans_crisis_line" in yes.support_resources
+    assert "check_if_they_served_note" in unknown.notes and "veterans_crisis_line" not in unknown.support_resources
+    assert DEFINITION["notes"]["check_if_they_served_note"]["attach_to_task"] == list(VA_STEPS)
+    assert COPY["check_if_they_served"] == "Check if they served"
+    assert set(VA_STEPS) <= no.probably_not_applicable and not (set(VA_STEPS) & set(no.recommended))
+
+
+def test_mvp_template_has_every_section_and_all_ten_agencies():
+    """journey_selection.mvp_template_sections (card 6): first hours, the certificate, what to secure now, funeral
+    research, all 10 government agencies always, and banks, insurers, and employers."""
+    sections = {s["key"]: s for s in SPEC["journey_selection"]["mvp_template_sections"]}
+    assert set(DEFINITION["waypoints"]) == set(sections)
+    agencies = {"ssa_medicare": "notify_social_security", "va": "notify_va_if_veteran",
+                "irs_what_to_know_now": "irs_what_to_know_now", "uscis": "uscis_pending_matters",
+                "state_dmv": "notify_state_dmv", "us_passport": "return_passport",
+                "voter_registration": "cancel_voter_registration",
+                "state_social_services": "notify_state_social_services",
+                "military_retiree_benefits": "notify_military_retiree_benefits",
+                "federal_employee_benefits": "notify_federal_employee_benefits"}
+    assert set(agencies) == set(sections["government_notifications"]["agencies"])
+    financial = {"notify_banks", "notify_credit_card_companies", "notify_mortgage_and_loan_servicers",
+                 "notify_life_insurers", "notify_employer_and_pension"}
+    for answers in ({}, {"veteran_status": "no"}, {"circumstance": "under_investigation"},
+                    {"place_of_death": {"jurisdiction": None, "county_or_city": None, "outside_us": True}}):
+        keys = set(pick(**answers).task_keys)
+        assert set(agencies.values()) <= keys, answers
+        assert financial | {"secure_home_and_identity", "choose_funeral_provider", "order_death_certificates"} <= keys
+    for key in agencies.values():
+        assert DEFINITION["task_waypoints"][key] == "government_notifications"
+
+
+def test_funeral_step_is_research_only():
+    """Card 52: search and compare only. Cairn never schedules, books, contacts, or arranges."""
+    doc = json.loads((REPO / "database" / "content" / "tasks" / "us" / "choose_funeral_provider.json").read_text())
+    assert doc["title"].startswith("Research and compare")
+    assert "never books or contacts anyone" in doc["plain_summary"]
+
+
+def test_secure_now_step_has_the_attorney_trigger():
+    """Card 59: protect home, vehicles, pets, mail, valuables, and identity, and don't sell, give away, or divide
+    anything yet, with the attorney line."""
+    doc = json.loads((REPO / "database" / "content" / "tasks" / "us" / "secure_home_and_identity.json").read_text())
+    for word in ("home", "car", "pets", "mail", "valuables", "don't sell, give away, or divide anything yet"):
+        assert word in doc["plain_summary"]
+    assert doc["attorney_referral"] and doc["attorney_referral_note"]
+    assert "early_property_disposal" in extract("We're thinking of selling his car next week", TODAY).attorney_triggers
 
 
 @pytest.mark.parametrize("status,added,absent", [
@@ -169,19 +262,19 @@ def test_certificate_may_be_pending_on_sudden_paths():
 
 def test_uc04_place_unknown_and_outside_us():
     assert "certificate_task_waiting_on_place_note" in pick(
-        place_of_death={"state": None, "county_or_city": None, "outside_us": False}).notes
-    abroad = pick(place_of_death={"state": None, "county_or_city": None, "outside_us": True})
+        place_of_death={"jurisdiction": None, "county_or_city": None, "outside_us": False}).notes
+    abroad = pick(place_of_death={"jurisdiction": None, "county_or_city": None, "outside_us": True})
     assert "certificate_task_waiting_on_place_note" not in abroad.notes
     assert "outside_us_not_covered" in abroad.notes and "talk_to_estate_attorney" in abroad.task_keys
 
 
 def test_uc04_certificate_office_uses_place_of_death_only():
-    rows = {"place_of_death": {"answer_state": "answered", "value": {"state": "NV", "county_or_city": None,
+    rows = {"place_of_death": {"answer_state": "answered", "value": {"jurisdiction": "NV", "county_or_city": None,
                                                                     "outside_us": False}, "own_words": None},
-            "residence_state": {"answer_state": "answered", "value": {"choice": "different", "state": "CA"},
-                                "own_words": None}}
-    assert js.certificate_office_state(rows) == "NV"
-    assert js.certificate_office_state({"residence_state": rows["residence_state"]}) is None
+            "residence_jurisdiction": {"answer_state": "answered", "own_words": None,
+                                       "value": {"choice": "different", "jurisdiction": "CA"}}}
+    assert js.certificate_office_jurisdiction(rows) == "NV"
+    assert js.certificate_office_jurisdiction({"residence_jurisdiction": rows["residence_jurisdiction"]}) is None
 
 
 def test_uc08_funeral_home_reports_to_ssa():
@@ -192,27 +285,72 @@ def test_uc08_funeral_home_reports_to_ssa():
     assert both.initial_status["notify_social_security"] == "done"
 
 
-def test_uc08_completed_items_mark_done_and_unsure_is_check_on_this():
-    sel = pick(completed_items=["death_pronounced", "certificates_ordered", "bank_notified"])
-    for key in ("confirm_pronouncement", "order_death_certificates", "notify_banks"):
+def test_uc08_completed_items_mark_done_and_unsure_needs_check():
+    sel = pick(completed_items=["death_pronounced", "certificates_ordered", "bank_insurer_or_employer_notified",
+                                "home_pets_vehicles_secured"])
+    for key in ("confirm_pronouncement", "order_death_certificates", "notify_banks", "notify_life_insurers",
+                "notify_employer_and_pension", "secure_home_and_identity"):
         assert sel.initial_status[key] == "done"
     unsure = pick(completed_items=["none_or_unsure"])
     for key in DEFINITION["check_on_this_when_unsure"]:
         if key in unsure.task_keys:
-            assert unsure.initial_status[key] == "check_on_this"
-    assert unsure.initial_status["notify_life_insurers"] == "not_started"
+            assert unsure.initial_status[key] == "not_started" and key in unsure.needs_check  # open, needs_check
+    assert "notify_credit_card_companies" not in unsure.needs_check
 
 
-def test_uc16_attorney_triggers_and_unverified_states():
+def test_uc08_checklist_has_the_secure_now_and_bank_insurer_employer_items():
+    q = question(_ctx(), FieldKey.completed_items, CASE, IntakeSession())
+    values = [o.value for o in q.options]
+    assert "home_pets_vehicles_secured" in values and "bank_insurer_or_employer_notified" in values
+    assert q.handled_elsewhere_label == "Someone else is handling this"
+
+
+def test_uc08_someone_else_handling_it():
+    """handled_elsewhere, with an optional name that is never required."""
+    sel = pick(completed_items=[{"item": "funeral_provider_chosen", "handled_by": "Fake Cousin"},
+                                {"item": "certificates_ordered", "handled_by": None}])
+    assert sel.initial_status["choose_funeral_provider"] == "handled_elsewhere"
+    assert sel.handled_by == {"choose_funeral_provider": "Fake Cousin", "order_death_certificates": None}
+    assert sel.initial_status["order_death_certificates"] == "handled_elsewhere"
+    # Handled by someone counts as taken care of, so the SSA wording still changes.
+    assert "confirm_funeral_home_reported_death" in sel.task_keys
+
+
+def test_uc16_attorney_triggers_and_unverified_jurisdictions():
+    """UC-CASE-16 and OPEN-06: a place of death without counsel-reviewed content keeps the certificate step and
+    shows it with 'Please confirm with the office'. No step is ever removed."""
     sel = js.select(DEFINITION, js.facts_from({}, ["family_disagreement"], DEFINITION))
     assert "talk_to_estate_attorney" in sel.task_keys
-    placed = pick(place_of_death={"state": "NH", "county_or_city": None, "outside_us": False})
-    assert "ask_state_vital_records_office" in placed.task_keys  # no state is counsel-verified yet
+    for code in ("NH", "PR", "GU", "MP"):
+        placed = pick(place_of_death={"jurisdiction": code, "county_or_city": None, "outside_us": False})
+        assert "confirm_with_the_office_note" in placed.notes and "order_death_certificates" in placed.task_keys
     verified = dict(DEFINITION, verified_states=["NH"])
     f = js.facts_from({"place_of_death": {"answer_state": "answered", "own_words": None,
-                                         "value": {"state": "NH", "county_or_city": None, "outside_us": False}}},
+                                         "value": {"jurisdiction": "NH", "county_or_city": None, "outside_us": False}}},
                       [], verified)
-    assert "ask_state_vital_records_office" not in js.select(verified, f).task_keys
+    assert "confirm_with_the_office_note" not in js.select(verified, f).notes
+    assert COPY["confirm_with_the_office"] == "Please confirm with the office."
+
+
+def test_uc04_dmv_follows_where_they_lived_and_defaults_to_the_place_of_death():
+    place = {"answer_state": "answered", "own_words": None,
+             "value": {"jurisdiction": "NV", "county_or_city": None, "outside_us": False}}
+    assert js.dmv_jurisdiction({"place_of_death": place}) == "NV"  # not asked: same as the place of death
+    lived = {"answer_state": "answered", "own_words": None, "value": {"choice": "different", "jurisdiction": "CA"}}
+    assert js.dmv_jurisdiction({"place_of_death": place, "residence_jurisdiction": lived}) == "CA"
+    assert js.certificate_office_jurisdiction({"place_of_death": place, "residence_jurisdiction": lived}) == "NV"
+    # Both unknown: the DMV step asks where they lived, just in time.
+    assert "dmv_where_they_lived_note" in js.select(DEFINITION, js.facts_from({}, [], DEFINITION)).notes
+
+
+def test_uc04_picker_covers_all_56_jurisdictions_by_full_name():
+    q = question(_ctx(), FieldKey.place_of_death, CASE, IntakeSession())
+    codes = [o.value for o in q.jurisdictions]
+    assert codes == next(f for f in SPEC["data_fields"] if f["key"] == "place_of_death")["jurisdictions"]
+    assert len(codes) == 56 and q.picker_label == "State or territory"
+    labels = {o.value: o.label for o in q.jurisdictions}
+    assert labels["DC"] == "District of Columbia" and labels["VI"] == "U.S. Virgin Islands"
+    assert labels["MP"] == "Northern Mariana Islands" and labels["AS"] == "American Samoa"
 
 
 def test_mvp_window_is_the_first_four_weeks():
@@ -220,7 +358,6 @@ def test_mvp_window_is_the_first_four_weeks():
     schema = json.loads((REPO / "database" / "content" / "schema" / "task-template.schema.json").read_text())
     assert schema["properties"]["journey_week"]["maximum"] == 4
     assert DEFINITION["mvp_window"] == "first_4_weeks"
-    assert DEFINITION["waypoints"] == SPEC["journey_selection"]["mvp_waypoints"]
 
 
 # ------------------------------------------------------------------ questions and pacing (global_rules)
@@ -250,7 +387,7 @@ def test_at_most_one_question_per_turn(voice, field):
 
 
 def test_uc05_explains_before_asking_in_every_voice_and_fiduciary_can_skip_it():
-    for voice, sample in SPEC["voice_samples_uc_case_05"].items():
+    for voice, sample in SPEC["voice_samples"]["uc_case_05"].items():
         if voice != "steady_care":
             assert question(_ctx(voice), FieldKey.circumstance, CASE, IntakeSession()).prompt == sample
     brief = question(_ctx(), FieldKey.circumstance, {"skip_explainers": True}, IntakeSession())
@@ -319,15 +456,19 @@ def test_uc15_every_free_text_request_field_is_redacted():
 
     from cairn_api import schemas
     from cairn_api.redaction import RedactedStr
-    models = [schemas.IntakeMessageIn, schemas.AnswerIn, schemas.ProposedAnswerIn, schemas.PlaceOfDeath]
+    models = [schemas.IntakeMessageIn, schemas.AnswerIn, schemas.ProposedAnswerIn, schemas.PlaceOfDeath,
+              schemas.TranscriptIn, schemas.HandledElsewhere]
     samples = {schemas.IntakeMessageIn: {"text": "x 123-45-6789"},
+               schemas.TranscriptIn: {"transcript": "x 123-45-6789"},
+               schemas.HandledElsewhere: {"item": "ssa_notified", "handled_by": "x 123-45-6789"},
                schemas.AnswerIn: {"state": "answered", "value": 1, "own_words": "x 123-45-6789"},
                schemas.ProposedAnswerIn: {"field": "display_name", "value": 1, "own_words": "x 123-45-6789"},
                schemas.PlaceOfDeath: {"county_or_city": "x 123-45-6789"}}
     for model in models:
         obj: BaseModel = model(**samples[model])
-        texts = [v for v in obj.__dict__.values() if isinstance(v, str) and not isinstance(v, (bytes,))
-                 and not hasattr(v, "value")]
+        # input_mode and item are fixed choices, not free text.
+        texts = [v for k, v in obj.__dict__.items() if isinstance(v, str) and not hasattr(v, "value")
+                 and k not in ("input_mode", "item")]
         assert texts and all(isinstance(t, RedactedStr) and "6789" not in t for t in texts), model
     from pydantic import TypeAdapter
     assert "6789" not in TypeAdapter(schemas.FIELD_VALUE_TYPES[FieldKey.display_name]).validate_python("123-45-6789")
@@ -347,27 +488,65 @@ def test_uc05_suicide_loss_is_a_volunteered_cause_not_a_risk_to_the_user():
     assert safety.classify("My dad took his own life and I want to die too").mode == SafetyMode.risk_of_harm
 
 
-@pytest.mark.parametrize("text,mode", [("I can't do this", SafetyMode.acute_distress),
-                                       ("I'm panicking", SafetyMode.acute_distress),
-                                       ("This is too much", SafetyMode.overwhelm),
-                                       ("I'm so overwhelmed", SafetyMode.overwhelm)])
-def test_uc14_distress_modes(text, mode):
-    assert safety.classify(text).mode == mode
+@pytest.mark.parametrize("text", ["I can't do this", "I'm panicking", "I can't breathe"])
+def test_uc14_level_3_on_any_one_signal(text):
+    assert safety.classify(text).mode == SafetyMode.acute_distress
 
 
-def test_uc14_repeated_skips_signal_overwhelm_and_sessions_only_escalate():
+@pytest.mark.parametrize("text", ["I'm done", "I can't do this anymore", "I can't go on"])
+def test_uc14_unclear_ending_language_is_level_4_and_asks_directly(text):
+    """DEC-26-05: ending language not clearly about the paperwork is risk of harm, with the direct question."""
+    s = safety.classify(text)
+    assert s.mode == SafetyMode.risk_of_harm and s.ask_directly
+
+
+@pytest.mark.parametrize("text", ["I'm done with these questions", "I'm done for now", "I'm finished with the forms"])
+def test_ending_language_about_the_paperwork_is_not_a_crisis(text):
+    assert safety.classify(text).mode is None
+
+
+def test_uc14_level_2_starts_on_the_second_overwhelm_signal_not_before():
+    """[OVERWHELM] DEC-26-03: two signals in one conversation, or three skips in a row, not before."""
+    one = safety.after_message(IntakeSession(), safety.classify("This is too much"))
+    assert one.safety_mode == SafetyMode.normal and one.overwhelm_signals == 1
+    two = safety.after_message(one, safety.classify("I keep getting this wrong"))
+    assert two.safety_mode == SafetyMode.overwhelm
+
+
+def test_uc09_third_skip_in_a_row_starts_level_2_and_unsure_does_not_count():
+    """[SAFETY] The third consecutive skip triggers level 2. Two skips, or skips separated by an answer or an
+    I'm not sure, do not (OPEN-07 default)."""
     s = IntakeSession()
     for _ in range(2):
-        s = safety.after_skip(s, True, 3)
+        s = safety.after_answer(s, "skipped", 3, False)
     assert s.safety_mode == SafetyMode.normal
-    s = safety.after_skip(s, True, 3)
-    assert s.safety_mode == SafetyMode.overwhelm
+    assert safety.after_answer(s, "skipped", 3, False).safety_mode == SafetyMode.overwhelm
+    for between in ("unsure", "answered"):
+        s = IntakeSession()
+        for state in ("skipped", "skipped", between, "skipped", "skipped"):
+            s = safety.after_answer(s, state, 3, False)
+        assert s.safety_mode == SafetyMode.normal, between
     raised = IntakeSession(sensitivity="raised")
     for _ in range(2):
-        raised = safety.after_skip(raised, True, 3)
-    assert raised.safety_mode == SafetyMode.overwhelm  # raised sensitivity lowers the bar
+        raised = safety.after_answer(raised, "skipped", 3, False)
+    assert raised.safety_mode == SafetyMode.normal  # never earlier than the third, even with raised sensitivity
     assert safety.escalate(IntakeSession(safety_mode=SafetyMode.risk_of_harm), SafetyMode.overwhelm).safety_mode \
         == SafetyMode.risk_of_harm
+
+
+def test_uc09_level_2_message_never_says_skipping_was_wrong():
+    for key in ("level_2_after_skips", "level_2_signals"):
+        assert not re.search(r"\b(skip|wrong|should|need to answer)\b", COPY[key], re.I), key
+
+
+@pytest.mark.parametrize("text", ["I'm 15", "I am 16 years old", "im only 14", "I'm in high school", "I'm a minor"])
+def test_uc24_under_18_statements(text):
+    assert safety.classify(text).minor
+
+
+@pytest.mark.parametrize("text", ["I'm 5 minutes away", "My son is 15", "I'm 45", "It was 15 years ago"])
+def test_uc24_not_under_18(text):
+    assert not safety.classify(text).minor
 
 
 def test_uc14_steady_care_in_acute_distress_and_risk_of_harm():
@@ -379,8 +558,11 @@ def test_uc14_steady_care_in_acute_distress_and_risk_of_harm():
 def test_uc14_crisis_copy_makes_no_promises():
     """rules: never make promises about confidentiality or what a crisis line will do."""
     for key in ("support_988", "support_veterans_crisis_line", "risk_ack", "emergency_911", "steady_care_example",
-                "safety_next"):
+                "safety_next", "support_grief", "support_crisis_text_line", "ask_about_suicide", "check_in_question"):
         assert not re.search(r"\b(confidential|anonymous|will (help|answer|listen|call you))\b", COPY[key], re.I)
+        # [SAFETY] never ask for a promise to stay safe, never describe methods.
+        assert not re.search(r"\b(promise|stay safe|pills?|gun|rope|overdose|method)\b", COPY[key], re.I), key
+    assert "838255" in COPY["support_veterans_crisis_line"] and "pressing 1" in COPY["support_veterans_crisis_line"]
 
 
 # ------------------------------------------------------------------ UC-CASE-01 free text extraction
@@ -393,7 +575,7 @@ def test_uc01_extracts_only_data_fields():
                 "She had a will, it's in the safe. Her favorite color was blue and she had cancer.", TODAY)
     assert set(e.proposals) <= set(FieldKey)
     assert e.proposals[FieldKey.circumstance] == ("expected_illness_or_hospice", None)
-    assert e.proposals[FieldKey.place_of_death][0] == {"state": "NH", "county_or_city": "Manchester",
+    assert e.proposals[FieldKey.place_of_death][0] == {"jurisdiction": "NH", "county_or_city": "Manchester",
                                                        "outside_us": False}
     assert e.proposals[FieldKey.date_of_death][0] == {"precision": "exact", "date": "2026-09-24"}
     flat = json.dumps({k.value: v for k, v in e.proposals.items()})
@@ -408,8 +590,8 @@ def test_uc05_medical_cause_never_becomes_a_circumstance():
 def test_uc04_away_from_home_and_residence():
     e = extract("Dad died in Florida while visiting my sister. He lived in New Hampshire.", TODAY)
     assert e.away_from_home
-    assert e.proposals[FieldKey.residence_state][0] == {"choice": "different", "state": "NH"}
-    assert e.proposals[FieldKey.place_of_death][0]["state"] == "FL"
+    assert e.proposals[FieldKey.residence_jurisdiction][0] == {"choice": "different", "jurisdiction": "NH"}
+    assert e.proposals[FieldKey.place_of_death][0]["jurisdiction"] == "FL"
     assert FieldKey.user_role not in e.proposals  # "visiting my sister" is not who died
 
 
@@ -434,14 +616,27 @@ def test_open_decisions_are_configuration_with_the_spec_defaults():
     from cairn_api.config import Settings
 
     from .conftest import SETTINGS
-    assert SETTINGS.estate_plan_mode == "add_on"         # OPEN-DECISION-01
-    assert SETTINGS.pre_need_path == "not_built"         # OPEN-DECISION-05
-    for bad in ({"estate_plan_mode": "trailhead"}, {"pre_need_path": "built"}):
+    assert SETTINGS.estate_plan_mode == "add_on"                         # OPEN-01
+    assert SETTINGS.notification_scope == "per_journey"                  # OPEN-04
+    assert SETTINGS.sms_enabled is False                                 # OPEN-05
+    assert SETTINGS.state_content_approach == "verified_link_confirm"    # OPEN-06
+    assert SETTINGS.unsure_counts_as_skip is False                       # OPEN-07
+    assert SETTINGS.draft_check_in == "next_open"                        # OPEN-08
+    assert SETTINGS.under_18_handling == "stop_intake"                   # OPEN-09
+    assert SETTINGS.outside_us_handling == "out_of_scope_message"        # OPEN-10
+    assert SETTINGS.pre_need_path == "not_built"
+    assert SETTINGS.subscription_price_display == "$14.99 a month"
+    for bad in ({"estate_plan_mode": "trailhead"}, {"pre_need_path": "built"}, {"sms_enabled": True},
+                {"notification_scope": "account"}, {"ai_reminder_every_hours": 4}):
         with pytest.raises(RuntimeError):
             Settings(**{**SETTINGS.__dict__, **bad})
     schema = (REPO / "database" / "db" / "schema.py").read_text()
-    assert re.search(r'"trial_reminder_days_before": \(3,', schema)   # OPEN-DECISION-02
-    assert re.search(r'"draft_retention_days": \(28,', schema)        # DEC-07
+    assert re.search(r'"trial_reminder_days_before": \(3,', schema)   # OPEN-02
+    assert re.search(r'"draft_retention_days": \(28,', schema)        # DEC-06
+    from cairn_api import notifications
+    simple = notifications.KEEP_IT_SIMPLE                               # OPEN-03
+    assert (simple.channels[0].value, simple.due_date_lead_days, simple.inactivity_days, simple.frequency.value) == (
+        "email", 3, None, "daily_max")
 
 
 def test_no_payment_code_in_the_api():
@@ -464,16 +659,46 @@ def test_no_document_upload():
     assert not any("upload" in path for path in json.loads(spec)["paths"])
 
 
-def test_policy_update_is_tracked():
-    assert SPEC["policy_updates_required"] == [
-        "Add the 28-day draft deletion period to the retention schedule in CAIRN-POL-PRIV-01."]
-    audit = (REPO / "database" / "docs" / "case-creation-gap-audit.md").read_text()
-    assert "CAIRN-POL-PRIV-01" in audit
+def test_policy_updates_are_tracked():
+    audit = (REPO / "database" / "docs" / "case-creation-v2-gap-audit.md").read_text()
+    for update in SPEC["policy_updates_required"]:
+        assert update in audit
 
 
 def test_spec_file_is_the_one_implemented():
-    assert pathlib.Path(REPO / "database" / "docs" / "cairn-case-creation-use-cases.json").exists()
-    assert SPEC["spec_version"] == "0.3.0"
+    assert SPEC["spec_version"] == "2.0.0" and PLAN["version"] == "0.2"
+
+
+# ------------------------------------------------------------------ UC-CASE-15 and UC-CASE-22
+
+@pytest.mark.parametrize("text", ["the last four of his social are 1234", "his social security number ends in 9876",
+                                  "ssn last 4: 4321", "last 4 of her SSN is 5555"])
+def test_uc15_partial_ssns(text):
+    r = redact(text)
+    assert r.kinds == ("ssn",) and not re.search(r"\d{4}", r.text)
+
+
+@pytest.mark.parametrize("text", ["one two three four five six seven eight nine",
+                                  "her social is oh seven eight, oh five, one one two oh",
+                                  "card four one one one one one one one one one one one one one one one"])
+def test_uc15_spoken_digit_sequences_are_normalized_before_matching(text):
+    """[PRIVACY] UC-CASE-15 and UC-CASE-22."""
+    r = redact(text)
+    assert r.kinds and not re.search(r"\d{4}", r.text)
+    for word in ("one one", "seven eight", "five six seven"):
+        assert word not in r.text
+
+
+def test_uc15_counts_in_words_are_left_alone():
+    assert redact("I have two kids and three dogs").text == "I have two kids and three dogs"
+
+
+def test_uc22_transcripts_are_redacted_as_they_are_parsed():
+    """[PRIVACY] Transcripts are redacted before persistence or any model request. There is no audio field."""
+    t = TranscriptIn(transcript="his social is one two three four five six seven eight nine")
+    assert "ssn" in t.transcript.redactions and "one two" not in t.transcript
+    from cairn_api import schemas
+    assert set(schemas.TranscriptIn.model_fields) == {"transcript", "unclear", "session"}
 
 
 # ------------------------------------------------------------------ loader cross-checks
@@ -516,3 +741,21 @@ def test_release_gate_needs_counsel_review_of_the_journey_rules(tmp_path):
     import load_templates
     _, errors = load_templates.load_and_validate_journeys(REPO / "database" / "content", set(), allow_unreviewed=False)
     assert any("counsel_reviewed_at is empty" in e for e in errors)
+
+
+# ------------------------------------------------------------------ UC-CASE-19
+
+def test_uc19_outbound_text_is_checked_for_names_and_circumstances():
+    """[PRIVACY] Outbound text passes a check that it contains no display_name or circumstance."""
+    from cairn_api import outbound
+    from cairn_api.copy_store import load_copy
+    terms = outbound.circumstance_terms(COPY)
+    assert terms and all(terms)
+    ok = outbound.check_in(COPY)
+    assert outbound.private_enough(ok, ["Fakename", *terms])
+    assert not outbound.private_enough(outbound.Message("Hi", "About Fakename"), ["fakename"])
+    assert not outbound.private_enough(outbound.Message("Hi", f"Re: {terms[0]}"), terms)
+    account_copy = load_copy()
+    for reason in ("due_date_upcoming", "inactivity"):
+        msg = outbound.notification(reason, account_copy, COPY)
+        assert outbound.private_enough(msg, terms), reason

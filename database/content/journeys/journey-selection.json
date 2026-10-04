@@ -1,7 +1,7 @@
 {
-  "version": 1,
+  "version": 2,
   "counsel_reviewed_at": null,
-  "source": "database/docs/cairn-case-creation-use-cases.json 0.3.0, journey_selection",
+  "source": "database/docs/cairn-case-creation-use-cases-v2.json 2.0.0, journey_selection",
   "mvp_window": "first_4_weeks",
   "verified_states": [],
   "base_path_by_circumstance": {
@@ -19,11 +19,23 @@
       "tasks": [
         "confirm_pronouncement",
         "order_death_certificates",
+        "secure_home_and_identity",
         "choose_funeral_provider",
         "notify_social_security",
+        "notify_va_if_veteran",
+        "irs_what_to_know_now",
+        "uscis_pending_matters",
+        "notify_state_dmv",
+        "return_passport",
+        "cancel_voter_registration",
+        "notify_state_social_services",
+        "notify_military_retiree_benefits",
+        "notify_federal_employee_benefits",
         "notify_banks",
-        "notify_employer_and_pension",
-        "notify_life_insurers"
+        "notify_credit_card_companies",
+        "notify_mortgage_and_loan_servicers",
+        "notify_life_insurers",
+        "notify_employer_and_pension"
       ]
     },
     "sudden_loss": {
@@ -32,11 +44,23 @@
       "tasks": [
         "confirm_pronouncement",
         "order_death_certificates",
+        "secure_home_and_identity",
         "choose_funeral_provider",
         "notify_social_security",
+        "notify_va_if_veteran",
+        "irs_what_to_know_now",
+        "uscis_pending_matters",
+        "notify_state_dmv",
+        "return_passport",
+        "cancel_voter_registration",
+        "notify_state_social_services",
+        "notify_military_retiree_benefits",
+        "notify_federal_employee_benefits",
         "notify_banks",
-        "notify_employer_and_pension",
-        "notify_life_insurers"
+        "notify_credit_card_companies",
+        "notify_mortgage_and_loan_servicers",
+        "notify_life_insurers",
+        "notify_employer_and_pension"
       ]
     },
     "sudden_loss_investigation": {
@@ -45,11 +69,23 @@
       "tasks": [
         "medical_examiner_or_coroner",
         "order_death_certificates",
+        "secure_home_and_identity",
         "choose_funeral_provider",
         "notify_social_security",
+        "notify_va_if_veteran",
+        "irs_what_to_know_now",
+        "uscis_pending_matters",
+        "notify_state_dmv",
+        "return_passport",
+        "cancel_voter_registration",
+        "notify_state_social_services",
+        "notify_military_retiree_benefits",
+        "notify_federal_employee_benefits",
         "notify_banks",
-        "notify_employer_and_pension",
-        "notify_life_insurers"
+        "notify_credit_card_companies",
+        "notify_mortgage_and_loan_servicers",
+        "notify_life_insurers",
+        "notify_employer_and_pension"
       ]
     },
     "general": {
@@ -58,33 +94,56 @@
       "tasks": [
         "confirm_pronouncement",
         "order_death_certificates",
+        "secure_home_and_identity",
         "choose_funeral_provider",
         "notify_social_security",
+        "notify_va_if_veteran",
+        "irs_what_to_know_now",
+        "uscis_pending_matters",
+        "notify_state_dmv",
+        "return_passport",
+        "cancel_voter_registration",
+        "notify_state_social_services",
+        "notify_military_retiree_benefits",
+        "notify_federal_employee_benefits",
         "notify_banks",
-        "notify_employer_and_pension",
-        "notify_life_insurers"
+        "notify_credit_card_companies",
+        "notify_mortgage_and_loan_servicers",
+        "notify_life_insurers",
+        "notify_employer_and_pension"
       ]
     }
   },
   "waypoints": [
     "first_hours",
-    "death_certificates",
-    "funeral_or_disposition",
-    "notify_ssa_and_agencies",
-    "notify_banks_insurers_employers"
+    "death_certificate",
+    "what_to_secure_now",
+    "funeral_and_disposition_research",
+    "government_notifications",
+    "banks_insurers_employers"
   ],
   "task_waypoints": {
     "confirm_pronouncement": "first_hours",
     "medical_examiner_or_coroner": "first_hours",
-    "order_death_certificates": "death_certificates",
-    "ask_state_vital_records_office": "death_certificates",
-    "choose_funeral_provider": "funeral_or_disposition",
-    "notify_va_if_veteran": "funeral_or_disposition",
-    "notify_social_security": "notify_ssa_and_agencies",
-    "confirm_funeral_home_reported_death": "notify_ssa_and_agencies",
-    "notify_banks": "notify_banks_insurers_employers",
-    "notify_life_insurers": "notify_banks_insurers_employers",
-    "notify_employer_and_pension": "notify_banks_insurers_employers",
+    "order_death_certificates": "death_certificate",
+    "secure_home_and_identity": "what_to_secure_now",
+    "choose_funeral_provider": "funeral_and_disposition_research",
+    "notify_social_security": "government_notifications",
+    "notify_va_if_veteran": "government_notifications",
+    "irs_what_to_know_now": "government_notifications",
+    "uscis_pending_matters": "government_notifications",
+    "notify_state_dmv": "government_notifications",
+    "return_passport": "government_notifications",
+    "cancel_voter_registration": "government_notifications",
+    "notify_state_social_services": "government_notifications",
+    "notify_military_retiree_benefits": "government_notifications",
+    "notify_federal_employee_benefits": "government_notifications",
+    "confirm_funeral_home_reported_death": "government_notifications",
+    "notify_banks": "banks_insurers_employers",
+    "notify_credit_card_companies": "banks_insurers_employers",
+    "notify_mortgage_and_loan_servicers": "banks_insurers_employers",
+    "notify_life_insurers": "banks_insurers_employers",
+    "notify_employer_and_pension": "banks_insurers_employers",
     "talk_to_estate_attorney": null,
     "find_the_will": null,
     "confirm_named_executor": null,
@@ -92,36 +151,48 @@
   },
   "add_ons": [
     {
-      "id": "va_burial_benefits",
-      "spec_key": "va_burial_benefits_step",
-      "when": {
-        "fact": "veteran_status",
-        "op": "in",
-        "value": [
-          "yes",
-          "unknown"
-        ]
-      },
-      "add_tasks": [
-        "notify_va_if_veteran"
-      ],
-      "source_urls": [
-        "https://www.va.gov/burials-memorials/"
-      ]
-    },
-    {
-      "id": "veterans_crisis_line",
-      "spec_key": "UC-CASE-06 Veterans Crisis Line",
+      "id": "veteran_yes",
+      "spec_key": "veteran_status == yes",
       "when": {
         "fact": "veteran_status",
         "op": "eq",
         "value": "yes"
       },
+      "recommend_tasks": [
+        "notify_va_if_veteran",
+        "notify_military_retiree_benefits"
+      ],
       "add_support_resources": [
         "veterans_crisis_line"
       ],
       "source_urls": [
+        "https://www.va.gov/burials-memorials/",
         "https://www.veteranscrisisline.net"
+      ]
+    },
+    {
+      "id": "veteran_unknown",
+      "spec_key": "veteran_status == unknown",
+      "when": {
+        "fact": "veteran_status",
+        "op": "eq",
+        "value": "unknown"
+      },
+      "add_notes": [
+        "check_if_they_served_note"
+      ]
+    },
+    {
+      "id": "veteran_no",
+      "spec_key": "veteran_status == no",
+      "when": {
+        "fact": "veteran_status",
+        "op": "eq",
+        "value": "no"
+      },
+      "mark_probably_not_applicable": [
+        "notify_va_if_veteran",
+        "notify_military_retiree_benefits"
       ]
     },
     {
@@ -201,12 +272,12 @@
     },
     {
       "id": "certificate_waiting_on_place",
-      "spec_key": "certificate_task_waiting_on_place_note",
+      "spec_key": "place_of_death.jurisdiction is null",
       "reason": "Only for a US death. A death outside the US gets the outside_us note instead.",
       "when": {
         "all": [
           {
-            "fact": "place_of_death.state",
+            "fact": "place_of_death.jurisdiction",
             "op": "is_null"
           },
           {
@@ -218,6 +289,26 @@
       },
       "add_notes": [
         "certificate_task_waiting_on_place_note"
+      ]
+    },
+    {
+      "id": "dmv_waiting_on_where_they_lived",
+      "spec_key": "residence_jurisdiction just_in_time_fallback",
+      "when": {
+        "all": [
+          {
+            "fact": "dmv_jurisdiction",
+            "op": "is_null"
+          },
+          {
+            "fact": "place_of_death.outside_us",
+            "op": "eq",
+            "value": false
+          }
+        ]
+      },
+      "add_notes": [
+        "dmv_where_they_lived_note"
       ]
     },
     {
@@ -275,26 +366,53 @@
       "attorney_flag": true
     },
     {
-      "id": "unverified_state",
-      "spec_key": "UC-CASE-16 state with no verified content",
+      "id": "unverified_jurisdiction",
+      "spec_key": "UC-CASE-16 verified link only (OPEN-06)",
       "when": {
         "all": [
           {
-            "fact": "place_of_death.state",
+            "fact": "place_of_death.jurisdiction",
             "op": "not_null"
           },
           {
-            "fact": "place_state_verified",
+            "fact": "place_jurisdiction_verified",
             "op": "eq",
             "value": false
           }
         ]
       },
-      "add_tasks": [
-        "ask_state_vital_records_office"
+      "add_notes": [
+        "confirm_with_the_office_note"
       ],
       "source_urls": [
         "https://cdc.gov/nchs/w2w"
+      ]
+    },
+    {
+      "id": "secure_now_first",
+      "spec_key": "UC-CASE-13 pets or dependents mentioned",
+      "when": {
+        "fact": "secure_now_first",
+        "op": "eq",
+        "value": true
+      },
+      "recommend_tasks": [
+        "secure_home_and_identity"
+      ]
+    },
+    {
+      "id": "loss_survivor_resources",
+      "spec_key": "UC-CASE-05 loss_survivor_resources",
+      "when": {
+        "fact": "loss_survivor_resources",
+        "op": "eq",
+        "value": true
+      },
+      "add_support_resources": [
+        "afsp_loss_survivors"
+      ],
+      "source_urls": [
+        "https://afsp.org/ive-lost-someone/"
       ]
     }
   ],
@@ -333,6 +451,32 @@
       "source_urls": [],
       "attorney_flag": true,
       "legal_review": true
+    },
+    "check_if_they_served_note": {
+      "copy_key": "check_if_they_served",
+      "attach_to_task": [
+        "notify_va_if_veteran",
+        "notify_military_retiree_benefits"
+      ],
+      "source_urls": [],
+      "attorney_flag": false,
+      "legal_review": false
+    },
+    "dmv_where_they_lived_note": {
+      "copy_key": "dmv_where_they_lived",
+      "attach_to_task": "notify_state_dmv",
+      "source_urls": [],
+      "attorney_flag": false,
+      "legal_review": false
+    },
+    "confirm_with_the_office_note": {
+      "copy_key": "confirm_with_the_office",
+      "attach_to_task": "order_death_certificates",
+      "source_urls": [
+        "https://cdc.gov/nchs/w2w"
+      ],
+      "attorney_flag": false,
+      "legal_review": true
     }
   },
   "support_resources": {
@@ -345,35 +489,47 @@
       "copy_key": "support_veterans_crisis_line",
       "url": "https://www.veteranscrisisline.net",
       "always": false
+    },
+    "afsp_loss_survivors": {
+      "copy_key": "support_afsp_loss_survivors",
+      "url": "https://afsp.org/ive-lost-someone/",
+      "always": false
     }
   },
   "completed_items": {
     "death_pronounced": [
       "confirm_pronouncement"
     ],
+    "home_pets_vehicles_secured": [
+      "secure_home_and_identity"
+    ],
     "funeral_provider_chosen": [
       "choose_funeral_provider"
     ],
     "funeral_home_has_ssn": [],
     "certificates_ordered": [
-      "order_death_certificates",
-      "ask_state_vital_records_office"
+      "order_death_certificates"
     ],
     "ssa_notified": [
       "notify_social_security",
       "confirm_funeral_home_reported_death"
     ],
-    "bank_notified": [
-      "notify_banks"
+    "bank_insurer_or_employer_notified": [
+      "notify_banks",
+      "notify_life_insurers",
+      "notify_employer_and_pension"
     ],
     "other": []
   },
   "check_on_this_when_unsure": [
     "confirm_pronouncement",
+    "secure_home_and_identity",
     "choose_funeral_provider",
     "order_death_certificates",
     "notify_social_security",
     "confirm_funeral_home_reported_death",
-    "notify_banks"
+    "notify_banks",
+    "notify_life_insurers",
+    "notify_employer_and_pension"
   ]
 }

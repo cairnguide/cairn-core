@@ -1,0 +1,25 @@
+{
+  "task_key": "secure_home_and_identity",
+  "version": 1,
+  "title": "Secure their home, car, pets, and identity",
+  "plain_summary": "Lock their home and keep their car somewhere safe. Make sure any pets are cared for. Have their mail held or forwarded, and put valuables somewhere safe. Keep details like their birth date out of the obituary. Please don't sell, give away, or divide anything yet.",
+  "journey_week": 1,
+  "sort_order": 5,
+  "due_offset_days": 1,
+  "jurisdiction": "US",
+  "applies_when": {
+    "always": true
+  },
+  "attorney_referral": true,
+  "attorney_referral_note": "Selling, moving, or giving away their things too early can cause legal trouble. An estate attorney can tell you when it's okay.",
+  "why_now": "An empty home, a parked car, and a new obituary can draw thieves soon after a death.",
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "Internal Revenue Service, Identity theft guide for individuals",
+      "url": "https://www.irs.gov/identity-theft-central/identity-theft-guide-for-individuals",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

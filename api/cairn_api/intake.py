@@ -1,8 +1,9 @@
-"""Case creation (UC-CASE-01 to UC-CASE-18): drafts, intake answers, and the journey that fits.
+"""Case creation (UC-CASE-01 to UC-CASE-24): drafts, intake answers, and the journey that fits.
 
-Spec: database/docs/cairn-case-creation-use-cases.json. The schema is
-migration 0010. Journey rules are template data (content/journeys), evaluated
-by journey_selection. Copy comes from content/case-creation-copy.json.
+Spec: database/docs/cairn-case-creation-use-cases-v2.json (2.0.0), which defers to
+database/docs/cairn-support-crisis-plan.json for crisis levels and replies. The schema is
+database/db/schema.py. Journey rules are template data (content/journeys), evaluated by
+journey_selection. Copy comes from content/case-creation-copy.json.
 
 Pacing rules followed by every turn built here:
 - Acknowledge before asking. At most one question per turn. One next action.
@@ -13,7 +14,7 @@ Pacing rules followed by every turn built here:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -26,9 +27,10 @@ from . import safety
 from .copy_store import Copy
 from .db import Session
 from .errors import ApiError, case_access_denied
-from .extraction import STATE_NAMES
 from .schemas import (
     FIELD_VALUE_TYPES,
+    US_STATE_CODES,
+    Announcement,
     AnswerOption,
     AnswerState,
     CaseOut,
@@ -44,12 +46,19 @@ from .schemas import (
     ReadAloud,
     ReviewLine,
     SafetyMode,
+    ScreenControls,
     SupportResource,
 )
 
 FIELD_ORDER = list(FieldKey)
-STATE_LABELS = {code: name.title() for name, code in reversed(list(STATE_NAMES.items()))}
-STATE_LABELS["DC"] = "Washington, DC"
+# The picker order: the 50 states, DC, then the territories (DEC-COV).
+JURISDICTION_ORDER = ["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS",
+                      "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY",
+                      "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV",
+                      "WI", "WY", "DC", "PR", "GU", "VI", "AS", "MP"]
+assert set(JURISDICTION_ORDER) == US_STATE_CODES
+# The rest choices (crisis plan) and how long each one lasts. until_back has no end the user picked.
+REST_CHOICES = {"today": None, "three_days": timedelta(days=3), "week": timedelta(days=7), "until_back": None}
 
 # ------------------------------------------------------------------ context
 
@@ -95,8 +104,9 @@ def display_name(case: dict, answers: dict, copy: Copy) -> str:
     return js.answered_value(answers, "display_name") or copy[case["name_fallback"]]
 
 
-def effective_status(case: dict, account: dict) -> str:
-    return "read_only" if case["status"] == "active" and account["status"] == "read_only" else case["status"]
+def effective_status(case: dict) -> str:
+    """Card 50 status. A case in a 7-day hold reads as pending_deletion. Read-only is the account's, not the case's."""
+    return "pending_deletion" if case.get("deletion_scheduled_for") else case["status"]
 
 
 def case_out(c: Ctx, case: dict, answers: dict) -> CaseOut:
@@ -105,9 +115,21 @@ def case_out(c: Ctx, case: dict, answers: dict) -> CaseOut:
                                 "journey_started_on", "last_intake_step", "last_activity_at", "draft_expires_at",
                                 "death_not_yet_occurred", "skip_explainers", "tasks_paused_until",
                                 "deletion_scheduled_for", "created_at")},
-        status=effective_status(case, c.account),
+        status=effective_status(case), delete_after=case.get("deletion_scheduled_for"),
+        account_access="read_only" if c.account["status"] == "read_only" else "full",
         display_name=display_name(case, answers, c.copy),
     )
+
+
+def jurisdiction_label(copy: Copy, code: str | None) -> str | None:
+    return copy[f"jurisdiction_{code}"] if code else None
+
+
+def controls(copy: Copy) -> ScreenControls:
+    """Take a break, Read this to me, the speak button, and the free-text box, with their screen reader labels."""
+    return ScreenControls(take_a_break=copy["take_a_break"], read_this_to_me=copy["read_this_to_me"],
+                          speak=copy["speak"], speak_first_use=copy["speech_first_use"],
+                          speak_permission_denied=copy["speech_permission_denied"], free_text=copy["free_text_label"])
 
 
 # ------------------------------------------------------------------ write gates
@@ -174,12 +196,12 @@ def add_attorney_trigger(s: Session, case: dict, trigger: str) -> bool:
 # ------------------------------------------------------------------ questions
 
 def next_field(answers: dict, session: IntakeSession) -> FieldKey | None:
-    """The first field with no answer row. residence_state only when the death was away from home,
+    """The first field with no answer row. residence_jurisdiction only when the death was away from home,
     and then right away (UC-CASE-04)."""
-    if session.ask_residence and FieldKey.residence_state.value not in answers:
-        return FieldKey.residence_state
+    if session.ask_residence and FieldKey.residence_jurisdiction.value not in answers:
+        return FieldKey.residence_jurisdiction
     for f in FIELD_ORDER:
-        if f == FieldKey.residence_state and not session.ask_residence:
+        if f == FieldKey.residence_jurisdiction and not session.ask_residence:
             continue
         if f.value not in answers:
             return f
@@ -193,6 +215,8 @@ def _labels(copy: Copy, field: str, values: list[str]) -> list[AnswerOption]:
 def question(c: Ctx, field: FieldKey, case: dict, session: IntakeSession) -> Question:
     copy = c.copy
     prompt, pre, kind, options = copy[f"question_{field.value}"], None, "choice", []
+    picker = handled = None
+    places = []
     if field == FieldKey.user_role:
         options = _labels(copy, "user_role", [v.value for v in FIELD_VALUE_TYPES[field]])
     elif field == FieldKey.display_name:
@@ -201,9 +225,9 @@ def question(c: Ctx, field: FieldKey, case: dict, session: IntakeSession) -> Que
         kind, options = "date_of_death", _labels(copy, "date_of_death", ["today", "this_week", "exact"])
     elif field == FieldKey.place_of_death:
         kind, options = "place_of_death", _labels(copy, "place_of_death", ["state", "outside_us", "away_from_home"])
-    elif field == FieldKey.residence_state:
-        kind = "residence_state"
-        options = _labels(copy, "residence_state", ["same_as_place_of_death", "different", "unknown"])
+    elif field == FieldKey.residence_jurisdiction:
+        kind = "residence_jurisdiction"
+        options = _labels(copy, "residence_jurisdiction", ["same_as_place_of_death", "different", "unknown"])
     elif field == FieldKey.circumstance:
         options = _labels(copy, "circumstance", [v.value for v in FIELD_VALUE_TYPES[field]])
         if case["skip_explainers"]:
@@ -219,10 +243,16 @@ def question(c: Ctx, field: FieldKey, case: dict, session: IntakeSession) -> Que
     elif field == FieldKey.completed_items:
         kind = "multi_choice"
         options = _labels(copy, "completed_items", [v.value for v in CompletedItem])
+        handled = copy["handled_elsewhere"]
+    if field in (FieldKey.place_of_death, FieldKey.residence_jurisdiction):
+        # UC-CASE-04: all 50 states, DC, PR, GU, VI, AS, and MP, by full name.
+        picker = copy["picker_label"]
+        places = [AnswerOption(value=code, label=copy[f"jurisdiction_{code}"]) for code in JURISDICTION_ORDER]
     return Question(field=field, pre_question=pre, prompt=prompt, input=kind, options=options,
                     skip=AnswerOption(value="skipped", label=copy["skip_for_now"]),
                     not_sure=AnswerOption(value="unsure", label=copy["not_sure"]),
-                    free_text_label=copy["free_text_label"])
+                    free_text_label=copy["free_text_label"], picker_label=picker, jurisdictions=places,
+                    handled_elsewhere_label=handled)
 
 
 def question_step(q: Question) -> NextStep:
@@ -242,15 +272,22 @@ def value_label(copy: Copy, field: str, value: object) -> str:
     if field == "place_of_death":
         if value["outside_us"]:
             return copy["label_place_of_death_outside_us"]
-        if value["state"] is None:
+        if value["jurisdiction"] is None:
             return value["county_or_city"] or copy["state_unsure"]
-        state = STATE_LABELS.get(value["state"], value["state"])
-        return f"{value['county_or_city']}, {state}" if value["county_or_city"] else state
-    if field == "residence_state":
-        label = copy[f"label_residence_state_{value['choice']}"]
-        return f"{label}: {STATE_LABELS.get(value['state'], value['state'])}" if value.get("state") else label
+        place = jurisdiction_label(copy, value["jurisdiction"])
+        return f"{value['county_or_city']}, {place}" if value["county_or_city"] else place
+    if field == "residence_jurisdiction":
+        label = copy[f"label_residence_jurisdiction_{value['choice']}"]
+        return f"{label}: {jurisdiction_label(copy, value['jurisdiction'])}" if value.get("jurisdiction") else label
     if field == "completed_items":
-        return ", ".join(copy[f"label_completed_items_{v}"] for v in value)
+        parts = []
+        for entry in value:
+            if isinstance(entry, str):
+                parts.append(copy[f"label_completed_items_{entry}"])
+            else:
+                item = copy["label_completed_items_" + entry["item"]]
+                parts.append(f"{item} ({copy['handled_elsewhere']})")
+        return ", ".join(parts)
     return copy[f"label_{field}_{value}"]
 
 
@@ -277,7 +314,7 @@ def journey_definition(s: Session, version: int | None = None) -> dict:
 
 def selection(s: Session, case: dict, answers: dict) -> tuple[dict, js.Selection]:
     definition = journey_definition(s, case["journey_template_version"])
-    facts = js.facts_from(answers, case["attorney_triggers"], definition)
+    facts = js.facts_from(answers, case["attorney_triggers"], definition, case)
     return definition, js.select(definition, facts)
 
 
@@ -310,9 +347,11 @@ def notes_by_task(c: Ctx, definition: dict, sel: js.Selection) -> tuple[list[Not
     loose, attached = [], {}
     for note_id, note in zip(sel.notes, journey_notes(c, definition, sel), strict=True):
         target = definition["notes"][note_id]["attach_to_task"]
-        if target and target in sel.task_keys:
-            attached.setdefault(target, []).append(note)
-        else:
+        targets = [t for t in (target if isinstance(target, list) else [target] if target else [])
+                   if t in sel.task_keys]
+        for t in targets:
+            attached.setdefault(t, []).append(note)
+        if not targets:
             loose.append(note)
     return loose, attached
 
@@ -327,7 +366,8 @@ def attorney_line(c: Ctx, tmpl: dict) -> str | None:
 
 
 def change_line(c: Ctx, definition: dict, before: js.Selection, after: js.Selection) -> str:
-    """UC-CASE-09. What an answer changed in the journey, in one line."""
+    """UC-CASE-09. What an answer changed in the journey, in one line. v2 never removes the VA and military steps,
+    so a veteran answer changes which steps are recommended or probably don't apply."""
     tmpl = templates(c.s, list({*before.task_keys, *after.task_keys}))
     parts = []
     if before.path_key != after.path_key:
@@ -339,12 +379,21 @@ def change_line(c: Ctx, definition: dict, before: js.Selection, after: js.Select
         parts.append(c.copy["changed_added"].format(tasks=_join(added)))
     if removed:
         parts.append(c.copy["changed_removed"].format(tasks=_join(removed)))
+    recommended = [k for k in after.recommended if k not in before.recommended and k in tmpl]
+    if recommended:
+        parts.append(c.copy["changed_recommended"].format(tasks=_join([tmpl[k]["title"] for k in recommended])))
+    unlikely = ordered([k for k in after.probably_not_applicable if k not in before.probably_not_applicable], tmpl)
+    if unlikely:
+        parts.append(c.copy["changed_probably_not_applicable"].format(tasks=_join([tmpl[k]["title"]
+                                                                                   for k in unlikely])))
     return " ".join(parts) or c.copy["changed_nothing"]
 
 
 def added_step_notes(c: Ctx, before: js.Selection, after: js.Selection) -> list[Note]:
-    """A step an answer added, with a one-line description and its link."""
-    return step_notes(c, [k for k in after.task_keys if k not in before.task_keys])
+    """A step an answer added or now recommends, with a one-line description and its link."""
+    keys = [k for k in after.task_keys if k not in before.task_keys]
+    keys += [k for k in after.recommended if k not in before.recommended and k not in keys]
+    return step_notes(c, keys)
 
 
 def poa_note_once(c: Ctx, case: dict) -> list[Note]:
@@ -404,9 +453,9 @@ def anchor_date(answers: dict, started_on: date) -> date:
 def sync_tasks(s: Session, case: dict, answers: dict, sel: js.Selection) -> None:
     """Make the case's tasks match the selection without losing progress (UC-CASE-09).
 
-    New tasks are added. Tasks the rules no longer include are unselected, not
-    deleted, and a task already in progress or done stays visible. Newly
-    checked completed_items mark their open tasks done.
+    New tasks are added. Tasks the rules no longer include are unselected, not deleted, and a task already in
+    progress or done stays visible. Newly checked completed_items mark their open tasks done, or handled
+    elsewhere with the optional name (UC-CASE-08). needs_check and probably_not_applicable follow the rules.
     """
     existing = {r["task_key"]: r for r in s.task_states(case["id"])}
     missing = [k for k in sel.task_keys if k not in existing]
@@ -414,15 +463,26 @@ def sync_tasks(s: Session, case: dict, answers: dict, sel: js.Selection) -> None
     anchor = anchor_date(answers, case["journey_started_on"])
     for k in missing:
         due = max(anchor + timedelta(days=tmpl[k]["due_offset_days"]), case["journey_started_on"])
-        s.add_task(case["id"], tmpl[k], sel.initial_status[k], due)
+        s.add_task(case["id"], tmpl[k], sel.initial_status[k], due, needs_check=k in sel.needs_check,
+                   probably_not_applicable=k in sel.probably_not_applicable, handled_by=sel.handled_by.get(k))
     for k, row in existing.items():
         want = k in sel.task_keys
+        changes: dict = {}
         if row["selected"] != want:
-            s.update_task(case["id"], row["id"], selected=want)
-        if want and sel.initial_status[k] == "done" and row["status"] in ("not_started", "check_on_this"):
-            s.update_task(case["id"], row["id"], status="done")
-        elif want and sel.initial_status[k] == "check_on_this" and row["status"] == "not_started":
-            s.update_task(case["id"], row["id"], status="check_on_this")
+            changes["selected"] = want
+        if want:
+            if row["probably_not_applicable"] != (k in sel.probably_not_applicable):
+                changes["probably_not_applicable"] = k in sel.probably_not_applicable
+            target = sel.initial_status[k]
+            untouched = row["status"] in ("not_started", "check_on_this")
+            if target in ("done", "handled_elsewhere") and untouched:
+                changes["status"] = target
+                if target == "handled_elsewhere":
+                    changes["handled_by"] = sel.handled_by.get(k)
+            elif untouched and row["needs_check"] != (k in sel.needs_check):
+                changes["needs_check"] = k in sel.needs_check
+        if changes:
+            s.update_task(case["id"], row["id"], **changes)
     if case["journey_template_key"] != sel.path_key:
         update_case(s, case["id"], journey_template_key=sel.path_key)
     s.audit("journey_tasks_synced", case["id"], "case", case["id"])
@@ -434,25 +494,72 @@ def voice_for(c: Ctx, session: IntakeSession) -> str:
     return "steady_care" if safety.uses_steady_care(session) else c.voice
 
 
-def crisis_support(c: Ctx, answers: dict, *, emergency: bool) -> tuple[list[str], list[SupportResource]]:
-    """988 always. The Veterans Crisis Line for a veteran (UC-CASE-14). No promises about what a line will do."""
+def crisis_support(c: Ctx, answers: dict, *, level: int) -> tuple[list[str], list[SupportResource]]:
+    """988 first, always. Level 3 adds grief support. Level 4 adds the Veterans Crisis Line for a veteran and 911.
+    No promises about confidentiality or what a crisis line will do (UC-CASE-14)."""
     body = [c.copy["support_988"]]
     support = [SupportResource(id="lifeline_988", text=c.copy["support_988"], url="https://988lifeline.org")]
     if js.answered_value(answers, "veteran_status") == "yes":
         body.append(c.copy["support_veterans_crisis_line"])
         support.append(SupportResource(id="veterans_crisis_line", text=c.copy["support_veterans_crisis_line"],
                                        url="https://www.veteranscrisisline.net"))
-    if emergency:
+    if level == 3:
+        body.append(c.copy["support_grief"])
+    support.append(SupportResource(id="crisis_text_line", text=c.copy["support_crisis_text_line"],
+                                   url="https://www.crisistextline.org"))
+    if level == 4:
         body.append(c.copy["emergency_911"])
     return body, support
+
+
+def _session_clock(c: Ctx, session: IntakeSession) -> tuple[IntakeSession, bool]:
+    """UC-CASE-23. Tracks active use. A gap longer than active_gap_minutes doesn't count as active use."""
+    settings = c.request.app.state.settings
+    now = c.s.now
+    started = session.started_at is None
+    update: dict = {"last_turn_at": now}
+    if started:
+        update["started_at"] = now
+    elif session.last_turn_at is not None:
+        last = session.last_turn_at if session.last_turn_at.tzinfo else session.last_turn_at.replace(
+            tzinfo=timezone.utc)
+        gap = max(timedelta(0), min(now - last, timedelta(minutes=settings.active_gap_minutes)))
+        update["active_seconds"] = min(86400, session.active_seconds + int(gap.total_seconds()))
+    return session.model_copy(update=update), started
+
+
+def announcements_for(c: Ctx, session: IntakeSession, *, heavy: bool = False) -> tuple[IntakeSession,
+                                                                                       list[Announcement]]:
+    """UC-CASE-23. The AI reminder at the start of a session (at most once a day) and every 3 hours, never skipped,
+    at any level. The rest offer after about 45 minutes of active use, or after a heavy moment, once per session per
+    trigger, and only at level 1. Both are announced to screen readers."""
+    settings = c.request.app.state.settings
+    session, started = _session_clock(c, session)
+    out: list[Announcement] = []
+    if c.s.ai_reminder_due(session_start=started, every=timedelta(hours=settings.ai_reminder_every_hours)):
+        c.s.mark_ai_reminder_shown()
+        out.append(Announcement(kind="ai_reminder", text=c.copy["ai_reminder"]))
+    if session.safety_mode == SafetyMode.normal and not session.intake_stopped:
+        trigger = None
+        if heavy and "heavy" not in session.rest_offered:
+            trigger, text = "heavy", c.copy["rest_offer_after_task"]
+        elif (session.active_seconds >= settings.rest_offer_after_minutes * 60
+              and "time" not in session.rest_offered):
+            trigger, text = "time", c.copy["rest_offer"]
+        if trigger:
+            session = session.model_copy(update={"rest_offered": [*session.rest_offered, trigger]})
+            out.append(Announcement(kind="rest_offer", text=text,
+                                    options=[Option(value="take_a_break", label=c.copy["take_a_break"]),
+                                             Option(value="keep_going", label=c.copy["keep_going"])]))
+    return session, out
 
 
 def turn(c: Ctx, case: dict, answers: dict, session: IntakeSession, *, acknowledgment: str | None = None,
          body: list[str] | None = None, notes: list[Note] | None = None, ask: bool = True,
          next_step: NextStep | None = None, proposals: list[ProposedAnswer] | None = None,
          support: list[SupportResource] | None = None, redactions: tuple[str, ...] = (),
-         masked_text: str | None = None) -> IntakeTurnResponse:
-    """Assemble one turn. When the session is in a safety mode, no intake question is asked."""
+         masked_text: str | None = None, heavy: bool = False) -> IntakeTurnResponse:
+    """Assemble one turn. When the session is at level 2 or above, or intake stopped, no intake question is asked."""
     body = list(body or [])
     notes = list(notes or [])
     q = None
@@ -466,20 +573,34 @@ def turn(c: Ctx, case: dict, answers: dict, session: IntakeSession, *, acknowled
             next_step = question_step(q)
         else:
             next_step = review_step(c)
-    text = " ".join(x for x in [acknowledgment, *body, next_step.prompt] if x)
+    session, announcements = announcements_for(c, session, heavy=heavy)
+    # Read aloud in screen order. At level 4 the AI reminder comes after 988, never before it.
+    text = " ".join(x for x in [acknowledgment, *body, next_step.prompt, *(a.text for a in announcements)] if x)
     return IntakeTurnResponse(
         case=case_out(c, case, answers), voice=voice_for(c, session), safety_mode=session.safety_mode,
         acknowledgment=acknowledgment, body=body, notes=notes, question=q, proposals=proposals,
         support=support or [], redactions=list(redactions), masked_text=masked_text, next_step=next_step,
-        session=session, read_aloud=ReadAloud(label=c.copy["read_this_to_me"], text=text))
+        session=session, care_level=safety.care_level(session), announcements=announcements, controls=controls(c.copy),
+        read_aloud=ReadAloud(label=c.copy["read_this_to_me"], text=text))
+
+
+def level_2_step(c: Ctx, *, after_skips: bool) -> NextStep:
+    """Level 2: stop the questions and say so, then offer rest, one small thing, or just talk. Never suggests
+    that skipping was wrong (UC-CASE-09)."""
+    key = "level_2_after_skips" if after_skips else "level_2_signals"
+    return NextStep(action="overwhelm_choice", prompt=c.copy[key],
+                    options=[Option(value="rest", label=c.copy["level_2_rest"]),
+                             Option(value="small_thing", label=c.copy["level_2_small_thing"]),
+                             Option(value="talk", label=c.copy["level_2_talk"])])
 
 
 def safety_step(c: Ctx, session: IntakeSession) -> NextStep:
+    if session.intake_stopped and session.safety_mode == SafetyMode.normal:
+        # UC-CASE-24. No more intake questions. Talking to someone stays open.
+        return NextStep(action="intake_stopped", prompt=c.copy["support_988"])
     if session.safety_mode == SafetyMode.overwhelm:
-        return NextStep(action="overwhelm_choice", prompt=c.copy["overwhelm_offer"],
-                        options=[Option(value="pause", label=c.copy["overwhelm_pause"]),
-                                 Option(value="small_thing", label=c.copy["overwhelm_small_thing"])])
-    # acute_distress and risk_of_harm: stay present. Logistics come back only if the user asks.
+        return level_2_step(c, after_skips=session.overwhelm_signals < safety.OVERWHELM_SIGNALS_FOR_LEVEL_2)
+    # Levels 3 and 4: stay present. Logistics come back only if the user asks.
     return NextStep(action="stay_with_user", prompt=c.copy["safety_next"],
                     options=[Option(value="continue", label=c.copy["ready_to_continue"]),
                              Option(value="stay", label=c.copy["stay_here"])])
@@ -490,13 +611,53 @@ def review_step(c: Ctx) -> NextStep:
                     options=[Option(value="review", label=c.copy["does_this_look_right"])])
 
 
-def safety_turn(c: Ctx, case: dict, answers: dict, session: IntakeSession, **extra) -> IntakeTurnResponse:
-    """acute_distress or risk_of_harm. No task, no intake question, no deadlines. steady_care voice."""
-    risk = session.safety_mode == SafetyMode.risk_of_harm
-    body, support = crisis_support(c, answers, emergency=risk)
-    ack = c.copy["risk_ack"] if risk else c.copy["steady_care_example"]
-    return turn(c, case, answers, session, acknowledgment=ack, body=body, support=support,
-                next_step=safety_step(c, session), **extra)
+def check_in_offer(c: Ctx) -> Announcement:
+    """DEC-26-04. Asked once, after level 3 or 4."""
+    return Announcement(kind="check_in", text=c.copy["check_in_question"],
+                        options=[Option(value="yes", label=c.copy["check_in_yes"]),
+                                 Option(value="no", label=c.copy["check_in_no"])])
+
+
+def safety_turn(c: Ctx, case: dict, answers: dict, session: IntakeSession, *, ask_directly: bool = False,
+                first: bool = True, **extra) -> IntakeTurnResponse:
+    """Levels 3 and 4. No task, no intake question, no deadlines, no billing. steady_care voice.
+    At level 4 the first thing said is 988. When the words were unclear, Cairn asks directly and kindly."""
+    level = safety.care_level(session)
+    body, support = crisis_support(c, answers, level=level)
+    ack = c.copy["risk_ack"] if level == 4 else c.copy["steady_care_example"]
+    if level == 4 and ask_directly:
+        body.append(c.copy["ask_about_suicide"])
+    response = turn(c, case, answers, session, acknowledgment=ack, body=body, support=support,
+                    next_step=safety_step(c, session), **extra)
+    if not first and not response.session.check_in_asked:
+        # Asked once, never in the first reply at level 4 (988 comes first, with nothing else to answer).
+        response.announcements.append(check_in_offer(c))
+        response.session = response.session.model_copy(update={"check_in_asked": True})
+    return response
+
+
+def begin_care_rest(c: Ctx, case: dict) -> bool:
+    """Levels 3 and 4 pause the tasks automatically (a care rest), until the user returns. On an active journey
+    this also stops the free days (DEC-26-01). In a draft it only stops the questions (UC-CASE-14)."""
+    if case["status"] == "draft":
+        return False
+    return c.s.begin_rest(case["id"], c.s.now + c.s.rest_until_return, care=True)
+
+
+def rest_until(c: Ctx, choice: str):
+    """The end of the rest the user chose, in their time zone for "the rest of today"."""
+    now = c.s.now
+    if choice == "today":
+        tz = ZoneInfo(c.account.get("time_zone") or "UTC")
+        local = now.astimezone(tz)
+        return datetime.combine(local.date() + timedelta(days=1), datetime.min.time(), tz).astimezone(timezone.utc)
+    if choice == "until_back":
+        return now + c.s.rest_until_return
+    return now + REST_CHOICES[choice]
+
+
+def rest_options(c: Ctx) -> list[Option]:
+    return [Option(value=k, label=c.copy[f"rest_{k}"]) for k in REST_CHOICES]
 
 
 def review_lines(c: Ctx, answers: dict, session: IntakeSession) -> tuple[list[ReviewLine], list[ReviewLine]]:
@@ -504,7 +665,7 @@ def review_lines(c: Ctx, answers: dict, session: IntakeSession) -> tuple[list[Re
     told, later = [], []
     for f in FIELD_ORDER:
         row = answers.get(f.value)
-        if f == FieldKey.residence_state and row is None and not session.ask_residence:
+        if f == FieldKey.residence_jurisdiction and row is None and not session.ask_residence:
             continue
         line = ReviewLine(field=f, label=c.copy[f"field_{f.value}"], answer=answer_label(c.copy, f.value, row),
                           answer_state=AnswerState(row["answer_state"]) if row else None,

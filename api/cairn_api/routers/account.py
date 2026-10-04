@@ -190,7 +190,9 @@ def message(req: AccountMessageIn, request: Request,
         support: list[SupportResource] = []
         crisis_body: list[str] = []
         if reading.risk_of_harm:
-            crisis_body, support = intake.crisis_support(c, _veteran_answers(s), emergency=True)
+            crisis_body, support = intake.crisis_support(c, _veteran_answers(s), level=4)
+            if not session.safety_first_shown:
+                s.count_level_4_referral()  # SB 243: an anonymous monthly count, once per crisis
             if not session.safety_first_shown or reading.intent == "help":
                 # Safety first. No account action in this turn. With no account request in it, stay on safety.
                 step = intake.safety_step(c, IntakeSession(safety_mode=SafetyMode.risk_of_harm))

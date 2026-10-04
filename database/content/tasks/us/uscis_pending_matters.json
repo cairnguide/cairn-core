@@ -1,0 +1,24 @@
+{
+  "task_key": "uscis_pending_matters",
+  "version": 1,
+  "title": "Check whether anything was pending with USCIS",
+  "plain_summary": "If they had an application or petition pending with U.S. Citizenship and Immigration Services, a relative may be able to continue it. An immigration attorney can tell you what applies.",
+  "journey_week": 3,
+  "sort_order": 50,
+  "due_offset_days": 20,
+  "jurisdiction": "US",
+  "applies_when": {
+    "always": true
+  },
+  "attorney_referral": true,
+  "attorney_referral_note": "Cairn can't give legal advice. An immigration attorney can tell you what applies.",
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "U.S. Citizenship and Immigration Services, Policy Manual, Volume 7, Part A, Chapter 9",
+      "url": "https://www.uscis.gov/policy-manual/volume-7-part-a-chapter-9",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

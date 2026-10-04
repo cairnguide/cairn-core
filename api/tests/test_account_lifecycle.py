@@ -76,7 +76,7 @@ def add_conversation(api, case_id, text):
 
 
 def named_case(api, subject, name="Dan", **answers):
-    return active_case(api, subject, {"display_name": name, "place_of_death": {"state": "NH"}, **answers})
+    return active_case(api, subject, {"display_name": name, "place_of_death": {"jurisdiction": "NH"}, **answers})
 
 
 # ------------------------------------------------------------------ UC-CASE-19 choose how Cairn keeps in touch
@@ -199,8 +199,18 @@ def test_uc12_confirmation_says_the_reminder_goes_the_way_the_user_chose(api):
     cid = new_draft(api, "nt08")["case"]["id"]
     set_prefs(api, "nt08", cid, KEEP_IT_SIMPLE)
     started = start_journey(api, "nt08", cid)
-    assert started["confirmation"].endswith(CASE_COPY["reminder_sentence_with_channel"])
-    assert "They keep counting even if you pause." in CASE_COPY["pre_button_notice"]
+    assert started["confirmation"].endswith(
+        "a few days before your free time ends, and we'll also send it by email.")
+    assert "They keep counting if you pause" in CASE_COPY["pre_button_notice"]
+
+
+def test_uc12_confirmation_without_an_outside_channel_only_mentions_cairn(api):
+    """UC-CASE-12: with in-Cairn only, the clause is empty and nothing promises an email."""
+    register(api, "nt08b")
+    cid = new_draft(api, "nt08b")["case"]["id"]
+    started = start_journey(api, "nt08b", cid)
+    assert started["confirmation"].endswith("a reminder here in Cairn a few days before your free time ends.")
+    assert "email" not in started["confirmation"]
 
 
 def test_uc19_trial_reminder_email_only_with_an_email_choice(api):
@@ -523,10 +533,15 @@ def test_reg15_asked_in_chat_with_a_risk_of_harm_signal_puts_safety_first_then_p
     register(api, "da05")
     named_case(api, "da05", veteran_status="yes")
     h = as_user("da05")
+    counted = sum(r["level_4_referrals"] for r in api.db.safety_referral_counts.find())
     text = "Please delete my account. I don't want to live anymore."
     first = api.post("/v1/me/messages", json={"text": text}, headers=h).json()
     assert first["intent"] == "safety_first" and first["session"]["safety_first_shown"] is True
-    assert {s["id"] for s in first["support"]} == {"lifeline_988", "veterans_crisis_line"}
+    # Crisis plan level 4: 988 first, the Veterans Crisis Line for a veteran, and the Crisis Text Line.
+    assert first["support"][0]["id"] == "lifeline_988"
+    assert {s["id"] for s in first["support"]} == {"lifeline_988", "veterans_crisis_line", "crisis_text_line"}
+    # SB 243: an anonymous count, with no user or case.
+    assert sum(r["level_4_referrals"] for r in api.db.safety_referral_counts.find()) == counted + 1
     assert "988" in first["read_aloud"]["text"]
     assert "confirm_account_deletion" not in json.dumps(first)
     assert api.get("/v1/me", headers=h).status_code == 200  # nothing happened to the account

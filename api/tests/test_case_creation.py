@@ -38,7 +38,7 @@ from .conftest import (
 )
 
 COPY = load_case_copy()
-FIELDS = ("user_role", "display_name", "date_of_death", "place_of_death", "residence_state", "circumstance",
+FIELDS = ("user_role", "display_name", "date_of_death", "place_of_death", "residence_jurisdiction", "circumstance",
           "veteran_status", "estate_plan_status", "completed_items")
 
 
@@ -212,7 +212,7 @@ def test_uc03_display_name_is_used_but_never_as_a_legal_name(api):
     turn = answer(api, "cc03", cid, "display_name", "Grandpa Joe")
     assert "Grandpa Joe" in turn["acknowledgment"]
     assert turn["case"]["display_name"] == "Grandpa Joe"
-    answer(api, "cc03", cid, "place_of_death", {"state": "NH"})
+    answer(api, "cc03", cid, "place_of_death", {"jurisdiction": "NH"})
     start_journey(api, "cc03", cid)
     status = api.get(f"/v1/cases/{cid}/status", headers=as_user("cc03")).json()
     assert status["deceased_name"] == "Grandpa Joe"
@@ -236,7 +236,7 @@ def test_legal_identity_is_refused_on_a_draft(api):
     cid = new_draft(api, "cc03c")["case"]["id"]
     r = api.patch(f"/v1/cases/{cid}/deceased", json={"legal_first_name": "Dan"}, headers=as_user("cc03c"))
     assert r.status_code == 409
-    answer(api, "cc03c", cid, "place_of_death", {"state": "NH"})
+    answer(api, "cc03c", cid, "place_of_death", {"jurisdiction": "NH"})
     start_journey(api, "cc03c", cid)
     r = api.patch(f"/v1/cases/{cid}/deceased", json={"legal_first_name": "Dan", "date_of_birth": "1950-01-01"},
                   headers=as_user("cc03c"))
@@ -259,9 +259,11 @@ def test_uc04_approximate_dates_are_accepted(api, precision):
 def test_uc04_certificate_office_uses_place_of_death_not_residence(api):
     register(api, "cc04b")
     cid = new_draft(api, "cc04b")["case"]["id"]
-    turn = answer(api, "cc04b", cid, "place_of_death", {"state": "NV", "county_or_city": "Reno"}, away_from_home=True)
-    assert turn["question"]["field"] == "residence_state"  # asked because the death was away from home
-    answer(api, "cc04b", cid, "residence_state", {"choice": "different", "state": "CA"}, session=turn["session"])
+    turn = answer(api, "cc04b", cid, "place_of_death", {"jurisdiction": "NV", "county_or_city": "Reno"},
+                  away_from_home=True)
+    assert turn["question"]["field"] == "residence_jurisdiction"  # asked because the death was away from home
+    answer(api, "cc04b", cid, "residence_jurisdiction", {"choice": "different", "jurisdiction": "CA"},
+           session=turn["session"])
     start_journey(api, "cc04b", cid)
     journey = api.get(f"/v1/cases/{cid}/journey", headers=as_user("cc04b")).json()
     task = find_task(journey, "order_death_certificates")
@@ -272,10 +274,10 @@ def test_uc04_certificate_office_uses_place_of_death_not_residence(api):
 def test_uc04_residence_is_not_asked_unless_away_from_home(api):
     register(api, "cc04c")
     cid = new_draft(api, "cc04c")["case"]["id"]
-    turn = answer(api, "cc04c", cid, "place_of_death", {"state": "NH"})
+    turn = answer(api, "cc04c", cid, "place_of_death", {"jurisdiction": "NH"})
     for f in ("user_role", "display_name", "date_of_death"):
         turn = answer(api, "cc04c", cid, f, state="skipped", session={})
-        assert turn["question"]["field"] != "residence_state"
+        assert turn["question"]["field"] != "residence_jurisdiction"
     assert turn["question"]["field"] == "circumstance"
 
 
@@ -342,8 +344,11 @@ def test_uc05_volunteered_suicide_loss_is_acknowledged_and_resources_offered_onc
     assert "suicide" not in json.dumps(turn["proposals"] or [])
     again = say(api, "cc05c", cid, "His suicide was a shock.", session=turn["session"])
     assert not any(s["id"] == "loss_survivor_resources" for s in again["support"])
+    # v2 and the crisis plan: only the boolean is stored, because the user said it. The word is never stored,
+    # and the flag is never shown back to the user as a label.
     rows = case_doc(api, cid)
-    assert "suicide" not in rows and "loss_survivor" not in rows
+    assert "suicide" not in rows and api.db.cases.find_one({"_id": UUID(cid)})["loss_survivor_resources"] is True
+    assert "loss_survivor" not in json.dumps(again["case"])
 
 
 # ------------------------------------------------------------------ UC-CASE-06
@@ -356,9 +361,25 @@ def test_uc06_va_step_with_va_gov_citation_and_crisis_line(api):
     assert va and "https://www.va.gov/burials-memorials/" in va[0]["source_urls"]
     assert COPY["veterans_crisis_line_added"] in turn["body"]
     preview = api.get(f"/v1/cases/{cid}/journey/preview", headers=as_user("cc06")).json()
-    task = next(t for w in preview["weeks"] for t in w["tasks"] if t["task_key"] == "notify_va_if_veteran")
+    tasks = [t for w in preview["weeks"] for t in w["tasks"]]
+    task = next(t for t in tasks if t["task_key"] == "notify_va_if_veteran")
     assert "https://www.va.gov/burials-memorials/" in [c["url"] for c in task["citations"]]
+    # v2: yes recommends the VA and military retiree steps.
+    assert task["recommended"] and next(t for t in tasks if t["task_key"] == "notify_military_retiree_benefits")[
+        "recommended"]
     assert "veterans_crisis_line" in [s["id"] for s in preview["support"]]
+
+
+def test_uc06_no_keeps_the_va_steps_visible_as_probably_not_applicable(api):
+    """UC-CASE-06 v2: the steps are never removed. No shows them last with a gentle label."""
+    register(api, "cc06c")
+    cid = new_draft(api, "cc06c")["case"]["id"]
+    answer(api, "cc06c", cid, "veteran_status", "no")
+    preview = api.get(f"/v1/cases/{cid}/journey/preview", headers=as_user("cc06c")).json()
+    tasks = {t["task_key"]: t for w in preview["weeks"] for t in w["tasks"]}
+    for key in ("notify_va_if_veteran", "notify_military_retiree_benefits"):
+        assert tasks[key]["probably_not_applicable"] and not tasks[key]["recommended"]
+    assert "veterans_crisis_line" not in [s["id"] for s in preview["support"]]
 
 
 def test_uc06_unknown_adds_the_va_step_but_not_the_crisis_line(api):
@@ -418,12 +439,26 @@ def test_uc08_funeral_home_chosen_changes_the_ssa_task(api):
     assert tasks["notify_banks"]["status_label"] == "When you're ready"
 
 
-def test_uc08_none_or_unsure_marks_relevant_tasks_check_on_this(api):
+def test_uc08_none_or_unsure_leaves_relevant_tasks_open_with_needs_check(api):
+    """v2: open, with needs_check true. The task status itself stays not_started."""
     register(api, "cc08b")
-    cid, journey = active_case(api, "cc08b", {"place_of_death": {"state": "NH"},
+    cid, journey = active_case(api, "cc08b", {"place_of_death": {"jurisdiction": "NH"},
                                               "completed_items": ["none_or_unsure"]})
-    assert find_task(journey, "order_death_certificates")["status"] == "check_on_this"
-    assert find_task(journey, "notify_life_insurers")["status"] == "not_started"
+    certs = find_task(journey, "order_death_certificates")
+    assert (certs["status"], certs["journey_status"], certs["needs_check"]) == ("not_started", "open", True)
+    assert not find_task(journey, "notify_credit_card_companies")["needs_check"]
+
+
+def test_uc08_someone_else_is_handling_it_with_an_optional_name(api):
+    register(api, "cc08c")
+    cid, journey = active_case(api, "cc08c", {"place_of_death": {"jurisdiction": "NH"}, "completed_items": [
+        {"item": "funeral_provider_chosen", "handled_by": "Fake Cousin"},
+        {"item": "ssa_notified", "handled_by": None}, "home_pets_vehicles_secured"]})
+    funeral = find_task(journey, "choose_funeral_provider")
+    assert (funeral["status"], funeral["journey_status"], funeral["handled_by"]) == (
+        "handled_elsewhere", "handled_elsewhere", "Fake Cousin")
+    assert find_task(journey, "notify_social_security")["handled_by"] is None
+    assert find_task(journey, "secure_home_and_identity")["status"] == "done"
 
 
 # ------------------------------------------------------------------ UC-CASE-09
@@ -449,14 +484,14 @@ def test_uc09_changing_an_answer_says_what_changed_in_one_line(api):
     answer(api, "cc09b", cid, "veteran_status", "no")
     turn = answer(api, "cc09b", cid, "veteran_status", "yes")
     line = turn["body"][-1]
-    assert "\n" not in line and "Check for VA burial benefits" in line
+    assert "\n" not in line and "Contact the VA" in line and "to the top" in line
     same = answer(api, "cc09b", cid, "veteran_status", "yes")
     assert same["body"][-1] == COPY["changed_nothing"]
 
 
 def test_uc09_change_on_active_case_keeps_progress(api):
     register(api, "cc09c")
-    cid, journey = active_case(api, "cc09c", {"place_of_death": {"state": "NH"},
+    cid, journey = active_case(api, "cc09c", {"place_of_death": {"jurisdiction": "NH"},
                                               "estate_plan_status": "yes_location_unknown"})
     h = as_user("cc09c")
     will = find_task(journey, "find_the_will")
@@ -599,13 +634,14 @@ def test_uc12_preview_then_start_starts_trial_once_in_local_time(api):
     assert ends - begun == timedelta(days=28)
     local_end = ends.astimezone(ZoneInfo("Pacific/Honolulu")).date()
     assert started["trial_end_date"] == local_end.isoformat()
-    # in_app_only: the trial reminder shows in Cairn only, and the confirmation says so.
+    # in_app_only: the trial reminder shows in Cairn only, so the channel clause is empty.
     assert started["confirmation"] == COPY["confirmation_first_case"].format(
         trial_end_date=f"{local_end:%B} {local_end.day}, {local_end.year}",
-        reminder_sentence=COPY["reminder_sentence_in_app_only"])
+        reminder_channel_clause=COPY["reminder_channel_clause_in_cairn_only"])
+    assert "$14.99 a month" in started["confirmation"] and started["legal_review_required"] is True
     case = started["case"]
     assert case["status"] == "active" and case["journey_template_key"] == "general"
-    assert case["journey_template_version"] == 1 and case["journey_started_at"]
+    assert case["journey_template_version"] == 2 and case["journey_started_at"]
     reminder = [r["due_at"] for r in api.db.trial_reminders.find({"user_id": user_id(api, "cc12"),
                                                                   "kind": "trial_ends_soon"})]
     assert reminder == [ends - timedelta(days=3)]
@@ -649,7 +685,7 @@ def test_uc12_start_journey_never_asks_for_payment(api):
 def test_uc13_first_task_choice_never_auto_starts_and_not_today_leaves_none_in_progress(api):
     register(api, "cc13")
     cid = new_draft(api, "cc13")["case"]["id"]
-    answer(api, "cc13", cid, "place_of_death", {"state": "NH"})
+    answer(api, "cc13", cid, "place_of_death", {"jurisdiction": "NH"})
     started = start_journey(api, "cc13", cid)
     assert 1 <= len(started["recommended"]) <= 2
     assert all(r["why_now"] or r["task"]["due_on"] for r in started["recommended"])
@@ -721,8 +757,13 @@ def test_uc14_overwhelm_stops_questions_and_offers_a_pause_or_one_small_thing(ap
         turn = answer(api, "cc14d", cid, f, state="skipped", session=session)
         session = turn["session"]
     assert turn["safety_mode"] == "overwhelm" and turn["question"] is None
-    assert [o["value"] for o in turn["next_step"]["options"]] == ["pause", "small_thing"]
-    assert say(api, "cc14d", cid, "This is too much")["next_step"]["action"] == "overwhelm_choice"
+    assert turn["next_step"]["prompt"] == COPY["level_2_after_skips"]
+    assert [o["value"] for o in turn["next_step"]["options"]] == ["rest", "small_thing", "talk"]
+    # One overwhelm signal alone is not enough (DEC-26-03). The second one is.
+    once = say(api, "cc14d", cid, "This is too much")
+    assert once["safety_mode"] == "normal" and once["question"] is not None
+    twice = say(api, "cc14d", cid, "I can't keep up", session=once["session"])
+    assert twice["safety_mode"] == "overwhelm" and twice["next_step"]["action"] == "overwhelm_choice"
 
 
 def test_uc14_distress_is_never_persisted(api):
@@ -777,10 +818,13 @@ def test_uc16_attorney_trigger_never_blocks_the_journey(api):
     assert len(task_keys(journey)) > 3 and started["case"]["status"] == "active"
 
 
-def test_uc16_unverified_state_adds_the_state_office_task(api):
+def test_uc16_unverified_jurisdiction_says_confirm_with_the_office(api):
+    """OPEN-06 default verified_link_confirm: no separate task. The certificate step says to confirm."""
     register(api, "cc16b")
-    cid, journey = active_case(api, "cc16b", {"place_of_death": {"state": "WY"}})
-    assert "ask_state_vital_records_office" in task_keys(journey)
+    cid, journey = active_case(api, "cc16b", {"place_of_death": {"jurisdiction": "WY"}})
+    assert "ask_state_vital_records_office" not in task_keys(journey)
+    certs = find_task(journey, "order_death_certificates")
+    assert COPY["confirm_with_the_office"] in json.dumps(certs)
 
 
 # ------------------------------------------------------------------ UC-CASE-17

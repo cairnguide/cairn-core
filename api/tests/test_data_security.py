@@ -27,7 +27,7 @@ from cairn_api.errors import ApiError
 UNAUTHORIZED, INVALID = 13, 121
 STEPS = (("privacy_terms", "privacy_terms_accepted"), ("trial_terms", "trial_terms_accepted"),
          ("ai_notice", "ai_notice_accepted"))
-JOURNEY = (1, "general")  # content/journeys/journey-selection.json
+JOURNEY = (2, "general")  # content/journeys/journey-selection.json, the active version
 
 
 # ------------------------------------------------------------------ fixtures and helpers
@@ -216,11 +216,11 @@ def test_intake_answer_validator(env):
     put("circumstance", value="sudden_natural")
     put("veteran_status", state="skipped")
     put("date_of_death", value={"precision": "this_week", "date": None})
-    put("place_of_death", value={"state": "NH", "county_or_city": None, "outside_us": False})
-    put("completed_items", value=["funeral_provider_chosen", "bank_notified"])
+    put("place_of_death", value={"jurisdiction": "NH", "county_or_city": None, "outside_us": False})
+    put("completed_items", value=["funeral_provider_chosen", "bank_insurer_or_employer_notified"])
     invalid(lambda: put("cause_of_death", value="x"))
     invalid(lambda: put("user_role", value="cousin"))
-    invalid(lambda: put("residence_state", state="skipped", value="different"))
+    invalid(lambda: put("residence_jurisdiction", state="skipped", value="different"))
 
     def change(field, **values):
         answers.update_one({"case_id": cid, "field_key": field}, {"$set": values})
@@ -228,10 +228,10 @@ def test_intake_answer_validator(env):
     invalid(lambda: change("circumstance", value="he had cancer"))
     invalid(lambda: change("circumstance", own_words="a heart attack"))
     invalid(lambda: change("date_of_death", value={"precision": "exact", "date": None}))
-    invalid(lambda: change("place_of_death", value={"state": "NH", "county_or_city": None, "outside_us": False,
+    invalid(lambda: change("place_of_death", value={"jurisdiction": "NH", "county_or_city": None, "outside_us": False,
                                                     "ssn": "1"}))
-    invalid(lambda: change("place_of_death", value={"state": "NH", "county_or_city": None, "outside_us": True}))
-    invalid(lambda: change("completed_items", value=["none_or_unsure", "bank_notified"]))
+    invalid(lambda: change("place_of_death", value={"jurisdiction": "NH", "county_or_city": None, "outside_us": True}))
+    invalid(lambda: change("completed_items", value=["none_or_unsure", "bank_insurer_or_employer_notified"]))
     invalid(lambda: change("veteran_status", value="yes"))  # a value only when answered
     invalid(lambda: change("display_name", value="Dan\x07"))
 
@@ -377,7 +377,8 @@ def test_start_journey_starts_the_trial_once(env):
     assert run(env, uid, lambda s: s.start_journey(cid, *JOURNEY)) is True
     case = env.admin.cases.find_one({"_id": cid})
     user = env.admin.users.find_one({"_id": uid})
-    assert (case["status"], case["journey_template_key"], case["journey_template_version"]) == ("active", "general", 1)
+    started = (case["status"], case["journey_template_key"], case["journey_template_version"])
+    assert started == ("active", *JOURNEY[::-1])
     assert case["journey_started_at"] == user["trial_started_at"] and case["journey_started_on"]
     assert user["status"] == "trial_active"
     assert user["trial_ends_at"] - user["trial_started_at"] == timedelta(hours=672)

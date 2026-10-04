@@ -70,10 +70,13 @@ def test_pause_has_no_reason_field(contract_client):
 
 
 def test_state_codes_are_normalized_and_checked():
-    assert PlaceOfDeath(state=" nh ").state == "NH"
-    for bad in ("ZZ", "New Hampshire", "N1"):
+    """UC-CASE-04: the 50 states, DC, and the five permanently inhabited territories."""
+    assert PlaceOfDeath(jurisdiction=" nh ").jurisdiction == "NH"
+    for code in ("DC", "PR", "GU", "VI", "AS", "MP"):
+        assert PlaceOfDeath(jurisdiction=code).jurisdiction == code
+    for bad in ("ZZ", "New Hampshire", "N1", "FM"):
         try:
-            PlaceOfDeath(state=bad)
+            PlaceOfDeath(jurisdiction=bad)
         except ValueError:
             continue
         raise AssertionError(f"{bad} accepted")

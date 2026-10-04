@@ -4,10 +4,10 @@ first task), plus stepping back from tasks (UC-12) and status across the case (U
 from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 
 from .. import account as acct
-from .. import intake, journey, messages
+from .. import intake, journey, messages, safety
 from .. import notifications as nt
 from ..auth import Identity, get_identity
 from ..db import Session
@@ -20,6 +20,8 @@ from ..schemas import (
     FirstTaskChoice,
     FirstTaskIn,
     FirstTaskResponse,
+    IntakeSession,
+    IntakeTurnResponse,
     JourneyPreviewResponse,
     JourneyResponse,
     NextStep,
@@ -33,14 +35,16 @@ from ..schemas import (
     StartJourneyIn,
     StartJourneyResponse,
     StatusCounts,
+    TakeABreakIn,
     TaskCategory,
     WeekOut,
+    journey_status,
 )
 
 router = APIRouter(prefix="/v1/cases/{case_id}", tags=["Journey"])
 
 _DENIED = {403: {"description": "Not a member of this case, not an owner, or the case does not exist."}}
-STATUS_LABELS = {"done": "done_label", "check_on_this": "check_on_this_label"}
+STATUS_LABELS = {"done": "done_label", "handled_elsewhere": "handled_elsewhere"}
 
 
 def _journey_view(s: Session, request: Request, account: dict, case_id: UUID, notes=None) -> JourneyResponse:
@@ -53,6 +57,10 @@ def _journey_view(s: Session, request: Request, account: dict, case_id: UUID, no
     if case["status"] == "draft":
         return JourneyResponse(**base, mode="not_started", weeks=[],
                                next_step=NextStep(action="preview_journey", prompt=c.copy["journey_preview_intro"]))
+
+    if s.take_due_check_in(case_id):
+        # DEC-26-04. The check-in the user said yes to, shown once, because it isn't going by email.
+        base["notes"] = [Note(kind="crisis", text=c.copy["check_in_in_cairn"]), *base["notes"]]
 
     if journey.is_paused(case):
         # Step back from task mode. Progress is untouched. Tasks are not listed on purpose.
@@ -71,7 +79,7 @@ def _journey_view(s: Session, request: Request, account: dict, case_id: UUID, no
         weeks.append(WeekOut(week=week, total=len(in_week),
                              done=sum(1 for r in in_week if r["status"] == "done"),
                              tasks=[journey.task_summary(r, context) for r in in_week]))
-    nxt = journey.pick_next_action(rows)
+    nxt = journey.pick_next_action(rows, recommended=context.recommended)
     base["notes"] = [*base["notes"], *context.loose_notes]
     return JourneyResponse(
         **base, mode="tasks", weeks=weeks, support=context.support,
@@ -81,9 +89,12 @@ def _journey_view(s: Session, request: Request, account: dict, case_id: UUID, no
 
 
 def _notice(c: intake.Ctx) -> PreButtonNotice | None:
-    """UC-CASE-12 and UC-CASE-18. Before the button: when the free days begin, or that they don't change."""
+    """UC-CASE-12 and UC-CASE-18. Before the button: when the free days begin, or that they don't change.
+    A subscribed account sees no trial wording."""
     account = c.account
-    if account["trial_started_at"] is None:
+    if account["status"] == "subscribed":
+        text = c.copy["pre_button_notice_subscribed"]
+    elif account["trial_started_at"] is None:
         text = c.copy["pre_button_notice"]
     else:
         text = c.copy["pre_button_notice_existing_trial"].format(
@@ -103,7 +114,10 @@ def _notice(c: intake.Ctx) -> PreButtonNotice | None:
     ),
     responses=_DENIED,
 )
-def preview(case_id: UUID, request: Request, identity: Identity = Depends(get_identity)) -> JourneyPreviewResponse:
+def preview(case_id: UUID, request: Request, identity: Identity = Depends(get_identity),
+            care_level: int = Query(default=1, ge=1, le=4, description="The session's care level. At levels 3 "
+                                    "and 4 nothing about the free days, the price, or subscribing is shown.")
+            ) -> JourneyPreviewResponse:
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
         ready = acct.require_ready(s, request, write=False)
@@ -119,13 +133,24 @@ def preview(case_id: UUID, request: Request, identity: Identity = Depends(get_id
 
         weeks = []
         for week in range(1, 5):
+            keys = intake.ordered([k for k in sel.task_keys if tmpl[k]["journey_week"] == week], tmpl)
+            # Recommended first. Probably-not-applicable last, never hidden (UC-CASE-06, UC-CASE-12).
+            keys.sort(key=lambda k: (k in sel.probably_not_applicable, k not in sel.recommended))
             tasks = []
-            for k in intake.ordered([k for k in sel.task_keys if tmpl[k]["journey_week"] == week], tmpl):
+            for k in keys:
                 t, status = tmpl[k], sel.initial_status[k]
+                if k in sel.probably_not_applicable and status == "not_started":
+                    label = c.copy["probably_not_applicable_label"]
+                elif k in sel.needs_check:
+                    label = c.copy["check_on_this_label"]
+                else:
+                    label = c.copy[STATUS_LABELS.get(status, "when_youre_ready")]
                 tasks.append(PreviewTask(
                     task_key=k, title=t["title"], plain_summary=t["plain_summary"], journey_week=week,
                     waypoint=definition["task_waypoints"].get(k), status=status,
-                    status_label=c.copy[STATUS_LABELS.get(status, "when_youre_ready")],
+                    journey_status=journey_status(status), needs_check=k in sel.needs_check,
+                    probably_not_applicable=k in sel.probably_not_applicable, recommended=k in sel.recommended,
+                    status_label=label,
                     attorney_referral=t["attorney_referral"], attorney_line=intake.attorney_line(c, t),
                     citations=[CitationOut.model_validate(x) for x in t["citations"]], notes=attached.get(k, [])))
             weeks.append(PreviewWeek(week=week, label=c.copy["week_label"].format(week=week), tasks=tasks))
@@ -137,6 +162,10 @@ def preview(case_id: UUID, request: Request, identity: Identity = Depends(get_id
         if not is_draft:
             notice, available = None, False
             step = NextStep(action="view_journey", prompt=c.copy["journey_preview_intro"])
+        elif care_level >= 3:
+            # UC-CASE-12 care_level_3_or_4: no notice, no trial or price wording. Setup waits until level 1.
+            notice, available = None, False
+            step = intake.safety_step(c, IntakeSession(safety_mode=safety.SEVERITY[care_level - 1]))
         elif case["death_not_yet_occurred"]:
             # UC-CASE-17. Start journey is not offered.
             notice, available = None, False
@@ -164,7 +193,8 @@ def preview(case_id: UUID, request: Request, identity: Identity = Depends(get_id
             case=intake.case_out(c, case, answers), journey_template_key=sel.path_key,
             journey_template_version=sel.template_version, explanation=explanation, weeks=weeks, notes=loose,
             support=intake.support_resources(c, definition, sel), pre_button_notice=notice,
-            start_available=available, notifications_chosen=chosen, next_step=step,
+            start_available=available, care_level=care_level, controls=intake.controls(c.copy),
+            notifications_chosen=chosen, next_step=step,
             read_aloud=ReadAloud(label=c.copy["read_this_to_me"], text=text))
 
 
@@ -198,6 +228,9 @@ def start(case_id: UUID, req: StartJourneyIn, request: Request,
         case = intake.load_case(s, case_id)
         if not s.is_case_member(case_id, ("owner",)):
             raise case_access_denied()
+        if req.session is not None and safety.no_billing(req.session):
+            # UC-CASE-12 care_level_3_or_4. Nothing about billing. Setup waits until level 1.
+            raise ApiError(409, "not_now", c.copy["safety_next"])
         if ready.account["status"] == "read_only":
             raise ApiError(403, "account_read_only", c.copy["subscription_needed_new_journey"],
                            next_step=acct.subscribe_step(request.app.state.copy).model_dump())
@@ -220,24 +253,29 @@ def start(case_id: UUID, req: StartJourneyIn, request: Request,
 
         account = acct.load_account(s)
         c = intake.ctx(s, request, account)
-        end = acct.format_date(acct.local_trial_end(account))
-        key = "confirmation_first_case" if trial_started_now else "confirmation_existing_trial"
-        # The trial reminder always shows in Cairn. It goes by email only when the user chose email (0011).
-        reminder = c.copy["reminder_sentence_with_channel" if nt.any_email_choice(s)
-                          else "reminder_sentence_in_app_only"]
-        confirmation = c.copy[key].format(trial_end_date=end, reminder_sentence=reminder)
+        end_date = acct.local_trial_end(account)
+        end = acct.format_date(end_date) if end_date else None
+        if account["status"] == "subscribed":
+            key = "confirmation_subscribed"  # UC-CASE-18: no trial wording
+        else:
+            key = "confirmation_first_case" if trial_started_now else "confirmation_existing_trial"
+        # The trial reminder always shows in Cairn. It also goes out only when the user chose a channel (OPEN-02).
+        clause = (c.copy["reminder_channel_clause_channel_chosen"].format(channel=c.copy["reminder_channel_email"])
+                  if nt.any_email_choice(s) else c.copy["reminder_channel_clause_in_cairn_only"])
+        confirmation = c.copy[key].format(trial_end_date=end, reminder_channel_clause=clause)
 
         rows = journey.load_tasks(s, case_id)
         context = journey.task_context(c, case, answers)
         recommended = [FirstTaskChoice(task=journey.task_summary(r, context), why_now=r["why_now"])
-                       for r in journey.time_sensitive(rows)]
+                       for r in journey.time_sensitive(rows, recommended=context.recommended)]
         step = _first_task_step(c, recommended)
         text = " ".join([confirmation, c.copy["time_sensitive_intro"],
                          *(f"{r.task.title}. {r.why_now or ''}" for r in recommended), step.prompt])
         return StartJourneyResponse(
-            case=intake.case_out(c, case, answers), confirmation=confirmation, trial_started_now=trial_started_now,
-            trial_end_date=acct.local_trial_end(account), recommended=recommended,
-            small_task=c.copy["small_task_example"], next_step=step,
+            case=intake.case_out(c, case, answers), confirmation=confirmation,
+            legal_review_required=key in c.copy.legal_review, trial_started_now=trial_started_now,
+            trial_end_date=end_date, recommended=recommended,
+            small_task=c.copy["small_task_example"], next_step=step, controls=intake.controls(c.copy),
             read_aloud=ReadAloud(label=c.copy["read_this_to_me"], text=text))
 
 
@@ -284,8 +322,10 @@ def first_task(case_id: UUID, req: FirstTaskIn, request: Request,
         answers = intake.load_answers(s, case_id)
         out = intake.case_out(c, case, answers)
         if req.choice == "not_today":
-            return FirstTaskResponse(case=out, acknowledgment=c.copy["not_today"], task=None,
-                                     next_step=NextStep(action="paused", prompt=c.copy["not_today"]))
+            # DEC-07: the free days keep counting while away. A subscribed account hears nothing about billing.
+            key = "not_today" if c.account["status"] == "trial_active" else "not_today_subscribed"
+            return FirstTaskResponse(case=out, acknowledgment=c.copy[key], task=None,
+                                     next_step=NextStep(action="paused", prompt=c.copy[key]))
         if req.choice == "small_task":
             return FirstTaskResponse(case=out, acknowledgment=c.copy["small_task_open"], task=None,
                                      next_step=NextStep(action="small_task", prompt=c.copy["small_task_example"]))
@@ -350,10 +390,66 @@ def pause_journey(case_id: UUID, request: Request, req: PauseRequest | None = No
 def resume_journey(case_id: UUID, request: Request, identity: Identity = Depends(get_identity)) -> JourneyResponse:
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
-        ready = acct.require_ready(s, request, write=True)
-        s.update_case(case_id, activity=False, tasks_paused_until=None)
+        acct.require_ready(s, request, write=True)
+        paused = s.end_rest(case_id)
         s.audit("journey_resumed", case_id, "case", case_id)
-        return _journey_view(s, request, ready.account, case_id, notes=[messages.RESUMED])
+        notes = [messages.RESUMED]
+        if paused:
+            # Crisis plan on_return: said once, after a care rest stopped the free days.
+            account = acct.load_account(s)
+            c = intake.ctx(s, request, account)
+            notes.append(Note(kind="account", text=c.copy["rest_return_paused_note"].format(
+                trial_end_date=acct.format_date(acct.local_trial_end(account)))))
+        return _journey_view(s, request, acct.load_account(s), case_id, notes=notes)
+
+
+@router.post(
+    "/take-a-break",
+    response_model=IntakeTurnResponse,
+    summary="Take a break",
+    description=(
+        "Global rule take_a_break: one select, no confirmation. In a draft it saves and shows the pause message "
+        "(UC-CASE-10). On a journey, without rest_choice it offers the rest choices, and with one it sets the tasks "
+        "aside until then. A rest chosen at level 2 or above is a care rest and pauses the free days (DEC-26-01). "
+        "A rest in normal mode keeps them counting, and Cairn says so before pausing. Never needs a writable "
+        "account."
+    ),
+    responses=_DENIED,
+)
+def take_a_break(case_id: UUID, request: Request, req: TakeABreakIn | None = None,
+                 identity: Identity = Depends(get_identity)) -> IntakeTurnResponse:
+    req = req or TakeABreakIn()
+    with request.app.state.db.session(identity.subject) as s:
+        s.require_user()
+        c = intake.ctx(s, request, acct.load_account(s))
+        case = intake.load_case(s, case_id)
+        if not s.is_case_member(case_id, ("owner", "co_executor")):
+            raise case_access_denied()
+        answers = intake.load_answers(s, case_id)
+        session = req.session or IntakeSession()
+        care = safety.care_level(session) >= 2
+        if case["status"] == "draft":
+            if s.account_can_edit_drafts():
+                step = intake.next_field(answers, session)
+                s.update_case(case_id, last_intake_step=step.value if step else None)
+                case = intake.load_case(s, case_id)
+            return intake.turn(c, case, answers, session, acknowledgment=c.copy["answer_saved"],
+                               next_step=NextStep(action="paused", prompt=c.copy["pause"],
+                                                  options=[Option(value="keep_going", label=c.copy["keep_going"])]))
+        billing_ok = c.account["status"] == "trial_active" and not safety.no_billing(session)
+        if req.rest_choice is None:
+            body = []
+            if billing_ok:
+                body.append(c.copy["rest_care_clock_note"] if care else c.copy["rest_normal_clock_note"].format(
+                    trial_end_date=acct.format_date(acct.local_trial_end(c.account))))
+            return intake.turn(c, case, answers, session, body=body, next_step=NextStep(
+                action="choose_rest", prompt=c.copy["rest_question"], options=intake.rest_options(c)))
+        s.begin_rest(case_id, intake.rest_until(c, req.rest_choice), care=care)
+        s.audit("journey_rest_started", case_id, "case", case_id)
+        case = intake.load_case(s, case_id)
+        return intake.turn(c, case, answers, session, acknowledgment=c.copy["rest_saved"], ask=False,
+                           next_step=NextStep(action="resting", prompt=c.copy["welcome_back_rest"],
+                                              options=[Option(value="resume", label=c.copy["keep_going"])]))
 
 
 @router.get(
@@ -380,7 +476,7 @@ def case_status(case_id: UUID, request: Request, identity: Identity = Depends(ge
             group = by_category.setdefault(t.category, CategoryStatus(
                 category=t.category, label=messages.CATEGORY_LABELS[t.category.value],
                 done=[], in_progress=[], up_next=[], set_aside=[]))
-            if r["status"] == "done":
+            if r["status"] in ("done", "handled_elsewhere"):
                 group.done.append(t)
             elif r["status"] == "in_progress":
                 group.in_progress.append(t)
@@ -391,14 +487,14 @@ def case_status(case_id: UUID, request: Request, identity: Identity = Depends(ge
 
         counts = StatusCounts(
             total=len(rows),
-            done=sum(r["status"] == "done" for r in rows),
+            done=sum(r["status"] in ("done", "handled_elsewhere") for r in rows),
             in_progress=sum(r["status"] == "in_progress" for r in rows),
             not_started=sum(r["status"] in journey.OPEN_STATUSES and r["status"] != "in_progress" for r in rows),
             set_aside=sum(r["status"] in journey.SET_ASIDE_STATUSES for r in rows),
             overdue=sum(r["status"] in journey.OPEN_STATUSES and r["due_on"] is not None and r["due_on"] < today
                         for r in rows),
         )
-        nxt = journey.pick_next_action(rows)
+        nxt = journey.pick_next_action(rows, recommended=context.recommended if context else frozenset())
         order = list(TaskCategory)
         s.audit("case_status_viewed", case_id, "case", case_id)
         return CaseStatusResponse(

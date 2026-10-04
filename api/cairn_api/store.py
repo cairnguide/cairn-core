@@ -54,7 +54,14 @@ ACCOUNT_FIELDS = {"preferred_name", "name_pronunciation", "name_prefill", "voice
 # deletion_requested_at to request_case_deletion. journey_template_key can change on an active case
 # when an answer changes the base path (UC-CASE-09).
 CASE_FIELDS = {"tasks_paused_until", "purge_after", "last_intake_step", "death_not_yet_occurred", "skip_explainers",
-               "name_fallback", "attorney_triggers", "shown_notices", "journey_template_key"}
+               "name_fallback", "attorney_triggers", "shown_notices", "journey_template_key",
+               "loss_survivor_resources", "secure_now_first"}
+# "Until I come back" (crisis plan rest choices): a rest with no end the user picked. The far date only means
+# "until the user returns". tasks_paused_until is reused for every rest.
+REST_UNTIL_RETURN = timedelta(days=3650)
+JURISDICTIONS = frozenset(
+    "AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR "
+    "PA RI SC SD TN TX UT VT VA WA WV WI WY DC PR GU VI AS MP".split())
 DECEASED_FIELDS = {"legal_first_name", "legal_middle_name", "legal_last_name", "date_of_birth", "ssn_last4",
                    "domicile_state", "veteran_status", "has_will", "date_of_death", "place_type", "facility_name",
                    "city", "county", "death_state"}
@@ -86,11 +93,13 @@ def local_date(now: datetime, time_zone: str | None) -> date:
     return now.astimezone(ZoneInfo(time_zone or "UTC")).date()
 
 
-def effective_account_status(status: str, trial_ends_at: datetime | None, now: datetime) -> str:
-    """read_only is derived from trial_ends_at, so enforcement never waits for the expire_trials job."""
+def effective_account_status(status: str, trial_ends_at: datetime | None, now: datetime,
+                             trial_clock_paused_at: datetime | None = None) -> str:
+    """read_only is derived from trial_ends_at, so enforcement never waits for the expire_trials job.
+    While a care rest has stopped the free days, the account never becomes read-only (DEC-26-01)."""
     if status in ("subscribed", "pending_deletion", "pending_onboarding"):
         return status
-    if trial_ends_at is not None and now >= trial_ends_at:
+    if trial_ends_at is not None and now >= trial_ends_at and trial_clock_paused_at is None:
         return "read_only"
     return status
 
@@ -146,10 +155,6 @@ def _iso_date(v) -> bool:
     return isinstance(v, str) and len(v) == 10 and set(v) <= _DATE_CHARS and v[4] == v[7] == "-"
 
 
-def _state(v) -> bool:
-    return isinstance(v, str) and len(v) == 2 and v.isascii() and v.isupper() and v.isalpha()
-
-
 def _clean_text(v, lo: int, hi: int) -> bool:
     return isinstance(v, str) and lo <= len(v) <= hi and not any(ord(ch) < 32 or ord(ch) == 127 for ch in v)
 
@@ -162,8 +167,17 @@ INTAKE_ENUMS = {
     "veteran_status": {"yes", "no", "unknown"},
     "estate_plan_status": {"yes_location_known", "yes_location_unknown", "no", "unknown"},
 }
-COMPLETED_ITEMS = {"death_pronounced", "funeral_provider_chosen", "funeral_home_has_ssn", "certificates_ordered",
-                   "ssa_notified", "bank_notified", "other", "none_or_unsure"}
+COMPLETED_ITEMS = {"death_pronounced", "home_pets_vehicles_secured", "funeral_provider_chosen", "funeral_home_has_ssn",
+                   "certificates_ordered", "ssa_notified", "bank_insurer_or_employer_notified", "other"}
+
+
+def completed_item_key(entry) -> str | None:
+    """A checklist entry is an item name (done) or {item, handled_by} (someone else is handling it)."""
+    if isinstance(entry, str):
+        return entry
+    if isinstance(entry, dict) and set(entry) == {"item", "handled_by"}:
+        return entry["item"]
+    return None
 
 
 def intake_value_valid(key: str, v) -> bool:
@@ -181,20 +195,26 @@ def intake_value_valid(key: str, v) -> bool:
             return _iso_date(v["date"])
         return v["precision"] in ("this_week", "unknown") and v["date"] is None
     if key == "place_of_death":
-        if not isinstance(v, dict) or set(v) != {"county_or_city", "outside_us", "state"}:
+        if not isinstance(v, dict) or set(v) != {"county_or_city", "outside_us", "jurisdiction"}:
             return False
-        return (isinstance(v["outside_us"], bool) and (v["state"] is None or _state(v["state"]))
+        return (isinstance(v["outside_us"], bool) and (v["jurisdiction"] is None or v["jurisdiction"] in JURISDICTIONS)
                 and (v["county_or_city"] is None or (isinstance(v["county_or_city"], str)
                                                      and 1 <= len(v["county_or_city"]) <= 100))
-                and not (v["outside_us"] and v["state"] is not None))
-    if key == "residence_state":
-        if not isinstance(v, dict) or set(v) != {"choice", "state"}:
+                and not (v["outside_us"] and v["jurisdiction"] is not None))
+    if key == "residence_jurisdiction":
+        if not isinstance(v, dict) or set(v) != {"choice", "jurisdiction"}:
             return False
         return (v["choice"] in ("same_as_place_of_death", "different", "unknown")
-                and (v["state"] is None or (v["choice"] == "different" and _state(v["state"]))))
+                and (v["jurisdiction"] is None or (v["choice"] == "different" and v["jurisdiction"] in JURISDICTIONS)))
     if key == "completed_items":
-        return (isinstance(v, list) and len(v) >= 1 and all(isinstance(e, str) and e in COMPLETED_ITEMS for e in v)
-                and len(set(v)) == len(v) and ("none_or_unsure" not in v or len(v) == 1))
+        if not isinstance(v, list) or not v:
+            return False
+        if v == ["none_or_unsure"]:
+            return True
+        keys = [completed_item_key(e) for e in v]
+        return (all(k in COMPLETED_ITEMS for k in keys) and len(set(keys)) == len(keys)
+                and all(isinstance(e, str) or e["handled_by"] is None or _clean_text(e["handled_by"], 1, 60)
+                        for e in v))
     return False
 
 
@@ -213,6 +233,8 @@ def notification_choice_valid(channels: list, reasons: list, lead_days, inactivi
 
 class Session:
     """One request's transaction, as one user. Every method enforces the rules in the module docstring."""
+
+    rest_until_return = REST_UNTIL_RETURN
 
     def __init__(self, db, cs, user_id: UUID | None = None, cache: dict | None = None):
         self._db = db
@@ -271,7 +293,8 @@ class Session:
             "sign_in_method": sign_in_method, "preferred_name": None, "name_pronunciation": None,
             "name_prefill": name_prefill, "voice": "steady_direct", "time_zone": time_zone,
             "onboarding_step": "account_created", "status": "pending_onboarding",
-            "trial_started_at": None, "trial_ends_at": None, "created_at": self.now})
+            "trial_started_at": None, "trial_ends_at": None, "trial_clock_paused_at": None,
+            "ai_reminder_shown_at": None, "ai_reminder_shown_on": None, "created_at": self.now})
         return uid
 
     def test_login(self, username: str) -> tuple[bool, dict | None]:
@@ -301,8 +324,11 @@ class Session:
             return None
         out = {k: u.get(k) for k in ("email", "sign_in_method", "preferred_name", "name_pronunciation",
                                      "name_prefill", "voice", "time_zone", "onboarding_step", "trial_started_at",
-                                     "trial_ends_at", "created_at")}
-        return {**out, "id": u["_id"], "status": effective_account_status(u["status"], u["trial_ends_at"], self.now)}
+                                     "trial_ends_at", "trial_clock_paused_at", "ai_reminder_shown_at",
+                                     "ai_reminder_shown_on", "created_at")}
+        return {**out, "id": u["_id"], "stored_status": u["status"],
+                "status": effective_account_status(u["status"], u["trial_ends_at"], self.now,
+                                                   u.get("trial_clock_paused_at"))}
 
     def account_can_write(self) -> bool:
         """Onboarding complete and not read-only (D-05). Deleting never depends on this."""
@@ -473,7 +499,8 @@ class Session:
             "journey_template_version": None, "journey_started_at": None, "journey_started_on": None,
             "last_intake_step": None, "last_activity_at": self.now, "death_not_yet_occurred": False,
             "skip_explainers": False, "name_fallback": "your_loved_one", "attorney_triggers": [],
-            "shown_notices": [], "tasks_paused_until": None, "deletion_requested_at": None})
+            "shown_notices": [], "tasks_paused_until": None, "deletion_requested_at": None, "check_in_at": None,
+            "loss_survivor_resources": False, "secure_now_first": False})
         return case_id
 
     def load_case(self, case_id: UUID) -> dict | None:
@@ -586,6 +613,111 @@ class Session:
             return False
         self.audit("case_deletion_cancelled", case_id, "case", case_id)
         return True
+
+    # -------------------------------------------------------------- rests and the free days (crisis plan, DEC-26-01)
+
+    def _rest_member(self, case_id: UUID) -> dict:
+        """A rest is a safety feature, so it needs a membership and nothing else: never onboarding,
+        acknowledgments, or a writable account."""
+        case = self._case(case_id)
+        if not self._member(case, WRITE_ROLES):
+            raise denied()
+        return case
+
+    def begin_rest(self, case_id: UUID, until: datetime, *, care: bool) -> bool:
+        """Steps back from tasks until the given time. A care rest (level 2 choice, or the automatic pause at
+        levels 3 and 4) on an active journey also stops the free days. A normal rest never does. Returns True
+        when this call stopped the free days. The reason is never stored."""
+        case = self._rest_member(case_id)
+        self._c("cases").update_one({"_id": case_id}, {"$set": {"tasks_paused_until": until}})
+        if not care or case["status"] == "draft":
+            return False  # a draft has no trial clock: a care rest only stops questions (UC-CASE-14)
+        u = self._user()
+        if (u["status"] in ("subscribed", "pending_deletion") or u["trial_started_at"] is None
+                or u.get("trial_clock_paused_at") is not None or self.now >= u["trial_ends_at"]):
+            return False
+        return bool(self._c("users").update_one({"_id": u["_id"], "trial_clock_paused_at": None},
+                                                {"$set": {"trial_clock_paused_at": self.now}}).modified_count)
+
+    def end_rest(self, case_id: UUID) -> timedelta | None:
+        """The user came back to tasks. Clears the rest and, when no other journey is resting, starts the free
+        days again. Returns how long they were paused, or None when they weren't."""
+        self._rest_member(case_id)
+        self._c("cases").update_one({"_id": case_id}, {"$set": {"tasks_paused_until": None,
+                                                                "last_activity_at": self.now}})
+        return self.settle_trial_clock()
+
+    def settle_trial_clock(self) -> timedelta | None:
+        """Starts the free days again once no rest is running, and moves trial_ends_at (and any reminder not
+        yet sent) later by exactly the paused time. A rest that ended on its own ends at its end time."""
+        u = self._user()
+        if u is None or u.get("trial_clock_paused_at") is None:
+            return None
+        rests = [c["tasks_paused_until"] for c in self._c("cases").find(
+            {"created_by": u["_id"], "status": {"$ne": "draft"}, "tasks_paused_until": {"$ne": None}},
+            {"tasks_paused_until": 1})]
+        if any(r > self.now for r in rests):
+            return None
+        paused_at = u["trial_clock_paused_at"]
+        ended = max([r for r in rests if r >= paused_at], default=self.now)
+        paused = max(ended - paused_at, timedelta(0))
+        moved = self._c("users").update_one(
+            {"_id": u["_id"], "trial_clock_paused_at": paused_at},
+            {"$set": {"trial_clock_paused_at": None, "trial_ends_at": u["trial_ends_at"] + paused}})
+        if not moved.modified_count:
+            return None
+        if paused:
+            # The app can't update reminders (only the job claims them), so an unsent one is replaced, later.
+            reminders = self._c("trial_reminders")
+            for r in list(reminders.find({"user_id": u["_id"], "email_sent_at": None})):
+                if reminders.delete_one({"_id": r["_id"], "email_sent_at": None}).deleted_count:
+                    reminders.insert_one({**r, "due_at": r["due_at"] + paused})
+        return paused
+
+    # -------------------------------------------------------------- the AI reminder (UC-CASE-23)
+
+    def ai_reminder_due(self, *, session_start: bool, every: timedelta) -> bool:
+        """At the start of a session, at most once a day. During one, again after every 3 hours."""
+        u = self._user()
+        if u is None:
+            return False
+        last = u.get("ai_reminder_shown_at")
+        if last is None:
+            return True
+        if session_start:
+            return u.get("ai_reminder_shown_on") != from_date(local_date(self.now, u.get("time_zone")))
+        return self.now - last >= every
+
+    def mark_ai_reminder_shown(self) -> None:
+        u = self._user()
+        if u is not None:
+            self._c("users").update_one({"_id": u["_id"]}, {"$set": {
+                "ai_reminder_shown_at": self.now,
+                "ai_reminder_shown_on": from_date(local_date(self.now, u.get("time_zone")))}})
+
+    # -------------------------------------------------------------- check-in and the SB 243 count
+
+    def set_check_in(self, case_id: UUID, when: datetime) -> None:
+        """Only on an explicit yes to "Would it be okay if I checked in with you tomorrow?" (DEC-26-04)."""
+        self._rest_member(case_id)
+        self._c("cases").update_one({"_id": case_id}, {"$set": {"check_in_at": when}})
+
+    def take_due_check_in(self, case_id: UUID) -> bool:
+        """A check-in that is due and not going by email shows once, the next time the user opens Cairn."""
+        case = self._c("cases").find_one({"_id": case_id, **self._visible()}, {"check_in_at": 1, "members": 1})
+        if case is None or case.get("check_in_at") is None or case["check_in_at"] > self.now:
+            return False
+        prefs = self._c("notification_preferences").find_one({"_id": case_id}, {"channels": 1})
+        if prefs and "email" in prefs["channels"]:
+            return False  # the jobs send it by email
+        return bool(self._c("cases").update_one({"_id": case_id, "check_in_at": case["check_in_at"]},
+                                                {"$set": {"check_in_at": None}}).modified_count)
+
+    def count_level_4_referral(self) -> None:
+        """An anonymous monthly count for SB 243 reporting. No user, no case, no time of day."""
+        self._c("safety_referral_counts").update_one(
+            {"_id": self.now.strftime("%Y-%m")},
+            {"$inc": {"level_4_referrals": 1}, "$set": {"updated_at": self.now}}, upsert=True)
 
     # -------------------------------------------------------------- the person who died
 
@@ -729,7 +861,10 @@ class Session:
                 "plain_summary": t["plain_summary"], "journey_week": t["journey_week"], "sort_order": t["sort_order"],
                 "attorney_referral": t["attorney_referral"], "attorney_referral_note": t["attorney_referral_note"],
                 "why_now": t["why_now"], "counsel_reviewed_at": t["counsel_reviewed_at"],
-                "jurisdiction": t["jurisdiction"], "template_id": t["id"]})
+                "jurisdiction": t["jurisdiction"], "template_id": t["id"],
+                "needs_check": r.get("needs_check", False), "probably_not_applicable": r.get("probably_not_applicable",
+                                                                                            False),
+                "handled_by": r.get("handled_by")})
         out.sort(key=lambda r: (r["journey_week"], r["sort_order"], r["due_on"] is None, r["due_on"] or date.min,
                                 r["task_key"]))
         return out
@@ -750,10 +885,13 @@ class Session:
     def task_states(self, case_id: UUID) -> list[dict]:
         """Every task on the case with its key, for syncing with the journey rules."""
         self._case(case_id)
-        return [{"id": r["_id"], "status": r["status"], "selected": r["selected"], "task_key": r["task_key"]}
+        return [{"id": r["_id"], "status": r["status"], "selected": r["selected"], "task_key": r["task_key"],
+                 "needs_check": r.get("needs_check", False),
+                 "probably_not_applicable": r.get("probably_not_applicable", False), "handled_by": r.get("handled_by")}
                 for r in self._c("case_tasks").find({"case_id": case_id})]
 
-    def add_task(self, case_id: UUID, template: dict, status: str, due_on: date | None) -> UUID:
+    def add_task(self, case_id: UUID, template: dict, status: str, due_on: date | None, *, needs_check: bool = False,
+                 probably_not_applicable: bool = False, handled_by: str | None = None) -> UUID:
         """A task pinned to one template version. Active cases on writable accounts only."""
         case = self._case_for_write(case_id, drafts_on_read_only=False)
         if case["status"] == "draft":
@@ -763,11 +901,14 @@ class Session:
             "_id": task_id, "case_id": case_id, "template_id": template["id"], "task_key": template["task_key"],
             "status": status, "due_on": from_date(due_on), "snoozed_until": None,
             "completed_at": self.now if status == "done" else None, "selected": True,
+            "needs_check": needs_check, "probably_not_applicable": probably_not_applicable,
+            "handled_by": handled_by if status == "handled_elsewhere" else None,
             "created_at": self.now, "updated_at": self.now})
         return task_id
 
     def update_task(self, case_id: UUID, task_id: UUID, *, status: str = UNSET, snoozed_until=UNSET,
-                    selected: bool = UNSET, only_from: tuple[str, ...] | None = None) -> bool:
+                    selected: bool = UNSET, only_from: tuple[str, ...] | None = None, needs_check: bool = UNSET,
+                    probably_not_applicable: bool = UNSET, handled_by: str | None = UNSET) -> bool:
         """Change a task's status, snooze, or selected flag. Returns False when nothing matched, like an
         UPDATE that row-level security filtered out. Done records the completion time once. A change to
         status or snooze is activity on the case. A change the rules make (selected) is not."""
@@ -784,10 +925,20 @@ class Session:
         if status is not UNSET:
             changes["status"] = status
             changes["completed_at"] = (row["completed_at"] or self.now) if status == "done" else None
+            if status != "handled_elsewhere":
+                changes["handled_by"] = None
+            if status in ("done", "handled_elsewhere"):
+                changes["needs_check"] = False
         if snoozed_until is not UNSET:
             changes["snoozed_until"] = snoozed_until
         if selected is not UNSET:
             changes["selected"] = selected
+        if needs_check is not UNSET:
+            changes["needs_check"] = needs_check
+        if probably_not_applicable is not UNSET:
+            changes["probably_not_applicable"] = probably_not_applicable
+        if handled_by is not UNSET:
+            changes["handled_by"] = handled_by
         self._c("case_tasks").update_one({"_id": task_id}, {"$set": changes})
         if (status is not UNSET and status != row["status"]) or (
                 snoozed_until is not UNSET and snoozed_until != row["snoozed_until"]):

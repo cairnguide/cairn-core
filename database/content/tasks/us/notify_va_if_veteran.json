@@ -1,8 +1,8 @@
 {
   "task_key": "notify_va_if_veteran",
-  "version": 2,
-  "title": "Check for VA burial benefits",
-  "plain_summary": "Veterans may be eligible for burial and memorial benefits from the VA. The funeral home can often help you ask.",
+  "version": 3,
+  "title": "Contact the VA",
+  "plain_summary": "If they served in the military, the VA may offer burial, memorial, and survivor benefits. The funeral home can often help you ask.",
   "journey_week": 3,
   "sort_order": 20,
   "due_offset_days": 17,
@@ -17,8 +17,14 @@
   "counsel_reviewed_at": null,
   "citations": [
     {
-      "authority_name": "U.S. Department of Veterans Affairs",
+      "authority_name": "U.S. Department of Veterans Affairs, Burials and memorials",
       "url": "https://www.va.gov/burials-memorials/",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    },
+    {
+      "authority_name": "U.S. Department of Veterans Affairs, Survivors",
+      "url": "https://www.va.gov/survivors/contact_us.asp",
       "jurisdiction": "US",
       "last_verified_on": null
     }

@@ -88,14 +88,16 @@ Sign-up and onboarding copy lives in [`cairn_api/content/registration-copy.json`
 
 ## Case creation
 
-Case creation follows `database/docs/cairn-case-creation-use-cases.json` (spec 0.3.0). `database/docs/case-creation-gap-audit.md` maps every acceptance criterion to its test.
+Case creation follows `database/docs/cairn-case-creation-use-cases-v2.json` (spec 2.0.0) and, where they differ, the Support and Crisis Plan (`database/docs/cairn-support-crisis-plan.json`). `database/docs/case-creation-v2-gap-audit.md` maps every acceptance criterion to its test.
 
 - A new case is a draft. The 28 free days start only at the first `POST .../journey/start` (DEC-01), inside `store.Session.start_journey`. No payment information is asked for anywhere (DEC-02).
 - Nothing about the person who died is collected at creation beyond the spec's data_fields. Legal names, dates of birth, SSNs, account numbers, and medical details never are. Free text is redacted as it is parsed (`RedactedText`), never stored, and only confirmed field values are saved.
 - Journey selection rules are template data in `database/content/journeys/journey-selection.json`, loaded into `journey_templates`. `cairn_api/journey_selection.py` only evaluates them.
 - Every turn acknowledges first, asks at most one question, and has one `next_step`. Every question offers Skip for now and I'm not sure, and every response carries `read_aloud`.
-- Safety modes (UC-CASE-14) are in a client-held `session` and never stored. In acute_distress and risk_of_harm the voice is steady_care and no question is asked until the user continues.
-- Free-text extraction (`extraction.py`) and distress signals (`safety.py`) are rule-based stand-ins until a model and the Trello card 26 crisis plan replace them.
+- Care levels (UC-CASE-14 and the crisis plan) are in a client-held `session` and never stored. Level 2 is two overwhelm signals or three skips in a row. Levels 3 and 4 use the steady_care voice, ask nothing until the user continues, pause the tasks (a care rest, which pauses the free days on an active journey), and show no billing wording. Level 4 says 988 first and adds one to the anonymous SB 243 count.
+- New endpoints: `POST .../intake/transcripts` (speech, UC-CASE-22), `POST .../intake/level-2-choice`, `POST .../intake/check-in` (DEC-26-04), and `POST /v1/cases/{id}/take-a-break`. Responses carry `care_level`, `announcements` (the AI reminder, rest offers, and the check-in, for screen readers), and `controls` (the take a break, read aloud, and speak labels).
+- Open decisions OPEN-04 to OPEN-10 are `CAIRN_*` settings in `config.py`, with the spec's defaults. The app refuses to start with any other value until the decision is made.
+- Free-text extraction (`extraction.py`) and distress signals (`safety.py`) are rule-based stand-ins until a model replaces them. The phrase lists need clinical sign-off (DEC-26-06).
 
 Copy lives in [`cairn_api/content/case-creation-copy.json`](cairn_api/content/case-creation-copy.json), with the same `spec_copy`, `flow_copy`, and `draft_copy` sections as the registration copy, and a test that keeps `spec_copy` verbatim. Point `CAIRN_CASE_COPY` at a reviewed file to replace it.
 
@@ -112,13 +114,14 @@ Adding a voice means a new voice file and manifest entry, a new value in `schema
 | Job | Function | Notes |
 |---|---|---|
 | Trial status | `maintenance.expire_trials`, job `expire_trials` | Reporting only. Read-only is enforced from `trial_ends_at` directly |
-| Outbound email | `python api/scripts/send_outbound.py` or job `outbound` | Every 5 minutes. Deletion confirmations (one each, address purged once sent), trial reminders for users who chose email, and the notifications users chose. SMTP, provider not chosen yet. Register the sending domain with Apple's Private Email Relay Service |
+| Outbound email | `python api/scripts/send_outbound.py` or job `outbound` | Every 5 minutes. Deletion confirmations (one each, address purged once sent), trial reminders for users who chose email, the notifications users chose, and a check-in the user said yes to. Every notification and check-in passes a check that it names no person who died and no circumstance. Nothing about tasks is sent during a rest. SMTP, provider not chosen yet. Register the sending domain with Apple's Private Email Relay Service |
 | Held case deletion (UC-END-13) | `maintenance.purge_held_cases`, job `purge_held_cases` | At least hourly. Deletes cases whose 7-day hold has ended and queues their confirmation |
+| Trial clocks (DEC-26-01) | `maintenance.settle_trial_clocks`, job `settle_trial_clocks` | Hourly. Starts the free days again when a care rest ends on its own, and moves `trial_ends_at` later by the paused time |
 | Draft cleanup (DEC-07) | `maintenance.purge_inactive_drafts`, job `purge_inactive_drafts` | At least daily. Deletes drafts idle for `app_settings.draft_retention_days` (28), with their answers and context. Never touches active cases |
 | Identity cleanup | `python api/scripts/identity_cleanup.py` or job `identity_cleanup` | Deletes Auth0 users and revokes Apple tokens after account deletion |
 | Stale accounts | `maintenance.purge_stale_accounts(db, pending, no_case)` | Periods come from the retention schedule [LEGAL REVIEW REQUIRED] |
 
-On Cloudflare, Cron Triggers in `cloudflare/wrangler.jsonc` run the first four through `cairn_api/jobs.py` (`POST /jobs/{name}` in the private jobs container). Stale account purging isn't scheduled until the retention periods are set.
+On Cloudflare, Cron Triggers in `cloudflare/wrangler.jsonc` run the first five through `cairn_api/jobs.py` (`POST /jobs/{name}` in the private jobs container). Stale account purging isn't scheduled until the retention periods are set.
 
 ## Security choices
 
