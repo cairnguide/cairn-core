@@ -19,7 +19,7 @@
     "source": { "type": "string", "minLength": 1, "maxLength": 200 },
     "mvp_window": { "const": "first_4_weeks" },
     "verified_states": {
-      "description": "States with counsel-reviewed content. A place of death outside this list adds the state office task (UC-CASE-16).",
+      "description": "States and territories with counsel-reviewed content. Any other place of death gets the verified link with 'Please confirm with the office' (UC-CASE-16, OPEN-06).",
       "type": "array", "uniqueItems": true,
       "items": { "type": "string", "pattern": "^[A-Z]{2}$" }
     },
@@ -73,6 +73,8 @@
           "spec_key": { "type": "string", "description": "The add name used in the spec, for traceability." },
           "when": { "$ref": "#/$defs/condition" },
           "add_tasks": { "$ref": "#/$defs/task_list" },
+          "recommend_tasks": { "$ref": "#/$defs/task_list", "description": "Marked recommended and moved up (UC-CASE-06, UC-CASE-13)." },
+          "mark_probably_not_applicable": { "$ref": "#/$defs/task_list", "description": "Kept visible, shown last as 'Probably doesn't apply' (UC-CASE-06)." },
           "add_notes": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/key" } },
           "add_support_resources": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/key" } },
           "replace_tasks": {
@@ -87,7 +89,8 @@
         },
         "anyOf": [
           { "required": ["add_tasks"] }, { "required": ["add_notes"] },
-          { "required": ["add_support_resources"] }, { "required": ["replace_tasks"] }
+          { "required": ["add_support_resources"] }, { "required": ["replace_tasks"] },
+          { "required": ["recommend_tasks"] }, { "required": ["mark_probably_not_applicable"] }
         ]
       }
     },
@@ -100,7 +103,7 @@
         "required": ["copy_key", "attach_to_task", "source_urls", "attorney_flag", "legal_review"],
         "properties": {
           "copy_key": { "$ref": "#/$defs/key" },
-          "attach_to_task": { "anyOf": [{ "$ref": "#/$defs/key" }, { "type": "null" }] },
+          "attach_to_task": { "anyOf": [{ "$ref": "#/$defs/key" }, { "type": "null" }, { "$ref": "#/$defs/task_list" }] },
           "source_urls": { "$ref": "#/$defs/urls" },
           "attorney_flag": { "type": "boolean" },
           "legal_review": { "type": "boolean" }
@@ -125,20 +128,21 @@
       "description": "completed_items values and the tasks each one marks done.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["death_pronounced", "funeral_provider_chosen", "funeral_home_has_ssn",
-                   "certificates_ordered", "ssa_notified", "bank_notified", "other"],
+      "required": ["death_pronounced", "home_pets_vehicles_secured", "funeral_provider_chosen", "funeral_home_has_ssn",
+                   "certificates_ordered", "ssa_notified", "bank_insurer_or_employer_notified", "other"],
       "properties": {
         "death_pronounced": { "$ref": "#/$defs/task_list" },
+        "home_pets_vehicles_secured": { "$ref": "#/$defs/task_list" },
         "funeral_provider_chosen": { "$ref": "#/$defs/task_list" },
         "funeral_home_has_ssn": { "$ref": "#/$defs/task_list" },
         "certificates_ordered": { "$ref": "#/$defs/task_list" },
         "ssa_notified": { "$ref": "#/$defs/task_list" },
-        "bank_notified": { "$ref": "#/$defs/task_list" },
+        "bank_insurer_or_employer_notified": { "$ref": "#/$defs/task_list" },
         "other": { "$ref": "#/$defs/task_list" }
       }
     },
     "check_on_this_when_unsure": {
-      "description": "Tasks that start as check_on_this instead of todo when completed_items is none_or_unsure.",
+      "description": "Tasks that stay open with needs_check (shown as 'Check on this') when completed_items is none_or_unsure.",
       "$ref": "#/$defs/task_list"
     }
   },
@@ -148,8 +152,10 @@
     "urls": { "type": "array", "items": { "type": "string", "pattern": "^https://" } },
     "fact": {
       "enum": [
-        "user_role", "date_of_death.precision", "place_of_death.state", "place_of_death.outside_us",
-        "place_state_verified", "residence_state", "circumstance", "veteran_status", "estate_plan_status",
+        "user_role", "date_of_death.precision", "place_of_death.jurisdiction", "place_of_death.outside_us",
+        "place_jurisdiction_verified", "residence_jurisdiction", "dmv_jurisdiction", "secure_now_first",
+        "loss_survivor_resources", "circumstance", "veteran_status", "estate_plan_status",
+        "place_of_death.state", "place_state_verified", "residence_state",
         "completed_items", "base_path", "attorney_triggers"
       ]
     },

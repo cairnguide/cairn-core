@@ -16,6 +16,7 @@ from .schemas import (
     TaskKind,
     TaskStatus,
     TaskSummary,
+    journey_status,
 )
 
 if TYPE_CHECKING:
@@ -27,6 +28,8 @@ TASK_KINDS: dict[str, TaskKind] = {
     "notify_banks": TaskKind.institution_notice,
     "notify_life_insurers": TaskKind.institution_notice,
     "notify_credit_bureaus": TaskKind.institution_notice,
+    "notify_credit_card_companies": TaskKind.institution_notice,
+    "notify_mortgage_and_loan_servicers": TaskKind.institution_notice,
 }
 
 # Grouping for the status view (UC-13). Keys come from the illustrative week
@@ -42,6 +45,17 @@ TASK_CATEGORIES: dict[str, TaskCategory] = {
     "notify_social_security": TaskCategory.agencies,
     "confirm_funeral_home_reported_death": TaskCategory.agencies,
     "notify_va_if_veteran": TaskCategory.agencies,
+    "notify_military_retiree_benefits": TaskCategory.agencies,
+    "irs_what_to_know_now": TaskCategory.agencies,
+    "uscis_pending_matters": TaskCategory.agencies,
+    "notify_state_dmv": TaskCategory.agencies,
+    "return_passport": TaskCategory.agencies,
+    "cancel_voter_registration": TaskCategory.agencies,
+    "notify_state_social_services": TaskCategory.agencies,
+    "notify_federal_employee_benefits": TaskCategory.agencies,
+    "notify_credit_card_companies": TaskCategory.financial_institutions,
+    "notify_mortgage_and_loan_servicers": TaskCategory.financial_institutions,
+    "secure_home_and_identity": TaskCategory.home_and_personal,
     "notify_employer_and_pension": TaskCategory.agencies,
     "notify_banks": TaskCategory.financial_institutions,
     "notify_life_insurers": TaskCategory.financial_institutions,
@@ -68,6 +82,7 @@ class TaskContext:
     loose_notes: list[Note] = field(default_factory=list)
     support: list[SupportResource] = field(default_factory=list)
     attorney_line: str | None = None
+    recommended: set[str] = field(default_factory=set)
 
 
 def task_context(c: Ctx, case: dict, answers: dict) -> TaskContext:
@@ -76,7 +91,7 @@ def task_context(c: Ctx, case: dict, answers: dict) -> TaskContext:
     loose, attached = intake.notes_by_task(c, definition, sel)
     return TaskContext(waypoints=definition["task_waypoints"], attached=attached, loose_notes=loose,
                        support=intake.support_resources(c, definition, sel),
-                       attorney_line=c.copy["attorney_referral_line"])
+                       attorney_line=c.copy["attorney_referral_line"], recommended=set(sel.recommended))
 
 
 def task_summary(row: dict, context: TaskContext | None = None) -> TaskSummary:
@@ -91,6 +106,9 @@ def task_summary(row: dict, context: TaskContext | None = None) -> TaskSummary:
         status=row["status"], due_on=row["due_on"], snoozed_until=row["snoozed_until"],
         completed_at=row["completed_at"], attorney_referral=row["attorney_referral"], attorney_line=line,
         why_now=row["why_now"], waypoint=context.waypoints.get(row["task_key"]),
+        journey_status=journey_status(row["status"]), needs_check=row.get("needs_check", False),
+        probably_not_applicable=row.get("probably_not_applicable", False),
+        recommended=row["task_key"] in context.recommended, handled_by=row.get("handled_by"),
         notes=context.attached.get(row["task_key"], []),
     )
 
@@ -104,11 +122,14 @@ def load_task(s: Session, case_id: UUID, task_id: UUID) -> dict | None:
     return s.load_task(case_id, task_id)
 
 
-def pick_next_action(rows: list[dict], now: datetime | None = None) -> dict | None:
+def pick_next_action(rows: list[dict], now: datetime | None = None,
+                     recommended: set[str] = frozenset()) -> dict | None:
     """The single next thing to do: the first open, unsnoozed task in journey order.
 
     A task already in progress comes before one not yet started, so the user
     finishes what they began before something new is put in front of them.
+    Then a recommended step (UC-CASE-06 and UC-CASE-13). A step that probably
+    doesn't apply comes last.
     """
     now = now or datetime.now(timezone.utc)
     open_rows = [r for r in rows if r["status"] in OPEN_STATUSES
@@ -116,13 +137,16 @@ def pick_next_action(rows: list[dict], now: datetime | None = None) -> dict | No
     for r in open_rows:
         if r["status"] == TaskStatus.in_progress.value:
             return r
+    open_rows.sort(key=lambda r: (bool(r.get("probably_not_applicable")), r["task_key"] not in recommended))
     return open_rows[0] if open_rows else None
 
 
-def time_sensitive(rows: list[dict], limit: int = 2) -> list[dict]:
-    """UC-CASE-13. The one or two open tasks due soonest. Done and set-aside tasks never count."""
-    open_rows = [r for r in rows if r["status"] in OPEN_STATUSES]
-    return sorted(open_rows, key=lambda r: (r["due_on"] or date.max, r["journey_week"], r["sort_order"]))[:limit]
+def time_sensitive(rows: list[dict], limit: int = 2, recommended: set[str] = frozenset()) -> list[dict]:
+    """UC-CASE-13. The one or two open tasks due soonest, a recommended one first (the secure-now step when there
+    are pets or dependents). Done, set-aside, and probably-not-applicable tasks never count."""
+    open_rows = [r for r in rows if r["status"] in OPEN_STATUSES and not r.get("probably_not_applicable")]
+    return sorted(open_rows, key=lambda r: (r["task_key"] not in recommended, r["due_on"] or date.max,
+                                            r["journey_week"], r["sort_order"]))[:limit]
 
 
 def current_week(journey_started_on: date, today: date | None = None) -> int:

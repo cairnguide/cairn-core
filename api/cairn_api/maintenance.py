@@ -121,9 +121,48 @@ def purge_stale_accounts(db, pending_older_than: timedelta, no_case_older_than: 
 
 def expire_trials(db) -> int:
     """Marks trials that have ended as read_only, for reporting. Enforcement doesn't wait for this:
-    store.effective_account_status compares against trial_ends_at."""
-    return db.users.update_many({"status": "trial_active", "trial_ends_at": {"$lte": utcnow()}},
+    store.effective_account_status compares against trial_ends_at. A trial stopped by a care rest never
+    expires while it is stopped (DEC-26-01)."""
+    settle_trial_clocks(db)
+    return db.users.update_many({"status": "trial_active", "trial_ends_at": {"$lte": utcnow()},
+                                 "trial_clock_paused_at": None},
                                 {"$set": {"status": "read_only"}}).modified_count
+
+
+def settle_trial_clocks(db) -> int:
+    """Starts the free days again for care rests that ended on their own (the rest period the user chose ran
+    out), and moves trial_ends_at and unsent reminders later by exactly the paused time. The same rule as
+    store.Session.settle_trial_clock, for users who haven't come back yet."""
+    now = utcnow()
+    n = 0
+    for u in db.users.find({"trial_clock_paused_at": {"$ne": None}}, {"trial_clock_paused_at": 1,
+                                                                      "trial_ends_at": 1}):
+        def run(cs, u=u):
+            rests = [c["tasks_paused_until"] for c in db.cases.find(
+                {"created_by": u["_id"], "status": {"$ne": "draft"}, "tasks_paused_until": {"$ne": None}},
+                {"tasks_paused_until": 1}, session=cs)]
+            if any(r > now for r in rests):
+                return 0
+            paused_at = u["trial_clock_paused_at"]
+            ended = max([r for r in rests if r >= paused_at], default=now)
+            paused = max(ended - paused_at, timedelta(0))
+            if not db.users.update_one({"_id": u["_id"], "trial_clock_paused_at": paused_at},
+                                       {"$set": {"trial_clock_paused_at": None,
+                                                 "trial_ends_at": u["trial_ends_at"] + paused}},
+                                       session=cs).modified_count:
+                return 0
+            for r in db.trial_reminders.find({"user_id": u["_id"], "email_sent_at": None}, session=cs):
+                db.trial_reminders.update_one({"_id": r["_id"]}, {"$set": {"due_at": r["due_at"] + paused}},
+                                              session=cs)
+            return 1
+        n += _in_transaction(db, run)
+    return n
+
+
+def resting(db, user_id, now: datetime) -> bool:
+    """Any of the user's journeys is in a rest. While one is, nothing goes outside Cairn except an opted-in
+    check-in or an action confirmation (crisis plan)."""
+    return db.cases.find_one({"created_by": user_id, "tasks_paused_until": {"$gt": now}}, {"_id": 1}) is not None
 
 
 # ------------------------------------------------------------------ confirmations (UC-CASE-21, UC-REG-15)
@@ -181,8 +220,10 @@ def claim_due_trial_reminders(db, limit: int = 100) -> list[dict]:
             break
         u = db.users.find_one({"_id": r["user_id"]})
         if (u is None or u["status"] in ("subscribed", "pending_deletion") or u["trial_ends_at"] is None
-                or now >= u["trial_ends_at"]):
+                or now >= u["trial_ends_at"] or u.get("trial_clock_paused_at") is not None):
             continue
+        if resting(db, u["_id"], now):
+            continue  # left unsent. It shows in Cairn only (crisis plan, while resting)
         cases = [c["_id"] for c in db.cases.find({"created_by": u["_id"]}, {"_id": 1})]
         if not db.notification_preferences.find_one({"_id": {"$in": cases}, "channels": "email"}, {"_id": 1}):
             continue
@@ -241,8 +282,9 @@ def _claim_notifications(db, now: datetime, limit: int) -> list[dict]:
         if case is None:
             continue
         u = db.users.find_one({"_id": case["created_by"]})
-        if u is None or effective_account_status(u["status"], u["trial_ends_at"], now) not in ("trial_active",
-                                                                                              "subscribed"):
+        if u is None or effective_account_status(u["status"], u["trial_ends_at"], now,
+                                                 u.get("trial_clock_paused_at")) not in ("trial_active",
+                                                                                         "subscribed"):
             continue
         window = FREQUENCY_WINDOW[p["frequency"]]
         if window and db.notification_log.find_one({"case_id": case["_id"], "sent_at": {"$gt": now - window}},
@@ -272,8 +314,40 @@ def _claim_notifications(db, now: datetime, limit: int) -> list[dict]:
         log_id = uuid.uuid4()
         db.notification_log.insert_one({"_id": log_id, "case_id": case["_id"], "case_task_id": pick[1],
                                         "reason": pick[0], "channel": "email", "sent_at": now})
-        out.append({"notification_id": log_id, "reason": pick[0], "email": u["email"]})
+        out.append({"notification_id": log_id, "reason": pick[0], "email": u["email"], "user_id": u["_id"]})
     return out
+
+
+# ------------------------------------------------------------------ check-ins (DEC-26-04)
+
+def claim_due_check_ins(db, limit: int = 100) -> list[dict]:
+    """The one check-in a user said yes to after a hard moment, by email when they chose email for that
+    journey. It is the only message sent outside their notification reasons, and it goes even during a rest.
+    Cleared when claimed, so it is sent once. Without email it shows in Cairn the next time they open it."""
+    now = utcnow()
+    out = []
+    for case in db.cases.find({"check_in_at": {"$ne": None, "$lte": now}}, {"created_by": 1, "check_in_at": 1}):
+        if len(out) >= limit:
+            break
+        prefs = db.notification_preferences.find_one({"_id": case["_id"]}, {"channels": 1})
+        if not prefs or "email" not in prefs["channels"]:
+            continue
+        u = db.users.find_one({"_id": case["created_by"]}, {"email": 1})
+        if u is None:
+            continue
+        if not db.cases.update_one({"_id": case["_id"], "check_in_at": case["check_in_at"]},
+                                   {"$set": {"check_in_at": None}}).modified_count:
+            continue
+        out.append({"case_id": case["_id"], "user_id": u["_id"], "email": u["email"]})
+    return out
+
+
+def private_terms(db, user_id) -> list[str]:
+    """What an outbound message must never contain for this user: the names they gave for the people who died
+    (UC-CASE-19 privacy rule). The circumstance is a fixed enum, and outbound copy is fixed text."""
+    ids = [c["_id"] for c in db.cases.find({"created_by": user_id}, {"_id": 1})]
+    return [a["value"] for a in db.case_intake_answers.find(
+        {"case_id": {"$in": ids}, "field_key": "display_name", "answer_state": "answered"}, {"value": 1})]
 
 
 # The jobs that need only the database, by the name the Worker posts (cloudflare/src/index.ts).
@@ -281,4 +355,5 @@ JOBS: dict[str, Callable] = {
     "purge_held_cases": purge_held_cases,
     "purge_inactive_drafts": purge_inactive_drafts,
     "expire_trials": expire_trials,
+    "settle_trial_clocks": settle_trial_clocks,
 }

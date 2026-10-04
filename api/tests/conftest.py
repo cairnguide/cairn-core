@@ -215,7 +215,7 @@ def start_journey(api, subject: str, case_id: str) -> dict:
 def active_case(api, subject: str, answers: dict | None = None) -> tuple[str, dict]:
     """A started journey. answers maps field to value. Returns the case id and GET /journey."""
     case_id = new_draft(api, subject)["case"]["id"]
-    for field, value in (answers or {"place_of_death": {"state": "NH"}}).items():
+    for field, value in (answers or {"place_of_death": {"jurisdiction": "NH"}}).items():
         answer(api, subject, case_id, field, value)
     start_journey(api, subject, case_id)
     r = api.get(f"/v1/cases/{case_id}/journey", headers=as_user(subject))

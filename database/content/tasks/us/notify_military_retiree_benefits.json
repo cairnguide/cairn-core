@@ -1,0 +1,23 @@
+{
+  "task_key": "notify_military_retiree_benefits",
+  "version": 1,
+  "title": "Tell DFAS if they were a military retiree",
+  "plain_summary": "If they retired from the military, report the death to the Defense Finance and Accounting Service (DFAS). Retired pay may need to stop, and survivor benefits may apply.",
+  "journey_week": 3,
+  "sort_order": 22,
+  "due_offset_days": 17,
+  "jurisdiction": "US",
+  "applies_when": {
+    "always": true
+  },
+  "attorney_referral": false,
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "Defense Finance and Accounting Service, Retiree death",
+      "url": "https://www.dfas.mil/RetiredMilitary/survivors/Retiree-Death/",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

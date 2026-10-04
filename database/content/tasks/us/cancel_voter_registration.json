@@ -1,0 +1,29 @@
+{
+  "task_key": "cancel_voter_registration",
+  "version": 1,
+  "title": "Cancel their voter registration",
+  "plain_summary": "Contact the local election office to cancel their voter registration.",
+  "journey_week": 4,
+  "sort_order": 40,
+  "due_offset_days": 25,
+  "jurisdiction": "US",
+  "applies_when": {
+    "always": true
+  },
+  "attorney_referral": false,
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "USA.gov, Report a death",
+      "url": "https://www.usa.gov/report-a-death",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    },
+    {
+      "authority_name": "USA.gov, State election office",
+      "url": "https://www.usa.gov/state-election-office",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

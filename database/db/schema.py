@@ -39,7 +39,7 @@ from __future__ import annotations
 import hashlib
 import json
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # ------------------------------------------------------------------ building blocks
 
@@ -97,18 +97,26 @@ ACCOUNT_STATUSES = ("pending_onboarding", "active_no_case", "trial_active", "rea
                     "pending_deletion")
 CONSENT_PURPOSES = ("privacy_terms", "trial_terms", "ai_notice",
                     "terms", "privacy", "ai_processing")  # the last three only for records moved from PostgreSQL
-CASE_STATUSES = ("draft", "active", "paused", "closed")
+# draft (case creation spec). The rest come from the card 50 data model. completed, closed_open_steps, and
+# pending_deletion belong to ending a journey (UC-END), which sets them. A 7-day hold is still recorded as
+# deletion_requested_at, and CaseOut reports it as pending_deletion. Read-only is an account state, never a case status.
+CASE_STATUSES = ("draft", "active", "paused", "closed", "completed", "closed_open_steps", "pending_deletion")
 # The MVP allows one owner per case (decision 8). Widen this when invitations ship.
 MEMBER_ROLES = ("owner",)
 RELATIONSHIPS = ("spouse", "child", "sibling", "other_family", "power_of_attorney", "fiduciary")
-ATTORNEY_TRIGGERS = ("contested_will", "family_disagreement", "unsure_of_authority", "multi_state_property")
+ATTORNEY_TRIGGERS = ("contested_will", "family_disagreement", "unsure_of_authority", "multi_state_property",
+                     "early_property_disposal")  # selling, moving, or giving away property early (card 59)
 # Only these keys can be stored, so nothing about distress or cause of death can end up in shown_notices.
 SHOWN_NOTICES = ("poa_authority_note",)
 NAME_FALLBACKS = ("your_loved_one", "the_person_who_died")
 TRI_STATE = ("yes", "no", "unknown")
 PLACE_TYPES = ("hospital", "hospice", "home", "facility", "other")
-TASK_STATUSES = ("not_started", "check_on_this", "in_progress", "done", "not_today", "skipped", "not_applicable")
-FIELD_KEYS = ("user_role", "display_name", "date_of_death", "place_of_death", "residence_state", "circumstance",
+# Card 50 statuses map onto these: open is not_started, in_progress, check_on_this, or not_today. not_needed is
+# skipped or not_applicable. done and handled_elsewhere are the same. needs_check is a flag since v2, so
+# check_on_this is kept only for tasks written before it.
+TASK_STATUSES = ("not_started", "check_on_this", "in_progress", "done", "not_today", "skipped", "not_applicable",
+                 "handled_elsewhere")
+FIELD_KEYS = ("user_role", "display_name", "date_of_death", "place_of_death", "residence_jurisdiction", "circumstance",
               "veteran_status", "estate_plan_status", "completed_items")
 ANSWER_STATES = ("answered", "skipped", "unsure")
 USER_ROLES = ("spouse_partner", "child", "other_family", "named_executor", "power_of_attorney",
@@ -116,8 +124,13 @@ USER_ROLES = ("spouse_partner", "child", "other_family", "named_executor", "powe
 CIRCUMSTANCES = ("expected_illness_or_hospice", "sudden_natural", "accident_or_unexpected", "under_investigation",
                  "prefer_not_to_say")
 ESTATE_PLAN_STATUSES = ("yes_location_known", "yes_location_unknown", "no", "unknown")
-COMPLETED_ITEMS = ("death_pronounced", "funeral_provider_chosen", "funeral_home_has_ssn", "certificates_ordered",
-                   "ssa_notified", "bank_notified", "other")
+COMPLETED_ITEMS = ("death_pronounced", "home_pets_vehicles_secured", "funeral_provider_chosen", "funeral_home_has_ssn",
+                   "certificates_ordered", "ssa_notified", "bank_insurer_or_employer_notified", "other")
+# All 50 states, DC, and the five territories (DEC-COV). The intake picker offers exactly these.
+JURISDICTIONS = ("AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY",
+                 "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND",
+                 "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC",
+                 "PR", "GU", "VI", "AS", "MP")
 CHANNELS = ("email", "push", "in_app_only")  # no sms: card 50 and legal review first
 REASONS = ("due_date_upcoming", "inactivity")
 FREQUENCIES = ("as_it_happens", "daily_max", "weekly_max")
@@ -141,19 +154,23 @@ INTAKE_VALUE_SHAPES = [
     _answer("display_name", text(1, 60, pattern=NO_CONTROL_CHARS)),
     _answer("date_of_death", document({"precision": enum("exact", "today"), "date": CALENDAR_DATE})),
     _answer("date_of_death", document({"precision": enum("this_week", "unknown"), "date": {"bsonType": "null"}})),
-    _answer("place_of_death", document({"outside_us": {"enum": [True]}, "state": {"bsonType": "null"},
+    _answer("place_of_death", document({"outside_us": {"enum": [True]}, "jurisdiction": {"bsonType": "null"},
                                         "county_or_city": text(1, 100, nullable=True)})),
-    _answer("place_of_death", document({"outside_us": {"enum": [False]}, "state": STATE_CODE,
+    _answer("place_of_death", document({"outside_us": {"enum": [False]},
+                                        "jurisdiction": enum(*JURISDICTIONS, nullable=True),
                                         "county_or_city": text(1, 100, nullable=True)})),
-    _answer("residence_state", document({"choice": enum("same_as_place_of_death", "different", "unknown"),
-                                         "state": {"bsonType": "null"}})),
-    _answer("residence_state", document({"choice": enum("different"),
-                                         "state": {"bsonType": "string", "pattern": r"^[A-Z]{2}$"}})),
+    _answer("residence_jurisdiction", document({"choice": enum("same_as_place_of_death", "different", "unknown"),
+                                                "jurisdiction": {"bsonType": "null"}})),
+    _answer("residence_jurisdiction", document({"choice": enum("different"),
+                                                "jurisdiction": enum(*JURISDICTIONS)})),
     _answer("circumstance", enum(*CIRCUMSTANCES)),
     _answer("veteran_status", enum(*TRI_STATE)),
     _answer("estate_plan_status", enum(*ESTATE_PLAN_STATUSES)),
-    _answer("completed_items", {"bsonType": "array", "minItems": 1, "uniqueItems": True,
-                                "items": enum(*COMPLETED_ITEMS)}),
+    # An item is done (its name), or someone else is handling it (UC-CASE-08), with an optional name.
+    _answer("completed_items", {"bsonType": "array", "minItems": 1, "uniqueItems": True, "items": {"anyOf": [
+        enum(*COMPLETED_ITEMS),
+        document({"item": enum(*COMPLETED_ITEMS), "handled_by": text(1, 60, nullable=True, pattern=NO_CONTROL_CHARS)}),
+    ]}}),
     _answer("completed_items", {"bsonType": "array", "minItems": 1, "maxItems": 1,
                                 "items": enum("none_or_unsure")}),
 ]
@@ -185,14 +202,21 @@ collection("users", closed({
     "status": enum(*ACCOUNT_STATUSES),
     # Set once, by store.start_journey on the account's first journey. Never reset.
     "trial_started_at": NULL_TIMESTAMP,
+    # 28 days after the start, plus every care rest (DEC-26-01). Only ever moves later.
     "trial_ends_at": NULL_TIMESTAMP,
+    # A care rest stopped the free days at this time (crisis plan). The reason is never stored.
+    "trial_clock_paused_at": NULL_TIMESTAMP,
+    # The AI reminder (UC-CASE-23): when it was last shown, and on which local day for the once-a-day rule.
+    "ai_reminder_shown_at": NULL_TIMESTAMP,
+    "ai_reminder_shown_on": NULL_CALENDAR_DATE,
     "created_at": TIMESTAMP,
 }),
     {"$eq": ["$email_lower", {"$toLower": "$email"}]},
-    # Exactly 28 days (D-02), counted in hours so daylight saving time never shifts it.
-    {"$or": [{"$and": [is_null("$trial_started_at"), is_null("$trial_ends_at")]},
-             {"$eq": ["$trial_ends_at", {"$dateAdd": {"startDate": "$trial_started_at", "unit": "hour",
-                                                      "amount": 672}}]}]},
+    # At least 28 days (D-02), counted in hours so daylight saving time never shifts it. Later only by care rests.
+    {"$or": [{"$and": [is_null("$trial_started_at"), is_null("$trial_ends_at"), is_null("$trial_clock_paused_at")]},
+             {"$and": [not_null("$trial_started_at"),
+                       {"$gte": ["$trial_ends_at", {"$dateAdd": {"startDate": "$trial_started_at", "unit": "hour",
+                                                                  "amount": 672}}]}]}]},
 )
 
 # Append-only. Rows go only when the account is deleted.
@@ -232,8 +256,15 @@ collection("cases", closed({
     "name_fallback": enum(*NAME_FALLBACKS),
     "attorney_triggers": {"bsonType": "array", "uniqueItems": True, "items": enum(*ATTORNEY_TRIGGERS)},
     "shown_notices": {"bsonType": "array", "uniqueItems": True, "items": enum(*SHOWN_NOTICES)},
-    # Lets the product step back from task mode. Do not store distress inferences (decision 7).
+    # Lets the product step back from task mode, for every rest. Do not store distress inferences (decision 7).
     "tasks_paused_until": NULL_TIMESTAMP,
+    # The user said yes to one check-in tomorrow after a hard moment (DEC-26-04). Cleared once shown or sent.
+    "check_in_at": NULL_TIMESTAMP,
+    # Only when the user themselves said the death was by suicide (UC-CASE-05). Adds loss survivor support.
+    # Never shown back as a label.
+    "loss_survivor_resources": BOOL,
+    # Pets or dependents were mentioned, so the secure-now step is recommended first (UC-CASE-13).
+    "secure_now_first": BOOL,
     # The user chose delete with a hold. Deleted case_deletion_hold_days later by the purge_held_cases job.
     "deletion_requested_at": NULL_TIMESTAMP,
 }),
@@ -346,11 +377,19 @@ collection("case_tasks", closed({
     "completed_at": NULL_TIMESTAMP,
     # Whether the journey rules currently include this task (UC-CASE-09). Separate from status.
     "selected": BOOL,
+    # Shown as "Check on this": the user wasn't sure whether it was done (UC-CASE-08).
+    "needs_check": BOOL,
+    # Shown last as "Probably doesn't apply". Never hidden (UC-CASE-06).
+    "probably_not_applicable": BOOL,
+    # Optional name of whoever is handling it. Third-party personal data. Never in a notification.
+    "handled_by": text(1, 60, nullable=True, pattern=NO_CONTROL_CHARS),
     "created_at": TIMESTAMP,
     "updated_at": TIMESTAMP,
 }),
     # done_needs_completed_at
     {"$or": [{"$ne": ["$status", "done"]}, not_null("$completed_at")]},
+    # handled_by_only_when_handled_elsewhere
+    {"$or": [is_null("$handled_by"), {"$eq": ["$status", "handled_elsewhere"]}]},
 )
 
 # How and when Cairn keeps in touch, per journey (UC-CASE-19). _id is the case id. No row, or in_app_only,
@@ -440,6 +479,14 @@ collection("context_items", closed({
     {"$lte": [{"$bsonSize": "$payload"}, 32768]},
 )
 
+# The anonymous monthly count of crisis referrals for SB 243 reporting (UC-CASE-14). _id is "YYYY-MM".
+# No user id, no case id, nothing else: there is no field that could hold one.
+collection("safety_referral_counts", closed({
+    "_id": {"bsonType": "string", "pattern": r"^[0-9]{4}-[0-9]{2}$"},
+    "level_4_referrals": {**INT, "minimum": 0},
+    "updated_at": TIMESTAMP,
+}))
+
 # Values that change without a code change. Jobs and the owner write. The app reads.
 collection("app_settings", closed({
     "_id": enum(*SETTING_RANGES),
@@ -475,6 +522,8 @@ INDEXES: list[tuple[str, list[tuple[str, int]], dict]] = [
     ("cases", [("status", 1), ("last_activity_at", 1)], {"name": "cases_status_activity_idx"}),
     ("cases", [("deletion_requested_at", 1)],
      {"name": "cases_deletion_requested_idx", "partialFilterExpression": {"deletion_requested_at": {"$type": "date"}}}),
+    ("cases", [("check_in_at", 1)],
+     {"name": "cases_check_in_idx", "partialFilterExpression": {"check_in_at": {"$type": "date"}}}),
     ("cases", [("purge_after", 1)],
      {"name": "cases_purge_after_idx", "partialFilterExpression": {"purge_after": {"$type": "date"}}}),
     ("deceased", [("case_id", 1)], {"unique": True, "name": "deceased_case_uq"}),
@@ -526,6 +575,7 @@ ROLES: dict[str, dict[str, list[str]]] = {
         "audit_events": ["insert"],                            # write-only: the app can't read audit rows
         "identity_deletion_requests": ["insert"],              # queued by account deletion, never read
         "action_confirmation_outbox": ["insert", "remove"],    # queued by deletions, never read
+        "safety_referral_counts": ["insert", "update"],        # count up only, never read
     },
     "cairnJobs": {
         "users": ["find", "update", "remove"],
@@ -544,6 +594,7 @@ ROLES: dict[str, dict[str, list[str]]] = {
         "action_confirmation_outbox": ["find", "insert", "update", "remove"],
         "action_confirmation_log": ["insert"],                 # append-only
         "job_locks": ["find", "insert", "update"],
+        "safety_referral_counts": ["find"],                    # the monthly report
     },
     "cairnLoader": {
         "task_templates": ["find", "insert", "update"],        # update: the active flag only, see load_templates.py

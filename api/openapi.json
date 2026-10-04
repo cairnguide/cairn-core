@@ -1027,7 +1027,7 @@
           "Case creation"
         ],
         "summary": "Answer, skip, or say I'm not sure",
-        "description": "UC-CASE-02 to UC-CASE-09. Saves one data_fields answer with its answer_state (answered, skipped, unsure). A question with any answer is not asked again. Changing an answer recomputes the journey and says what changed in one line. On an active case it adds or sets aside add-on tasks without touching progress on other tasks.",
+        "description": "UC-CASE-02 to UC-CASE-09. Saves one data_fields answer with its answer_state (answered, skipped, unsure). A question with any answer is not asked again. The third Skip for now in a row starts level 2, and I'm not sure doesn't count (OPEN-07). Changing an answer recomputes the journey and says what changed in one line. On an active case it updates add-on tasks without touching progress elsewhere.",
         "operationId": "put_answer_v1_cases__case_id__intake_answers__field__put",
         "security": [
           {
@@ -1097,7 +1097,7 @@
           "Case creation"
         ],
         "summary": "Say something in your own words",
-        "description": "UC-CASE-01 own words, UC-CASE-05, UC-CASE-07, UC-CASE-10, UC-CASE-14 to UC-CASE-17. The text is redacted as it is received and never stored. Cairn reads back only the data_fields it found and asks Did I get that right? Nothing is saved until the user confirms. Signs of distress stop the questions.",
+        "description": "UC-CASE-01 own words, UC-CASE-05, UC-CASE-07, UC-CASE-10, UC-CASE-13 to UC-CASE-17, UC-CASE-22, and UC-CASE-24. Typed text, or a speech transcript the user confirmed. Redacted as it is received, spoken digits included, and never stored. Crisis detection runs first. Cairn reads back only the data_fields it found and asks Did I get that right? Nothing is saved until the user confirms.",
         "operationId": "post_message_v1_cases__case_id__intake_messages_post",
         "security": [
           {
@@ -1153,13 +1153,75 @@
         }
       }
     },
+    "/v1/cases/{case_id}/intake/transcripts": {
+      "post": {
+        "tags": [
+          "Case creation"
+        ],
+        "summary": "Show back what Cairn heard",
+        "description": "UC-CASE-22. Takes the transcript from the speech to text step. Audio never reaches this API and is never stored anywhere. The transcript is redacted first (spoken digits too), and crisis detection runs on it exactly as on typed text. Otherwise the transcript is shown back with Did I hear that right? and Edit. Send the confirmed text to intake/messages with input_mode speech. An unclear transcript asks once to try again or type it, and never guesses an answer.",
+        "operationId": "post_transcript_v1_cases__case_id__intake_transcripts_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranscriptIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeTurnResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner of this case, the case does not exist, or an active case on a read-only account."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/cases/{case_id}/intake/confirmations": {
       "post": {
         "tags": [
           "Case creation"
         ],
         "summary": "Confirm what Cairn read back",
-        "description": "UC-CASE-01 own words. Saves the confirmed values. Only data_fields keys are accepted, each checked like a button answer, so nothing else from the free text can be stored. Then asks only about fields still missing.",
+        "description": "UC-CASE-01 own words. Saves the confirmed values. Only data_fields keys are accepted, each checked like a button answer, so nothing else from free text or a transcript can be stored. Then asks only about fields still missing.",
         "operationId": "confirm_v1_cases__case_id__intake_confirmations_post",
         "security": [
           {
@@ -1221,7 +1283,7 @@
           "Case creation"
         ],
         "summary": "Keep going",
-        "description": "The user asked to continue: after choosing one question at a time, after resuming, or after stepping away during distress (UC-CASE-14). Returns the next question still missing.",
+        "description": "The user asked to continue: after choosing one question at a time, after resuming, or after stepping away during distress (UC-CASE-14). Returns the next question still missing. On an active journey this is coming back to tasks, so a care rest ends and the free days count again. After level 3 or 4, asks once whether Cairn may check in tomorrow.",
         "operationId": "continue_intake_v1_cases__case_id__intake_continue_post",
         "security": [
           {
@@ -1284,13 +1346,137 @@
         }
       }
     },
+    "/v1/cases/{case_id}/intake/level-2-choice": {
+      "post": {
+        "tags": [
+          "Case creation"
+        ],
+        "summary": "Rest, one small thing, or just talk",
+        "description": "UC-CASE-14 level 2. rest is a care rest: in a draft it saves and pauses, on an active journey it opens the rest choices and the free days pause while resting (DEC-26-01). small_thing offers one small task. talk stays with the user and asks nothing.",
+        "operationId": "level_2_choice_v1_cases__case_id__intake_level_2_choice_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Level2ChoiceIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeTurnResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner of this case, the case does not exist, or an active case on a read-only account."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/intake/check-in": {
+      "post": {
+        "tags": [
+          "Case creation"
+        ],
+        "summary": "May Cairn check in tomorrow?",
+        "description": "DEC-26-04. Only on a yes, one private check-in tomorrow: by email if the user chose email for this journey, otherwise the next time they open Cairn (OPEN-08 for drafts). It never names the person who died, the circumstance, or any crisis, and it is cancelled if the case is deleted. A no stores nothing.",
+        "operationId": "check_in_v1_cases__case_id__intake_check_in_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckInIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeTurnResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner of this case, the case does not exist, or an active case on a read-only account."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/cases/{case_id}/intake/pause": {
       "post": {
         "tags": [
           "Case creation"
         ],
         "summary": "Stop for now",
-        "description": "UC-CASE-10. Everything is already saved with each answer. This records where the user left off and confirms it plainly, including that an untouched draft is deleted after 28 days. Pausing never starts the free period, and no reminder about the draft is sent.",
+        "description": "UC-CASE-10. Everything is already saved with each answer. This records where the user left off and confirms it plainly, including that an untouched draft is deleted after 28 days. Pausing never starts the free period, and no notification about the draft is ever sent.",
         "operationId": "pause_v1_cases__case_id__intake_pause_post",
         "security": [
           {
@@ -1421,7 +1607,7 @@
           "Case creation"
         ],
         "summary": "The death has not happened yet",
-        "description": "UC-CASE-17. not_yet records it, explains that journeys start after a death, and offers to save a draft or come back later. Start journey is not offered and the free period does not start. save_draft confirms the draft and its 28-day deletion. has_happened clears it. The pre-need path is not built (OPEN-DECISION-05).",
+        "description": "UC-CASE-17. not_yet records it, explains that journeys start after a death, and offers to save a draft or come back later. Start journey is not offered and the free period does not start. save_draft confirms the draft and its 28-day deletion. has_happened clears it. The pre-need path is post-alpha.",
         "operationId": "death_not_yet_v1_cases__case_id__intake_death_not_yet_post",
         "security": [
           {
@@ -1483,7 +1669,7 @@
           "Case creation"
         ],
         "summary": "Something Cairn should not guide alone",
-        "description": "UC-CASE-16 and UC-CASE-07. Records the reason and adds Talk to an estate attorney as a task, with the attorney referral line. The journey is never blocked. Cairn keeps showing every step it can help with. A death outside the US and a state with no verified content are handled from the answers.",
+        "description": "UC-CASE-16 and UC-CASE-07. Records the reason and adds Talk to an estate attorney as a task, with the attorney referral line. The journey is never blocked. Cairn keeps showing every step it can help with. A death outside the US is handled from the answers.",
         "operationId": "attorney_referral_v1_cases__case_id__intake_attorney_referrals_post",
         "security": [
           {
@@ -1614,6 +1800,20 @@
               "format": "uuid",
               "title": "Case Id"
             }
+          },
+          {
+            "name": "care_level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 4,
+              "minimum": 1,
+              "description": "The session's care level. At levels 3 and 4 nothing about the free days, the price, or subscribing is shown.",
+              "default": 1,
+              "title": "Care Level"
+            },
+            "description": "The session's care level. At levels 3 and 4 nothing about the free days, the price, or subscribing is shown."
           }
         ],
         "responses": {
@@ -1975,6 +2175,75 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/JourneyResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this case, not an owner, or the case does not exist."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/take-a-break": {
+      "post": {
+        "tags": [
+          "Journey"
+        ],
+        "summary": "Take a break",
+        "description": "Global rule take_a_break: one select, no confirmation. In a draft it saves and shows the pause message (UC-CASE-10). On a journey, without rest_choice it offers the rest choices, and with one it sets the tasks aside until then. A rest chosen at level 2 or above is a care rest and pauses the free days (DEC-26-01). A rest in normal mode keeps them counting, and Cairn says so before pausing. Never needs a writable account.",
+        "operationId": "take_a_break_v1_cases__case_id__take_a_break_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TakeABreakIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Req"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeTurnResponse"
                 }
               }
             }
@@ -3147,6 +3416,37 @@
         "title": "AcknowledgmentIn",
         "description": "agreed=false is the \"I'm not sure\" path (UC-REG-10). Nothing is recorded for it."
       },
+      "Announcement": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "ai_reminder",
+              "rest_offer",
+              "check_in"
+            ],
+            "title": "Kind"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/Option"
+            },
+            "type": "array",
+            "title": "Options"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "text"
+        ],
+        "title": "Announcement",
+        "description": "Something announced to screen readers (aria-live polite)."
+      },
       "AnswerIn": {
         "properties": {
           "state": {
@@ -3179,7 +3479,7 @@
           "away_from_home": {
             "type": "boolean",
             "title": "Away From Home",
-            "description": "place_of_death only. The death happened away from home, so residence_state is asked next.",
+            "description": "place_of_death only. The death happened away from home, so residence_jurisdiction is asked next.",
             "default": false
           },
           "session": {
@@ -3258,7 +3558,8 @@
           "contested_will",
           "family_disagreement",
           "unsure_of_authority",
-          "multi_state_property"
+          "multi_state_property",
+          "early_property_disposal"
         ],
         "title": "AttorneyTrigger"
       },
@@ -3437,6 +3738,18 @@
             ],
             "title": "Draft Expires At"
           },
+          "draft_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Notice",
+            "description": "Drafts only. The 28-day notice, on the draft's card, for anyone who closed the tab (UC-CASE-10)."
+          },
           "deletion_scheduled_for": {
             "anyOf": [
               {
@@ -3488,12 +3801,23 @@
             "enum": [
               "draft",
               "active",
-              "read_only",
               "paused",
-              "closed"
+              "closed",
+              "completed",
+              "closed_open_steps",
+              "pending_deletion"
             ],
             "title": "Status",
-            "description": "read_only when the case is active and the account's free period has ended."
+            "description": "Card 50 statuses. pending_deletion while a 7-day hold is running. Read-only is an account state, never a case status (see account_access)."
+          },
+          "account_access": {
+            "type": "string",
+            "enum": [
+              "full",
+              "read_only"
+            ],
+            "title": "Account Access",
+            "description": "The account's access. Read-only after the free days end without a subscription."
           },
           "display_name": {
             "type": "string",
@@ -3607,6 +3931,19 @@
             "title": "Deletion Scheduled For",
             "description": "Set when the user chose to delete this case with a 7-day hold (UC-END-13)."
           },
+          "delete_after": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delete After",
+            "description": "Card 50 name for deletion_scheduled_for."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -3617,6 +3954,7 @@
         "required": [
           "id",
           "status",
+          "account_access",
           "display_name",
           "journey_template_key",
           "journey_template_version",
@@ -3673,8 +4011,18 @@
             "type": "array",
             "title": "Notes"
           },
+          "announcements": {
+            "items": {
+              "$ref": "#/components/schemas/Announcement"
+            },
+            "type": "array",
+            "title": "Announcements"
+          },
           "next_step": {
             "$ref": "#/components/schemas/NextStep"
+          },
+          "controls": {
+            "$ref": "#/components/schemas/ScreenControls"
           },
           "read_aloud": {
             "$ref": "#/components/schemas/ReadAloud"
@@ -3686,6 +4034,7 @@
           "deceased",
           "notes",
           "next_step",
+          "controls",
           "read_aloud"
         ],
         "title": "CaseResponse",
@@ -3935,6 +4284,35 @@
           "options"
         ],
         "title": "CheckIn"
+      },
+      "CheckInIn": {
+        "properties": {
+          "answer": {
+            "type": "string",
+            "enum": [
+              "yes",
+              "no"
+            ],
+            "title": "Answer"
+          },
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntakeSession"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "answer"
+        ],
+        "title": "CheckInIn",
+        "description": "DEC-26-04. The answer to \"Would it be okay if I checked in with you tomorrow?\", asked once."
       },
       "Checkbox": {
         "properties": {
@@ -4657,7 +5035,7 @@
           "display_name",
           "date_of_death",
           "place_of_death",
-          "residence_state",
+          "residence_jurisdiction",
           "circumstance",
           "veteran_status",
           "estate_plan_status",
@@ -4885,6 +5263,15 @@
             "minLength": 1,
             "title": "Text"
           },
+          "input_mode": {
+            "type": "string",
+            "enum": [
+              "typed",
+              "speech"
+            ],
+            "title": "Input Mode",
+            "default": "typed"
+          },
           "session": {
             "anyOf": [
               {
@@ -4902,7 +5289,7 @@
           "text"
         ],
         "title": "IntakeMessageIn",
-        "description": "Free text from the user (UC-CASE-01 own words, and any chat turn). Never stored."
+        "description": "Free text from the user (UC-CASE-01 own words, and any chat turn), typed or a confirmed speech transcript\n(UC-CASE-22). Never stored."
       },
       "IntakePreferencesIn": {
         "properties": {
@@ -4971,6 +5358,14 @@
             "title": "Consecutive Skips",
             "default": 0
           },
+          "overwhelm_signals": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Overwhelm Signals",
+            "description": "Overwhelm signals in this conversation. The second one starts level 2 (DEC-26-03).",
+            "default": 0
+          },
           "offered": {
             "items": {
               "type": "string",
@@ -4983,7 +5378,66 @@
           "ask_residence": {
             "type": "boolean",
             "title": "Ask Residence",
-            "description": "The user said the death happened away from home, so residence_state is asked (UC-CASE-04).",
+            "description": "The user said the death happened away from home, so residence_jurisdiction is asked (UC-CASE-04).",
+            "default": false
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At",
+            "description": "When this session began. Set by the server."
+          },
+          "last_turn_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Turn At",
+            "description": "The last turn. Set by the server."
+          },
+          "active_seconds": {
+            "type": "integer",
+            "maximum": 86400.0,
+            "minimum": 0.0,
+            "title": "Active Seconds",
+            "description": "Active use in this session, for the 45-minute rest offer (UC-CASE-23).",
+            "default": 0
+          },
+          "rest_offered": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "time",
+                "heavy"
+              ]
+            },
+            "type": "array",
+            "maxItems": 2,
+            "title": "Rest Offered",
+            "description": "Rest offers already made. Once per session per trigger."
+          },
+          "check_in_asked": {
+            "type": "boolean",
+            "title": "Check In Asked",
+            "description": "The check-in question is asked once (DEC-26-04).",
+            "default": false
+          },
+          "intake_stopped": {
+            "type": "boolean",
+            "title": "Intake Stopped",
+            "description": "The user said they are under 18. No more intake questions this session (UC-CASE-24). Never stored.",
             "default": false
           }
         },
@@ -5095,6 +5549,27 @@
           "session": {
             "$ref": "#/components/schemas/IntakeSession"
           },
+          "care_level": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Care Level",
+            "description": "Crisis plan levels: 1 steady, 2 heavy, 3 hurting, 4 unsafe."
+          },
+          "announcements": {
+            "items": {
+              "$ref": "#/components/schemas/Announcement"
+            },
+            "type": "array",
+            "title": "Announcements"
+          },
+          "controls": {
+            "$ref": "#/components/schemas/ScreenControls"
+          },
           "read_aloud": {
             "$ref": "#/components/schemas/ReadAloud"
           }
@@ -5106,6 +5581,8 @@
           "safety_mode",
           "next_step",
           "session",
+          "care_level",
+          "controls",
           "read_aloud"
         ],
         "title": "IntakeTurnResponse",
@@ -5193,6 +5670,20 @@
             "type": "boolean",
             "title": "Start Available"
           },
+          "care_level": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Care Level",
+            "default": 1
+          },
+          "controls": {
+            "$ref": "#/components/schemas/ScreenControls"
+          },
           "notifications_chosen": {
             "type": "boolean",
             "title": "Notifications Chosen",
@@ -5217,6 +5708,7 @@
           "support",
           "pre_button_notice",
           "start_available",
+          "controls",
           "notifications_chosen",
           "next_step",
           "read_aloud"
@@ -5324,6 +5816,36 @@
           "next_step"
         ],
         "title": "JourneyResponse"
+      },
+      "Level2ChoiceIn": {
+        "properties": {
+          "choice": {
+            "type": "string",
+            "enum": [
+              "rest",
+              "small_thing",
+              "talk"
+            ],
+            "title": "Choice"
+          },
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntakeSession"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "choice"
+        ],
+        "title": "Level2ChoiceIn",
+        "description": "UC-CASE-14 level 2: rest now, one small thing, or just talk."
       },
       "Link": {
         "properties": {
@@ -6120,12 +6642,34 @@
           },
           "status": {
             "$ref": "#/components/schemas/TaskStatus",
-            "description": "done for completed_items, check_on_this when unsure, else not_started."
+            "description": "done or handled_elsewhere from completed_items, else not_started."
+          },
+          "journey_status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "done",
+              "not_needed",
+              "handled_elsewhere"
+            ],
+            "title": "Journey Status"
+          },
+          "needs_check": {
+            "type": "boolean",
+            "title": "Needs Check"
+          },
+          "probably_not_applicable": {
+            "type": "boolean",
+            "title": "Probably Not Applicable"
+          },
+          "recommended": {
+            "type": "boolean",
+            "title": "Recommended"
           },
           "status_label": {
             "type": "string",
             "title": "Status Label",
-            "description": "Done, Check on this, or When you're ready. Text, never color alone."
+            "description": "Done, Someone else is handling this, Check on this, When you're ready, or Probably doesn't apply. Text, never color alone."
           },
           "attorney_referral": {
             "type": "boolean",
@@ -6165,6 +6709,10 @@
           "journey_week",
           "waypoint",
           "status",
+          "journey_status",
+          "needs_check",
+          "probably_not_applicable",
+          "recommended",
           "status_label",
           "attorney_referral",
           "attorney_line",
@@ -6306,7 +6854,7 @@
               "text",
               "date_of_death",
               "place_of_death",
-              "residence_state"
+              "residence_jurisdiction"
             ],
             "title": "Input"
           },
@@ -6334,6 +6882,44 @@
           "free_text_label": {
             "type": "string",
             "title": "Free Text Label"
+          },
+          "speech_allowed": {
+            "type": "boolean",
+            "title": "Speech Allowed",
+            "description": "Every question accepts speech (UC-CASE-22).",
+            "default": true
+          },
+          "picker_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Picker Label",
+            "description": "'State or territory' for place questions."
+          },
+          "jurisdictions": {
+            "items": {
+              "$ref": "#/components/schemas/AnswerOption"
+            },
+            "type": "array",
+            "title": "Jurisdictions",
+            "description": "The 50 states, DC, and the 5 territories, by full name."
+          },
+          "handled_elsewhere_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handled Elsewhere Label",
+            "description": "completed_items only: 'Someone else is handling this', for any item."
           }
         },
         "type": "object",
@@ -6491,6 +7077,9 @@
           "next_step": {
             "$ref": "#/components/schemas/NextStep"
           },
+          "controls": {
+            "$ref": "#/components/schemas/ScreenControls"
+          },
           "read_aloud": {
             "$ref": "#/components/schemas/ReadAloud"
           }
@@ -6504,6 +7093,7 @@
           "later",
           "later_heading",
           "next_step",
+          "controls",
           "read_aloud"
         ],
         "title": "ReviewResponse"
@@ -6622,6 +7212,48 @@
         "title": "Screen",
         "description": "What to render. One question per screen. The question itself is next_step.prompt."
       },
+      "ScreenControls": {
+        "properties": {
+          "take_a_break": {
+            "type": "string",
+            "title": "Take A Break",
+            "description": "One select, no confirmation."
+          },
+          "read_this_to_me": {
+            "type": "string",
+            "title": "Read This To Me"
+          },
+          "speak": {
+            "type": "string",
+            "title": "Speak",
+            "description": "The speak button. Speech is never required (UC-CASE-22)."
+          },
+          "speak_first_use": {
+            "type": "string",
+            "title": "Speak First Use",
+            "description": "Shown the first time the speak button is used."
+          },
+          "speak_permission_denied": {
+            "type": "string",
+            "title": "Speak Permission Denied"
+          },
+          "free_text": {
+            "type": "string",
+            "title": "Free Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "take_a_break",
+          "read_this_to_me",
+          "speak",
+          "speak_first_use",
+          "speak_permission_denied",
+          "free_text"
+        ],
+        "title": "ScreenControls",
+        "description": "The controls on every case creation screen, with their screen reader labels (WCAG 2.2 AA)."
+      },
       "ScreenId": {
         "type": "string",
         "enum": [
@@ -6729,6 +7361,17 @@
             "minLength": 1,
             "title": "Pre Button Notice Version",
             "description": "From JourneyPreviewResponse.pre_button_notice.version. Proves the notice was shown before Start journey was enabled."
+          },
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntakeSession"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "At care levels 3 and 4 the journey doesn't start: setup waits for level 1."
           }
         },
         "additionalProperties": false,
@@ -6746,15 +7389,27 @@
           "confirmation": {
             "type": "string",
             "title": "Confirmation",
-            "description": "With the trial end date in the user's local time zone."
+            "description": "With the trial end date in the user's local time zone. No trial wording for a subscribed account."
+          },
+          "legal_review_required": {
+            "type": "boolean",
+            "title": "Legal Review Required",
+            "description": "[LEGAL] The price and subscription wording needs counsel approval before launch."
           },
           "trial_started_now": {
             "type": "boolean",
             "title": "Trial Started Now"
           },
           "trial_end_date": {
-            "type": "string",
-            "format": "date",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Trial End Date"
           },
           "recommended": {
@@ -6773,6 +7428,9 @@
             "$ref": "#/components/schemas/NextStep",
             "description": "What feels doable right now? Recommended, small task, Not today."
           },
+          "controls": {
+            "$ref": "#/components/schemas/ScreenControls"
+          },
           "read_aloud": {
             "$ref": "#/components/schemas/ReadAloud"
           }
@@ -6781,11 +7439,13 @@
         "required": [
           "case",
           "confirmation",
+          "legal_review_required",
           "trial_started_now",
           "trial_end_date",
           "recommended",
           "small_task",
           "next_step",
+          "controls",
           "read_aloud"
         ],
         "title": "StartJourneyResponse"
@@ -6869,6 +7529,41 @@
           "url"
         ],
         "title": "SupportResource"
+      },
+      "TakeABreakIn": {
+        "properties": {
+          "rest_choice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "today",
+                  "three_days",
+                  "week",
+                  "until_back"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rest Choice"
+          },
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntakeSession"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TakeABreakIn",
+        "description": "Take a break (global rule). In a draft it saves and pauses. On a journey, send a rest_choice."
       },
       "TaskCategory": {
         "type": "string",
@@ -6994,6 +7689,46 @@
               }
             ],
             "title": "Waypoint"
+          },
+          "journey_status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "done",
+              "not_needed",
+              "handled_elsewhere"
+            ],
+            "title": "Journey Status",
+            "description": "The card 50 status.",
+            "default": "open"
+          },
+          "needs_check": {
+            "type": "boolean",
+            "title": "Needs Check",
+            "description": "Shown as 'Check on this'.",
+            "default": false
+          },
+          "probably_not_applicable": {
+            "type": "boolean",
+            "title": "Probably Not Applicable",
+            "description": "Shown last, as 'Probably doesn't apply. Select it if it does.'",
+            "default": false
+          },
+          "recommended": {
+            "type": "boolean",
+            "title": "Recommended",
+            "default": false
+          },
+          "handled_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handled By"
           },
           "notes": {
             "items": {
@@ -7140,10 +7875,11 @@
           "done",
           "not_today",
           "skipped",
-          "not_applicable"
+          "not_applicable",
+          "handled_elsewhere"
         ],
         "title": "TaskStatus",
-        "description": "not_started is the spec's todo."
+        "description": "The stored status. The card 50 status is TaskSummary.journey_status: open is not_started, in_progress,\ncheck_on_this, or not_today. not_needed is skipped or not_applicable."
       },
       "TaskSummary": {
         "properties": {
@@ -7258,6 +7994,46 @@
             ],
             "title": "Waypoint"
           },
+          "journey_status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "done",
+              "not_needed",
+              "handled_elsewhere"
+            ],
+            "title": "Journey Status",
+            "description": "The card 50 status.",
+            "default": "open"
+          },
+          "needs_check": {
+            "type": "boolean",
+            "title": "Needs Check",
+            "description": "Shown as 'Check on this'.",
+            "default": false
+          },
+          "probably_not_applicable": {
+            "type": "boolean",
+            "title": "Probably Not Applicable",
+            "description": "Shown last, as 'Probably doesn't apply. Select it if it does.'",
+            "default": false
+          },
+          "recommended": {
+            "type": "boolean",
+            "title": "Recommended",
+            "default": false
+          },
+          "handled_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handled By"
+          },
           "notes": {
             "items": {
               "$ref": "#/components/schemas/Note"
@@ -7354,6 +8130,43 @@
         },
         "type": "object",
         "title": "TextInput"
+      },
+      "TranscriptIn": {
+        "properties": {
+          "transcript": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcript"
+          },
+          "unclear": {
+            "type": "boolean",
+            "title": "Unclear",
+            "description": "The speech to text step wasn't sure what it heard.",
+            "default": false
+          },
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntakeSession"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TranscriptIn",
+        "description": "UC-CASE-22. What the speech to text step heard. The audio never reaches Cairn's servers, and is never\nstored anywhere. The transcript is redacted, spoken digits included, before anything else sees it."
       },
       "UserRole": {
         "type": "string",

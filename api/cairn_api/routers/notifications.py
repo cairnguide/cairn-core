@@ -92,7 +92,8 @@ def get_setup(case_id: UUID, request: Request, identity: Identity = Depends(get_
         names = nt.display_names(s, c.copy)
         masked = nt.masked_account_email(c.account)
         row = nt.load(s, case_id)
-        step = NextStep(action="choose_notifications", prompt=c.copy["notifications_question_channels"])
+        # UC-CASE-19 voice samples: how to keep in touch, asked in the user's voice.
+        step = NextStep(action="choose_notifications", prompt=c.copy[f"notifications_question_{c.voice}"])
         explanation = c.copy["notifications_intro"]
         return NotificationSetupResponse(
             case_id=case_id, display_name=names.get(case_id, c.copy["your_loved_one"]), explanation=explanation,
@@ -185,7 +186,7 @@ def _journeys(c: intake.Ctx, ids: list[UUID] | None = None) -> list[JourneyNotif
     for case in nt.owned_cases(c.s):
         if ids is not None and case["id"] not in ids:
             continue
-        status = intake.effective_status(case, c.account)
+        status = intake.effective_status(case)
         out.append(JourneyNotifications(case_id=case["id"], display_name=names[case["id"]], status=status,
                                         preferences=nt.out(case["id"], nt.load(c.s, case["id"]), c.copy)))
     return out

@@ -66,9 +66,24 @@ class Settings:
     # Only the default of each is built. Anything else is refused at startup.
     estate_plan_mode: str = "add_on"        # OPEN-DECISION-01: estate plan as an add-on, not a starting trailhead
     pre_need_path: str = "not_built"        # OPEN-DECISION-05: pre-need planning path
-    # UC-CASE-14 overwhelm signal: this many skips in a row slows the session down.
-    # Thresholds come from Trello card 26, which is not written yet.
+    # UC-CASE-09 and DEC-26-03: the third Skip for now in a row starts level 2. Two never do.
     overwhelm_skip_threshold: int = 3
+    # Case creation spec 2.0.0 open decisions, with their stated defaults. Only the defaults that need no other
+    # build are allowed. Anything else is refused at startup, so a value can't silently do nothing.
+    unsure_counts_as_skip: bool = False         # OPEN-07: "I'm not sure" does not count toward the three skips
+    sms_enabled: bool = False                   # OPEN-05: text messages are off in the MVP
+    notification_scope: str = "per_journey"     # OPEN-04: notification choices per journey
+    draft_check_in: str = "next_open"           # OPEN-08: a draft's check-in shows the next time Cairn is opened
+    under_18_handling: str = "stop_intake"      # OPEN-09: stop intake and store nothing about age
+    state_content_approach: str = "verified_link_confirm"  # OPEN-06: verified link plus "Please confirm"
+    outside_us_handling: str = "out_of_scope_message"     # OPEN-10
+    # UC-CASE-12 config. The price is also written verbatim in the spec copy, pending legal review (card 55).
+    subscription_price_display: str = "$14.99 a month"
+    # UC-CASE-23. The AI reminder repeats after this much continuing interaction. The rest offer comes after this
+    # much active use. A gap longer than active_gap_minutes between turns doesn't count as active use.
+    ai_reminder_every_hours: int = 3
+    rest_offer_after_minutes: int = 45
+    active_gap_minutes: int = 5
     # Browser origins allowed to call the API (CORS). Empty allows none, which is right for native
     # clients and for a web client served from the API's own origin.
     cors_origins: tuple[str, ...] = ()
@@ -85,6 +100,18 @@ class Settings:
             raise RuntimeError("CAIRN_PRE_NEED_PATH: the pre-need path is not built (OPEN-DECISION-05).")
         if self.overwhelm_skip_threshold < 1:
             raise RuntimeError("CAIRN_OVERWHELM_SKIP_THRESHOLD must be at least 1.")
+        if self.sms_enabled:
+            raise RuntimeError("CAIRN_SMS_ENABLED: text messages are not built (OPEN-05). Card 50 and legal review.")
+        for name, value, built in (("CAIRN_NOTIFICATION_SCOPE", self.notification_scope, "per_journey"),
+                                   ("CAIRN_DRAFT_CHECK_IN", self.draft_check_in, "next_open"),
+                                   ("CAIRN_UNDER_18_HANDLING", self.under_18_handling, "stop_intake"),
+                                   ("CAIRN_STATE_CONTENT_APPROACH", self.state_content_approach,
+                                    "verified_link_confirm"),
+                                   ("CAIRN_OUTSIDE_US_HANDLING", self.outside_us_handling, "out_of_scope_message")):
+            if value != built:
+                raise RuntimeError(f"{name}: only {built} is built.")
+        if not 1 <= self.ai_reminder_every_hours <= 3:
+            raise RuntimeError("CAIRN_AI_REMINDER_EVERY_HOURS must be 1 to 3 (UC-CASE-23, legal gate).")
         if self.dev_auth_secret is not None and len(self.dev_auth_secret) < 32:
             raise RuntimeError("CAIRN_DEV_AUTH_SECRET must be at least 32 characters.")
         if "*" in self.cors_origins:
@@ -128,6 +155,16 @@ def load_settings() -> Settings:
         estate_plan_mode=os.environ.get("CAIRN_ESTATE_PLAN_MODE", "add_on"),
         pre_need_path=os.environ.get("CAIRN_PRE_NEED_PATH", "not_built"),
         overwhelm_skip_threshold=int(os.environ.get("CAIRN_OVERWHELM_SKIP_THRESHOLD", "3")),
+        unsure_counts_as_skip=os.environ.get("CAIRN_UNSURE_COUNTS_AS_SKIP", "false").lower() == "true",
+        sms_enabled=os.environ.get("CAIRN_SMS_ENABLED", "false").lower() == "true",
+        notification_scope=os.environ.get("CAIRN_NOTIFICATION_SCOPE", "per_journey"),
+        draft_check_in=os.environ.get("CAIRN_DRAFT_CHECK_IN", "next_open"),
+        under_18_handling=os.environ.get("CAIRN_UNDER_18_HANDLING", "stop_intake"),
+        state_content_approach=os.environ.get("CAIRN_STATE_CONTENT_APPROACH", "verified_link_confirm"),
+        outside_us_handling=os.environ.get("CAIRN_OUTSIDE_US_HANDLING", "out_of_scope_message"),
+        subscription_price_display=os.environ.get("CAIRN_SUBSCRIPTION_PRICE_DISPLAY", "$14.99 a month"),
+        ai_reminder_every_hours=int(os.environ.get("CAIRN_AI_REMINDER_EVERY_HOURS", "3")),
+        rest_offer_after_minutes=int(os.environ.get("CAIRN_REST_OFFER_AFTER_MINUTES", "45")),
         cors_origins=cors_origins_from_env(),
         dev_auth_secret=secret_from_env("CAIRN_DEV_AUTH_SECRET"),
     )

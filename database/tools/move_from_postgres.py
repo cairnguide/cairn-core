@@ -66,6 +66,24 @@ def read_postgres(url: str) -> dict[str, list[dict]]:
     return out
 
 
+def _v2_answer(a: dict) -> dict:
+    """Case creation spec 2.0.0 names, the same reshaping as db/apply.py's case_creation_v2 migration."""
+    if a["field_key"] == "residence_state":
+        a["field_key"] = "residence_jurisdiction"
+    value = a.get("value")
+    if isinstance(value, dict) and "state" in value:
+        value["jurisdiction"] = value.pop("state")
+    if a["field_key"] == "completed_items" and isinstance(value, list):
+        a["value"] = ["bank_insurer_or_employer_notified" if v == "bank_notified" else v for v in value]
+    return a
+
+
+def _v2_task(t: dict) -> dict:
+    needs_check = t["status"] == "check_on_this"
+    return {**t, "status": "not_started" if needs_check else t["status"], "needs_check": needs_check,
+            "probably_not_applicable": False, "handled_by": None}
+
+
 def transform(src: dict[str, list[dict]]) -> dict[str, list[dict]]:
     if any(c.get("withdrawn_at") for c in src["consents"]):
         raise SystemExit("A consent has withdrawn_at set. The MongoDB schema has no place for it. Stopping.")
@@ -75,6 +93,7 @@ def transform(src: dict[str, list[dict]]) -> dict[str, list[dict]]:
         "id": u["id"], "idp_subject": u["idp_subject"], "email": u["email"], "email_lower": u["email"].lower(),
         **{k: u.get(k) for k in ("sign_in_method", "preferred_name", "name_pronunciation", "name_prefill",
                                  "time_zone", "trial_started_at", "trial_ends_at", "created_at")},
+        "trial_clock_paused_at": None, "ai_reminder_shown_at": None, "ai_reminder_shown_on": None,
         "voice": u["voice"], "onboarding_step": u["onboarding_step"], "status": u["status"]})
         for u in src["users"]]
 
@@ -92,10 +111,11 @@ def transform(src: dict[str, list[dict]]) -> dict[str, list[dict]]:
                              "last_intake_step", "last_activity_at", "death_not_yet_occurred", "skip_explainers",
                              "name_fallback", "attorney_triggers", "shown_notices", "tasks_paused_until",
                              "deletion_requested_at")},
+        "check_in_at": None, "loss_survivor_resources": False, "secure_now_first": False,
         "members": members.get(c["id"], [])}), "journey_started_on") for c in src["cases"]]
 
     out["deceased"] = [_dates(_id(dict(d)), "date_of_birth", "date_of_death") for d in src["deceased"]]
-    out["case_intake_answers"] = [dict(a) for a in src["case_intake_answers"]]
+    out["case_intake_answers"] = [_v2_answer(dict(a)) for a in src["case_intake_answers"]]
 
     citations: dict = {}
     for c in src["template_citations"]:
@@ -106,7 +126,8 @@ def transform(src: dict[str, list[dict]]) -> dict[str, list[dict]]:
                                   "applies_when": t["applies_when"], "citations": citations.get(t["id"], [])})
                              for t in src["task_templates"]]
     out["journey_templates"] = [_id(dict(t)) for t in src["journey_templates"]]
-    out["case_tasks"] = [_dates(_id({**t, "task_key": keys[t["template_id"]]}), "due_on") for t in src["case_tasks"]]
+    out["case_tasks"] = [_dates(_id(_v2_task({**t, "task_key": keys[t["template_id"]]})), "due_on")
+                         for t in src["case_tasks"]]
     out["notification_preferences"] = [_id(dict(p), "case_id") for p in src["notification_preferences"]]
     for table in ("notification_log", "trial_reminders", "identity_deletion_requests", "action_confirmation_outbox",
                   "action_confirmation_log", "audit_events"):

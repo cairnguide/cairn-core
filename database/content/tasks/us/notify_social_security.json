@@ -1,16 +1,24 @@
 {
   "task_key": "notify_social_security",
-  "version": 1,
-  "title": "Let Social Security know",
-  "plain_summary": "Ask the funeral home whether they will report the death for you, then confirm it was done.",
+  "version": 2,
+  "title": "Let Social Security and Medicare know",
+  "plain_summary": "The funeral director usually reports the death to Social Security for you. Social Security tells Medicare. Ask the funeral home whether they will report it, then confirm it was done.",
   "journey_week": 2,
   "sort_order": 10,
   "due_offset_days": 10,
   "jurisdiction": "US",
-  "applies_when": { "always": true },
+  "applies_when": {
+    "always": true
+  },
   "attorney_referral": false,
   "counsel_reviewed_at": null,
   "citations": [
+    {
+      "authority_name": "Social Security Administration, What to do when someone dies",
+      "url": "https://www.ssa.gov/personal-record/when-someone-dies",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    },
     {
       "authority_name": "Social Security Administration",
       "url": "https://www.ssa.gov/benefits/survivors/",

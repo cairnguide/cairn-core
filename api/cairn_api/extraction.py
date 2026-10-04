@@ -31,7 +31,8 @@ STATE_NAMES = {
     "rhode island": "RI", "south carolina": "SC", "south dakota": "SD", "tennessee": "TN", "texas": "TX",
     "utah": "UT", "vermont": "VT", "virginia": "VA", "washington": "WA", "west virginia": "WV",
     "wisconsin": "WI", "wyoming": "WY", "district of columbia": "DC", "washington dc": "DC", "puerto rico": "PR",
-    "guam": "GU", "us virgin islands": "VI", "american samoa": "AS", "northern mariana islands": "MP",
+    "guam": "GU", "us virgin islands": "VI", "u.s. virgin islands": "VI", "virgin islands": "VI",
+    "american samoa": "AS", "northern mariana islands": "MP", "the northern mariana islands": "MP", "saipan": "MP",
 }
 # Longest names first, so "west virginia" wins over "virginia".
 _STATE_NAME = re.compile(r"\b(" + "|".join(sorted(map(re.escape, STATE_NAMES), key=len, reverse=True)) + r")\b",
@@ -115,9 +116,17 @@ _DONE = [
     (re.compile(r"\b(ordered|requested) (the |some )?(death )?certificates\b", re.I), "certificates_ordered"),
     (re.compile(r"\b(told|called|notified) social security|social security (knows|was notified|has been notified)\b",
                 re.I), "ssa_notified"),
-    (re.compile(r"\b(told|called|notified) (the|their|his|her) bank|bank (knows|was notified)\b", re.I),
-     "bank_notified"),
+    (re.compile(r"\b(told|called|notified) (the|their|his|her) (bank|insurance company|insurer|employer|job)|"
+                r"(bank|insurer|insurance company|employer) (knows|was notified)\b", re.I),
+     "bank_insurer_or_employer_notified"),
+    (re.compile(r"\b(locked|secured) (up )?(the|their|his|her) (house|home|apartment|car)|"
+                r"(house|home|car) is (locked|secure)|(someone|we) (has|have|took|are taking) (the|their|his|her) "
+                r"(dog|cat|pets?)\b", re.I), "home_pets_vehicles_secured"),
 ]
+# UC-CASE-13. Pets or dependents to care for, so the secure-now step is recommended first.
+_PETS_OR_DEPENDENTS = re.compile(r"\b(dogs?|cats?|pets?|horses?|birds?|(young |little |small )?(kids|children)|"
+                                 r"dependents?|depended on (him|her|them)|takes? care of (my|his|her|their) "
+                                 r"(mother|father|mom|dad|sister|brother))\b", re.I)
 
 _INTENTS = {
     "pause": re.compile(r"\b(need (a|some) (break|minute|moment|time)|stop for now|take a break|pause|"
@@ -139,8 +148,14 @@ _ATTORNEY = {
                                       r"who (has|gets) (the )?(authority|say)|who'?s in charge|"
                                       r"not sure (if|whether) i (can|am allowed|have the right))\b", re.I),
     "multi_state_property": re.compile(r"\b((property|house|home|land|condo|cabin|real estate) in "
-                                       r"(another|two|several|multiple|different|other) states?|"
-                                       r"in (two|several|multiple|more than one|different) states)\b", re.I),
+                                       r"(another|two|several|multiple|different|other) (states?|territor(y|ies))|"
+                                       r"in (two|several|multiple|more than one|different) (states|territories))\b",
+                                       re.I),
+    # Card 59. Selling, moving, or giving away their things early.
+    "early_property_disposal": re.compile(r"\b((sell|selling|give away|giving away|donate|donating|divide|dividing|"
+                                          r"move|moving|clear(ing)? out|split(ting)? up) (his|her|their|the) "
+                                          r"(house|home|car|truck|things|stuff|belongings|furniture|jewelry|"
+                                          r"property|apartment))\b", re.I),
 }
 
 
@@ -148,6 +163,7 @@ _ATTORNEY = {
 class Extraction:
     proposals: dict[FieldKey, tuple[object, str | None]] = field(default_factory=dict)
     away_from_home: bool = False
+    pets_or_dependents: bool = False
     intents: set[str] = field(default_factory=set)
     attorney_triggers: set[str] = field(default_factory=set)
 
@@ -224,6 +240,7 @@ def extract(text: str, today: date) -> Extraction:
             out.attorney_triggers.add(trigger)
     if "contested_will" in out.attorney_triggers:
         out.attorney_triggers.discard("family_disagreement")
+    out.pets_or_dependents = bool(_PETS_OR_DEPENDENTS.search(t))
     out.away_from_home = bool(_AWAY.search(t))
 
     for pattern, role, name in _ROLES:
@@ -249,17 +266,19 @@ def extract(text: str, today: date) -> Extraction:
         if value:
             propose(FieldKey.date_of_death, value, words)
         if m := _ABROAD.search(sentence):
-            propose(FieldKey.place_of_death, {"state": None, "county_or_city": None, "outside_us": True}, m.group(0))
+            propose(FieldKey.place_of_death, {"jurisdiction": None, "county_or_city": None, "outside_us": True},
+                    m.group(0))
         else:
             state, place, words = _state_in(sentence)
             if state:
-                propose(FieldKey.place_of_death, {"state": state, "county_or_city": place, "outside_us": False}, words)
+                propose(FieldKey.place_of_death, {"jurisdiction": state, "county_or_city": place,
+                                                  "outside_us": False}, words)
 
-    death_state = (out.proposals.get(FieldKey.place_of_death, ({}, None))[0] or {}).get("state")
+    death_state = (out.proposals.get(FieldKey.place_of_death, ({}, None))[0] or {}).get("jurisdiction")
     if lived_state and death_state:
         same = lived_state == death_state
-        propose(FieldKey.residence_state, {"choice": "same_as_place_of_death" if same else "different",
-                                           "state": None if same else lived_state}, None)
+        propose(FieldKey.residence_jurisdiction, {"choice": "same_as_place_of_death" if same else "different",
+                                                  "jurisdiction": None if same else lived_state}, None)
 
     for pattern, value in _CIRCUMSTANCE:
         if pattern.search(t):

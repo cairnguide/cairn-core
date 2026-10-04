@@ -15,7 +15,7 @@ def _client(registry):
 def test_every_scheduled_job_the_worker_calls_exists():
     # Keep in step with JOBS_BY_CRON in cloudflare/src/index.ts.
     assert set(jobs.JOBS) == {"outbound", "identity_cleanup", "purge_held_cases",
-                              "purge_inactive_drafts", "expire_trials"}
+                              "purge_inactive_drafts", "expire_trials", "settle_trial_clocks"}
 
 
 def test_a_job_reports_counts_only():

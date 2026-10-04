@@ -36,7 +36,7 @@ def _task_response(s: Session, case_id: UUID, task_id: UUID, notes=None) -> Task
     summary = journey.task_summary(row)
     citations = s.template_citations(row["template_id"])
     # UC-CASE-04 and DEC-05. The certificate office comes from where the death happened, never residence.
-    death_state = journey_selection.certificate_office_state(intake.load_answers(s, case_id))
+    death_state = journey_selection.certificate_office_jurisdiction(intake.load_answers(s, case_id))
     reviewed = row["counsel_reviewed_at"] is not None
     detail = TaskDetail(
         **summary.model_dump(),

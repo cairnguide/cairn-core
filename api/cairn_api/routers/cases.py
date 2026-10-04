@@ -1,6 +1,7 @@
 """UC-CASE-01, UC-CASE-10, UC-CASE-18: start a case, find it again, and pick up where you left off.
 Also deleting a case, now or with a 7-day hold (UC-END-13, UC-CASE-10 change), with its one confirmation (UC-CASE-21).
 """
+from datetime import timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -11,6 +12,7 @@ from .. import intake
 from ..auth import Identity, get_identity
 from ..errors import ApiError, case_access_denied
 from ..schemas import (
+    Announcement,
     AnswerState,
     CaseDeletionIn,
     CaseDeletionInfo,
@@ -81,9 +83,11 @@ def list_cases(request: Request, identity: Identity = Depends(get_identity)) -> 
         for case_id in ids:
             case, answers = intake.load_case(s, case_id), intake.load_answers(s, case_id)
             out = intake.case_out(c, case, answers)
+            # UC-CASE-10: a user who closed the tab before the pause message still sees the 28-day notice here.
+            notice = c.copy["draft_notice"] if out.status == "draft" else None
             items.append(CaseListItem(id=out.id, status=out.status, display_name=out.display_name,
                                       last_activity_at=out.last_activity_at, draft_expires_at=out.draft_expires_at,
-                                      deletion_scheduled_for=out.deletion_scheduled_for))
+                                      draft_notice=notice, deletion_scheduled_for=out.deletion_scheduled_for))
         return CaseListResponse(cases=items)
 
 
@@ -122,10 +126,20 @@ def get_case(case_id: UUID, request: Request, identity: Identity = Depends(get_i
         else:
             ack, body = None, []
             step = NextStep(action="view_journey", prompt=c.copy["journey_preview_intro"])
-        text = " ".join(x for x in [ack, *body, step.prompt] if x)
+        announcements = []
+        if s.take_due_check_in(case_id):
+            # DEC-26-04 and OPEN-08. The check-in the user said yes to, shown once, because it isn't going by email.
+            announcements.append(Announcement(kind="check_in", text=c.copy["check_in_in_cairn"]))
+        every = timedelta(hours=request.app.state.settings.ai_reminder_every_hours)
+        if s.ai_reminder_due(session_start=True, every=every):
+            # UC-CASE-23. Opening a case starts a session: the AI reminder, at most once a day.
+            s.mark_ai_reminder_shown()
+            announcements.append(Announcement(kind="ai_reminder", text=c.copy["ai_reminder"]))
+        text = " ".join(x for x in [ack, *body, step.prompt, *(a.text for a in announcements)] if x)
         return CaseResponse(case=intake.case_out(c, case, answers),
                             deceased=DeceasedOut.model_validate(deceased) if deceased else None,
-                            acknowledgment=ack, body=body, notes=ready.notes, next_step=step,
+                            acknowledgment=ack, body=body, notes=ready.notes, announcements=announcements,
+                            next_step=step, controls=intake.controls(c.copy),
                             read_aloud=ReadAloud(label=c.copy["read_this_to_me"], text=text))
 
 
@@ -158,7 +172,7 @@ def patch_deceased(case_id: UUID, req: DeceasedIdentityPatch, request: Request,
         step = NextStep(action="view_journey", prompt=c.copy["readback_saved"])
         return CaseResponse(case=intake.case_out(c, case, answers),
                             deceased=DeceasedOut.model_validate(intake.load_deceased(s, case_id)),
-                            notes=[], next_step=step,
+                            notes=[], next_step=step, controls=intake.controls(c.copy),
                             read_aloud=ReadAloud(label=c.copy["read_this_to_me"], text=step.prompt))
 
 

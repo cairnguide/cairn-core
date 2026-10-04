@@ -35,6 +35,8 @@ class Copy:
     spec: dict[str, str]
     flow: dict[str, str]
     draft: dict[str, str]
+    # Keys whose wording needs counsel approval before launch (price, subscription, legal authority).
+    legal_review: frozenset[str] = frozenset()
 
     def __getitem__(self, key: str) -> str:
         for table in (self.spec, self.flow, self.draft):
@@ -64,7 +66,8 @@ class Copy:
 def load_copy(path: str | pathlib.Path | None = None, default: pathlib.Path = DEFAULT_PATH) -> Copy:
     data = json.loads(pathlib.Path(path or default).read_text(encoding="utf-8"))
     return Copy(version=data["version"], status=data["status"], spec=data["spec_copy"],
-                flow=data["flow_copy"], draft=data["draft_copy"])
+                flow=data["flow_copy"], draft=data["draft_copy"],
+                legal_review=frozenset(data.get("legal_review_keys", ())))
 
 
 def load_case_copy(path: str | pathlib.Path | None = None) -> Copy:

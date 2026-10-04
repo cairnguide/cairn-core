@@ -1,8 +1,8 @@
 {
   "task_key": "choose_funeral_provider",
-  "version": 2,
-  "title": "Choose a funeral home",
-  "plain_summary": "You have the right to an itemized price list from any funeral home, in person or over the phone. You only need to buy the goods and services you want.",
+  "version": 3,
+  "title": "Research and compare funeral options",
+  "plain_summary": "Compare funeral homes and their prices before you decide. You have the right to an itemized price list from any funeral home, in person or over the phone. Cairn can help you compare, but it never books or contacts anyone for you.",
   "journey_week": 1,
   "sort_order": 20,
   "due_offset_days": 2,

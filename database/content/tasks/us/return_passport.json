@@ -1,0 +1,29 @@
+{
+  "task_key": "return_passport",
+  "version": 1,
+  "title": "Cancel their passport",
+  "plain_summary": "You can return their passport to the Department of State to have it canceled.",
+  "journey_week": 4,
+  "sort_order": 30,
+  "due_offset_days": 24,
+  "jurisdiction": "US",
+  "applies_when": {
+    "always": true
+  },
+  "attorney_referral": false,
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "USA.gov, Report a death",
+      "url": "https://www.usa.gov/report-a-death",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    },
+    {
+      "authority_name": "U.S. Department of State, Report a passport lost or stolen",
+      "url": "https://travel.state.gov/en/passports/renew-replace/report-passport-lost-stolen.html",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

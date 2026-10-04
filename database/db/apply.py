@@ -33,7 +33,42 @@ import schema  # noqa: E402
 
 # Data migrations, in order: (name, function taking the Database). Never edit one
 # that has run anywhere. Add a new one instead. apply() refuses a changed checksum.
-MIGRATIONS: list[tuple[str, object]] = []
+# They run after the validators are updated, so each one writes the new shape.
+
+
+def case_creation_v2(db) -> None:
+    """Case creation spec 2.0.0. Renames the answer fields that now cover territories as well as states,
+    renames the bank checklist item, and gives existing documents the new fields' defaults."""
+    answers = db.case_intake_answers
+
+    def renamed_value(key: str) -> dict:
+        # One pipeline update per document, so it is never half renamed when the validator checks it.
+        return {"value": {"$mergeObjects": [
+            {"$arrayToObject": {"$filter": {"input": {"$objectToArray": "$value"},
+                                            "cond": {"$ne": ["$$this.k", "state"]}}}},
+            {"jurisdiction": "$value.state"}]}, "field_key": key}
+
+    answers.update_many({"field_key": "place_of_death", "value.state": {"$exists": True}},
+                        [{"$set": renamed_value("place_of_death")}])
+    answers.update_many({"field_key": "residence_state", "value": None},
+                        {"$set": {"field_key": "residence_jurisdiction"}})
+    answers.update_many({"field_key": "residence_state"}, [{"$set": renamed_value("residence_jurisdiction")}])
+    answers.update_many({"field_key": "completed_items", "value": "bank_notified"},
+                        {"$set": {"value.$": "bank_insurer_or_employer_notified"}})
+    db.users.update_many({"trial_clock_paused_at": {"$exists": False}},
+                         {"$set": {"trial_clock_paused_at": None, "ai_reminder_shown_at": None,
+                                   "ai_reminder_shown_on": None}})
+    db.cases.update_many({"check_in_at": {"$exists": False}},
+                         {"$set": {"check_in_at": None, "loss_survivor_resources": False, "secure_now_first": False}})
+    db.case_tasks.update_many({"needs_check": {"$exists": False}},
+                              {"$set": {"needs_check": False, "probably_not_applicable": False, "handled_by": None}})
+    # needs_check is a flag now (card 50). A task waiting to be checked stays open.
+    db.case_tasks.update_many({"status": "check_on_this"}, {"$set": {"status": "not_started", "needs_check": True}})
+
+
+MIGRATIONS: list[tuple[str, object]] = [
+    ("2026-10-04_case_creation_v2", case_creation_v2),
+]
 
 
 def _client(uri: str):

@@ -1,0 +1,29 @@
+{
+  "task_key": "notify_state_social_services",
+  "version": 1,
+  "title": "Tell state benefit programs",
+  "plain_summary": "If they got benefits from a state program, contact the state social services office to stop the payments.",
+  "journey_week": 2,
+  "sort_order": 45,
+  "due_offset_days": 14,
+  "jurisdiction": "US",
+  "applies_when": {
+    "always": true
+  },
+  "attorney_referral": false,
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "USA.gov, Report a death",
+      "url": "https://www.usa.gov/report-a-death",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    },
+    {
+      "authority_name": "USA.gov, State social services",
+      "url": "https://www.usa.gov/state-social-services",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

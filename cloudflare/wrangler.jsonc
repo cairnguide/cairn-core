@@ -47,7 +47,7 @@
     "crons": [
       "*/5 * * * *",   // outbound email
       "*/15 * * * *",  // identity cleanup
-      "7 * * * *",     // held case deletion (UC-END-13), hourly
+      "7 * * * *",     // held case deletion (UC-END-13) and trial clocks after a care rest (DEC-26-01), hourly
       "30 3 * * *"     // draft cleanup (DEC-07) and trial status, daily
     ]
   },

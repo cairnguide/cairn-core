@@ -5,8 +5,9 @@ database, the log, analytics, or a model request. Request models use the
 RedactedText type, so a handler only ever receives the redacted string. The
 raw value is not kept anywhere, and replies never repeat it or any part of it.
 
-What is caught (never_collect_at_case_creation):
-- Social Security numbers, with or without dashes or spaces.
+What is caught (never_collect_at_case_creation), in typed text and speech transcripts alike (UC-CASE-22):
+- Social Security numbers, with or without dashes or spaces, and partial ones ("the last four of his social").
+- Spoken digit sequences ("one two three four ...") are turned into digits first, so the rules below catch them.
 - Card numbers of 13 to 19 digits that pass the Luhn check.
 - Digit runs labeled as an account number (account, routing, policy, and so on).
 - Unlabeled digit runs of 12 or more that are not a card number, as account numbers.
@@ -32,6 +33,26 @@ _ACCOUNT_LABEL = re.compile(
 )
 _SSN = re.compile(r"(?<![\d-])\d{3}([- ]?)\d{2}\1\d{4}(?![\d-])")
 _LONG_RUN = re.compile(r"(?<!\d)\d{12,}(?!\d)")
+_SSN_WORD = r"(?:ssn|social security(?: number| no\.?| #)?|social|soc sec)"
+_PARTIAL_SSN = re.compile(
+    rf"\b(?:{_SSN_WORD}\b[^.\d]{{0,30}}?\b(?:last (?:four|4)(?: digits)?|ending(?: in| with)?|ends? (?:in|with))"
+    rf"|last (?:four|4)(?: digits)?(?: of)?(?: (?:his|her|their|the|my))? {_SSN_WORD})\b\D{{0,15}}?(\d{{4}})(?!\d)",
+    re.IGNORECASE)
+_DIGIT_WORDS = {"zero": "0", "oh": "0", "o": "0", "one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
+                "six": "6", "seven": "7", "eight": "8", "nine": "9"}
+_DIGIT_WORD = r"(?:zero|oh|o|one|two|three|four|five|six|seven|eight|nine|\d)"
+_SPOKEN_RUN = re.compile(rf"\b{_DIGIT_WORD}(?:[\s,-]+{_DIGIT_WORD}){{3,}}\b", re.IGNORECASE)
+
+
+def normalize_spoken_digits(text: str) -> str:
+    """UC-CASE-15. "one two three four" becomes "1234" before matching. Only runs of four or more digits, so
+    "two kids and three dogs" is left alone."""
+    def run(m: re.Match) -> str:
+        words = re.split(r"[\s,-]+", m.group(0))
+        if sum(not w.isdigit() for w in words) == 0:
+            return m.group(0)  # already digits: keep their spacing for the rules below
+        return "".join(_DIGIT_WORDS.get(w.lower(), w) for w in words)
+    return _SPOKEN_RUN.sub(run, text)
 _MONTHS = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?"
 _DATE = (r"(?:\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|\d{4}-\d{2}-\d{2}|"
          rf"{_MONTHS}\s+\d{{1,2}}(?:st|nd|rd|th)?,?\s+\d{{4}})")
@@ -87,7 +108,14 @@ def redact(text: str) -> Redaction:
         start, end = m.span(1)
         return m.group(0)[: start - m.start()] + REMOVED + m.group(0)[end - m.start():]
 
-    out = _CARD.sub(card, text)
+    def partial(m: re.Match) -> str:
+        kinds.add("ssn")
+        start, end = m.span(1)
+        return m.group(0)[: start - m.start()] + REMOVED + m.group(0)[end - m.start():]
+
+    out = normalize_spoken_digits(text)
+    out = _PARTIAL_SSN.sub(partial, out)
+    out = _CARD.sub(card, out)
     out = _ACCOUNT_LABEL.sub(labeled, out)
     out = _SSN.sub(replace_as("ssn"), out)
     out = _LONG_RUN.sub(replace_as("account_number"), out)

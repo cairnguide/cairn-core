@@ -1,0 +1,23 @@
+{
+  "task_key": "notify_credit_card_companies",
+  "version": 1,
+  "title": "Tell credit card companies",
+  "plain_summary": "Call each credit card company to report the death and close the account. Ask before paying anything. The FTC explains who is responsible for debts after a death.",
+  "journey_week": 2,
+  "sort_order": 25,
+  "due_offset_days": 13,
+  "jurisdiction": "US",
+  "applies_when": {
+    "always": true
+  },
+  "attorney_referral": false,
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "Federal Trade Commission, Debts and deceased relatives",
+      "url": "https://consumer.ftc.gov/articles/debts-and-deceased-relatives",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

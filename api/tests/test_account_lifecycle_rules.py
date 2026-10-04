@@ -118,7 +118,7 @@ def test_readback_is_one_plain_sentence():
     both = NotificationChoice(channels=["email", "push"], reasons=["due_date_upcoming", "inactivity"],
                               due_date_lead_days=1, inactivity_days=7, frequency="as_it_happens")
     assert nt.readback(CASE_COPY, both) == (
-        "Cairn will reach you by email and notifications on your phone the day before a step is due and when you "
+        "Cairn will reach you by email and browser notifications the day before a step is due and when you "
         "haven't been in Cairn for 7 days, as things come up.")
 
 

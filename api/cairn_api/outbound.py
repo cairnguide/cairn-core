@@ -8,7 +8,12 @@ Three queues, in this order:
 2. Trial reminders, only to users who chose email for a journey (0011, UC-CASE-12 change). They always
    show in the app regardless.
 3. Notifications the user chose (UC-CASE-19): a step coming up, or checking in after a quiet stretch,
-   by email, at the pace the user chose. Push is not delivered yet (no push provider or device tokens).
+   by email, at the pace the user chose. Browser notifications are not delivered yet (no web push provider).
+4. The one check-in a user said yes to after a hard moment (DEC-26-04), by email when they chose email.
+
+While a journey is resting, nothing goes out except confirmations and an opted-in check-in (crisis plan).
+Before anything is sent, private_enough checks that it names no person who died and no circumstance
+(UC-CASE-19). A message that fails is not sent.
 
 Every message is short and private. It never names the person who died, the circumstance, task details,
 or anything that was deleted. Nothing personal is logged: counts and error codes only.
@@ -87,6 +92,22 @@ def trial_reminder(row: dict, copy: Copy) -> Message:
     return Message(copy["email_subject_trial"], acct.reminder_text(row["kind"], row, copy))
 
 
+def check_in(case_copy: Copy) -> Message:
+    return Message(case_copy["check_in_email_subject"], case_copy["check_in_outside_cairn"])
+
+
+# Every circumstance choice's words, which no outbound message may contain (UC-CASE-19).
+def circumstance_terms(case_copy: Copy) -> list[str]:
+    return [case_copy[k] for k in case_copy.spec | case_copy.flow | case_copy.draft
+            if k.startswith("label_circumstance_") and not k.endswith("prefer_not_to_say")]
+
+
+def private_enough(msg: Message, forbidden: list[str]) -> bool:
+    """[PRIVACY] UC-CASE-19. The message never names the person who died or the circumstance."""
+    text = f"{msg.subject}\n{msg.body}".casefold()
+    return not any(term and term.casefold() in text for term in forbidden)
+
+
 def _try(mailer: Mailer, to: str, msg: Message) -> str | None:
     """Send one message. Returns an error code, never the address or the provider's message."""
     try:
@@ -117,9 +138,26 @@ def run_once(db, mailer: Mailer, copy: Copy, case_copy: Copy, limit: int = 100) 
         out.count("trial_reminders", error is None)
 
     # Logged when claimed. A missed nudge is better than a repeated one.
+    circumstances = circumstance_terms(case_copy)
     for row in maintenance.claim_due_notifications(db, limit):
-        error = _try(mailer, row["email"], notification(row["reason"], copy, case_copy))
+        msg = notification(row["reason"], copy, case_copy)
+        if not private_enough(msg, maintenance.private_terms(db, row["user_id"]) + circumstances):
+            log.warning("notification not sent id=%s code=private_check", row["notification_id"])
+            out.count("notifications", False)
+            continue
+        error = _try(mailer, row["email"], msg)
         if error:
             log.warning("notification not sent id=%s code=%s", row["notification_id"], error)
         out.count("notifications", error is None)
+
+    for row in maintenance.claim_due_check_ins(db, limit):
+        msg = check_in(case_copy)
+        if not private_enough(msg, maintenance.private_terms(db, row["user_id"]) + circumstances):
+            log.warning("check-in not sent case=%s code=private_check", row["case_id"])
+            out.count("check_ins", False)
+            continue
+        error = _try(mailer, row["email"], msg)
+        if error:
+            log.warning("check-in not sent case=%s code=%s", row["case_id"], error)
+        out.count("check_ins", error is None)
     return out

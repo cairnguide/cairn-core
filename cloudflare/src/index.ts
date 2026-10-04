@@ -55,7 +55,7 @@ const JOBS_KEYS = [
 export const JOBS_BY_CRON: Record<string, readonly string[]> = {
   "*/5 * * * *": ["outbound"],
   "*/15 * * * *": ["identity_cleanup"],
-  "7 * * * *": ["purge_held_cases"],
+  "7 * * * *": ["purge_held_cases", "settle_trial_clocks"],
   "30 3 * * *": ["purge_inactive_drafts", "expire_trials"],
 };
 

@@ -121,6 +121,7 @@ JOBS: dict[str, Callable[[], dict]] = {
     "purge_held_cases": _database_job("purge_held_cases"),            # UC-END-13, at least hourly
     "purge_inactive_drafts": _database_job("purge_inactive_drafts"),  # DEC-07, at least daily
     "expire_trials": _database_job("expire_trials"),                  # reporting only
+    "settle_trial_clocks": _database_job("settle_trial_clocks"),      # care rests that ended, at least hourly
 }
 
 

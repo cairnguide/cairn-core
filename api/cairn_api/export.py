@@ -57,7 +57,7 @@ def _case(c: intake.Ctx, case_id) -> ExportCase:
     conversation = s.context_items(case_id)
     sent = s.notifications_sent(case_id)
     return ExportCase(
-        id=case["id"], status=intake.effective_status(case, c.account),
+        id=case["id"], status=intake.effective_status(case),
         display_name=_clean(intake.display_name(case, answers, c.copy)), created_at=case["created_at"],
         journey_template_key=case["journey_template_key"], journey_started_at=case["journey_started_at"],
         tasks_paused_until=case["tasks_paused_until"], deletion_scheduled_for=case["deletion_scheduled_for"],

@@ -1,0 +1,23 @@
+{
+  "task_key": "notify_mortgage_and_loan_servicers",
+  "version": 1,
+  "title": "Tell the mortgage and loan companies",
+  "plain_summary": "Contact the companies that handle any mortgage, car loan, or other loan. If a home with a mortgage passes to you, federal rules say the mortgage company must talk with you about the loan.",
+  "journey_week": 3,
+  "sort_order": 26,
+  "due_offset_days": 19,
+  "jurisdiction": "US",
+  "applies_when": {
+    "always": true
+  },
+  "attorney_referral": false,
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "Consumer Financial Protection Bureau, 12 CFR 1024.38 General servicing policies",
+      "url": "https://www.consumerfinance.gov/rules-policy/regulations/1024/38/",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

@@ -141,8 +141,11 @@ def load_and_validate_journeys(content_dir: pathlib.Path, task_keys: set[str], a
                 check(list_op == (leaf["fact"] in LIST_FACTS),
                       f"add_ons/{a['id']}: operator {leaf['op']} doesn't fit fact {leaf['fact']}")
         for n in doc["notes"].values():
-            if n["attach_to_task"]:
-                named.add(n["attach_to_task"])
+            target = n["attach_to_task"]
+            named.update(target if isinstance(target, list) else [target] if target else [])
+        for a in doc["add_ons"]:
+            for key in (*a.get("recommend_tasks", []), *a.get("mark_probably_not_applicable", [])):
+                check(key in named, f"add_ons/{a['id']}: {key} is in no path or add-on")
         mapped = {k for keys in doc["completed_items"].values() for k in keys} | set(doc["check_on_this_when_unsure"])
 
         for key in sorted(named | mapped):
