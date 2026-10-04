@@ -515,9 +515,7 @@
       "confirm_funeral_home_reported_death"
     ],
     "bank_insurer_or_employer_notified": [
-      "notify_banks",
-      "notify_life_insurers",
-      "notify_employer_and_pension"
+      "notify_banks"
     ],
     "other": []
   },

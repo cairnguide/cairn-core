@@ -173,15 +173,18 @@ Reported to the developer as the instructions ask:
 4. **Rest copy.** The crisis plan's rest choices, clock notes, and return note are used verbatim. v2 has only the 45-minute offer.
 5. **Check-in in the first level 4 reply.** The crisis plan puts 988 first with nothing else to answer, so the check-in question waits for the next turn or for the user's return.
 
-## Decisions to confirm with the product owner
+## Product owner decisions (2026-10-04)
 
-1. **Renames.** The `residence_state` field key, the `state` value key, and the `bank_notified` item value were renamed by a forward migration (`2026-10-04_case_creation_v2`), so the stored data matches v2's names. No collection or field was dropped. If renames should have been asked about first, the migration can be replaced by aliases before it runs anywhere shared.
-2. **The bank, insurer, or employer item** marks three tasks done: banks, life insurers, and employer and pension.
-3. **"Until I come back"** is stored as a rest 3,650 days long, because `tasks_paused_until` needs an end time.
-4. **`in_cairn_only`.** v2 names the default `in_cairn_only`. The stored value stays `in_app_only`, with the same meaning.
-5. **The hosting platform.** DEC-PLAT says CloudFront. The repository deploys to Cloudflare. Nothing in this change depends on it.
-6. **Buying a subscription** is in the MVP under DEC-SUB, but no payment provider has been chosen. The price is shown, and `users.status = 'subscribed'` can still be set only by an administrator.
-7. **The phrase lists** in `safety.py` need licensed clinical sign-off (DEC-26-06) before any real user.
+1. **Renames confirmed.** The `residence_state` field key, the `state` value key, and the `bank_notified` item value are renamed by the forward migration `2026-10-04_case_creation_v2`, so stored data matches v2's names. No collection or field was dropped.
+2. **The bank, insurer, or employer checklist item marks only the bank step done.** Life insurers, employer and pension, credit cards, and mortgages and loans stay independent tasks.
+3. **"Until I come back"** is stored as a 365-day rest. `tasks_paused_until` still always has an end time.
+4. **Buying a subscription is not built.** No subscription or purchase use case is complete yet. The price is shown as disclosure only, and `users.status = 'subscribed'` can be set only by an administrator.
+5. **The phrase lists** in `safety.py` are still awaiting licensed clinical sign-off (DEC-26-06). Required before any real user.
+
+Still open, for information:
+
+- **`in_cairn_only`.** v2 names the default `in_cairn_only`. The stored value stays `in_app_only`, with the same meaning.
+- **The hosting platform.** DEC-PLAT says CloudFront. The repository deploys to Cloudflare. Nothing in this change depends on it.
 
 ## Policy updates required
 

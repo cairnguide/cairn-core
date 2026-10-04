@@ -288,9 +288,11 @@ def test_uc08_funeral_home_reports_to_ssa():
 def test_uc08_completed_items_mark_done_and_unsure_needs_check():
     sel = pick(completed_items=["death_pronounced", "certificates_ordered", "bank_insurer_or_employer_notified",
                                 "home_pets_vehicles_secured"])
-    for key in ("confirm_pronouncement", "order_death_certificates", "notify_banks", "notify_life_insurers",
-                "notify_employer_and_pension", "secure_home_and_identity"):
+    for key in ("confirm_pronouncement", "order_death_certificates", "notify_banks", "secure_home_and_identity"):
         assert sel.initial_status[key] == "done"
+    # The bank item marks only the bank step. Insurers and employers are independent tasks.
+    for key in ("notify_life_insurers", "notify_employer_and_pension", "notify_credit_card_companies"):
+        assert sel.initial_status[key] == "not_started"
     unsure = pick(completed_items=["none_or_unsure"])
     for key in DEFINITION["check_on_this_when_unsure"]:
         if key in unsure.task_keys:
