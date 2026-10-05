@@ -7,7 +7,7 @@
 | Push to any branch except `main` | [`branch-push.yml`](workflows/branch-push.yml) | Lint, plus the test files the push added or changed. If no test files changed, it runs the fast suite, which needs no database. |
 | Pull request into `main` | [`pull-request.yml`](workflows/pull-request.yml) | Lint, then every API test, including the data security suite (`api/tests/test_data_security.py`), on MongoDB 7.0 and 8.0. A skipped test counts as a failure. |
 | Merge to `main` | [`pull-request.yml`](workflows/pull-request.yml) | The same full set, so `main` is re-verified after every merge. |
-| Run by hand | [`deploy-cloudflare.yml`](workflows/deploy-cloudflare.yml) | Deploys to Cloudflare: the MongoDB schema, templates, then the Worker and container image. See the repository README. |
+| Run by hand | [`deploy-cloudflare.yml`](workflows/deploy-cloudflare.yml) | Deploys to Cloudflare: the MongoDB schema, templates, then the Worker and container image. See the repository README. The only way to deploy: Cloudflare Workers Builds is not connected. |
 | Run by hand | [`twilio-integration.yml`](workflows/twilio-integration.yml) | Live checks against Twilio. Always checks the credentials (free). Sends one text, one Verify code, or one email only for the boxes you tick. Never runs on a push, a pull request, or a schedule, to save the Twilio trial's messages. |
 
 Database tests run against a throwaway MongoDB replica set with authentication on, started by [`scripts/start-mongodb.sh`](scripts/start-mongodb.sh) in Docker. The API connects to it as a `cairnApp` user, exactly as in production.
