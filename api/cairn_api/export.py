@@ -79,7 +79,8 @@ def build(c: intake.Ctx) -> DataExport:
     s: Session = c.s
     a = c.account
     profile = _clean({
-        "email": a["email"], "sign_in_method": a["sign_in_method"], "preferred_name": a["preferred_name"],
+        "email": a["email"], "sign_in_method": a["sign_in_method"],
+        "linked_sign_in_methods": a.get("linked_sign_in_methods") or None, "preferred_name": a["preferred_name"],
         "name_pronunciation": a["name_pronunciation"], "voice": a["voice"], "time_zone": a["time_zone"],
         "status": a["status"], "onboarding_step": a["onboarding_step"],
         "trial_started_at": a["trial_started_at"].isoformat() if a["trial_started_at"] else None,

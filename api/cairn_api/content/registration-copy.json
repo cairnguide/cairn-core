@@ -96,6 +96,12 @@
     "chat_help": "I can help you delete your account, download a copy of your information, or change how Cairn keeps in touch.",
     "chat_delete_start": "Here's what deleting your account means.",
     "chat_download_start": "Here's what your download includes.",
-    "chat_notifications_start": "Here's how Cairn keeps in touch now."
+    "chat_notifications_start": "Here's how Cairn keeps in touch now.",
+    "link_after_sign_in": "Sign in with {provider} first, then you can add {new_provider} as another way in.",
+    "sign_in_method_linked": "Done. You can now sign in with {provider} too.",
+    "sign_in_method_already_linked": "You can already sign in with {provider}.",
+    "sign_in_method_in_use": "That {provider} sign-in belongs to a different Cairn account. Contact support and we can help bring the two together.",
+    "sign_in_method_unlinked": "You can no longer sign in with {provider}. Your account and everything in it are unchanged.",
+    "sign_in_method_cannot_remove": "Only a way of signing in that you added later can be removed. The way you created your account stays."
   }
 }

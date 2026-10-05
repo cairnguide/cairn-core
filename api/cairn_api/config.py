@@ -101,7 +101,10 @@ class Settings:
         if self.overwhelm_skip_threshold < 1:
             raise RuntimeError("CAIRN_OVERWHELM_SKIP_THRESHOLD must be at least 1.")
         if self.sms_enabled:
-            raise RuntimeError("CAIRN_SMS_ENABLED: text messages are not built (OPEN-05). Card 50 and legal review.")
+            # The Twilio sender and Verify client exist (twilio_client.py). Offering text messages to users does
+            # not: number collection, the consent line, and the sms channel wait on OPEN-05 and legal review.
+            raise RuntimeError("CAIRN_SMS_ENABLED: text messages are not offered yet (OPEN-05). Card 50 and legal "
+                               "review.")
         for name, value, built in (("CAIRN_NOTIFICATION_SCOPE", self.notification_scope, "per_journey"),
                                    ("CAIRN_DRAFT_CHECK_IN", self.draft_check_in, "next_open"),
                                    ("CAIRN_UNDER_18_HANDLING", self.under_18_handling, "stop_intake"),

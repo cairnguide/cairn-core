@@ -1,5 +1,7 @@
 # Backend stand-up gap audit: hosting the API, registration, and account creation
 
+> **2026-10-05:** `account-creation-review-gap-audit.md` closes items 20 (email provider) and 21 (linking a second sign-in method). Every email now goes through Twilio SendGrid, and text messages have a Twilio sender, still not offered (OPEN-05).
+
 Date: 2026-09-27. Branch: `cloudflare-hosting`.
 
 Updated 2026-10-03, when this branch took in the move from PostgreSQL to MongoDB (`main`, pull request 8). The check below was run against PostgreSQL. The test logins were moved to MongoDB, and the items that named PostgreSQL now say what replaces them.

@@ -1,5 +1,7 @@
 # Account lifecycle and keeping in touch: gap audit
 
+> **2026-10-05:** `account-creation-review-gap-audit.md` closes the email provider gap (follow-up 5) and covers linked sign-ins in UC-REG-15 and UC-REG-16. Every email now goes through Twilio SendGrid, and text messages have a Twilio sender, still not offered (OPEN-05).
+
 > **2026-10-01:** the database moved from PostgreSQL to MongoDB. SQL tables, row-level security policies, and functions named below now live in `database/db/schema.py` (collections, validators, roles) and `api/cairn_api/store.py` (the case boundary). `database/CLAUDE.md`, "The move to MongoDB", maps each one.
 
 Audit of `journey-templates` (commit 61aa4c4) against the two specs dated 2026-09-25, and what this change adds:

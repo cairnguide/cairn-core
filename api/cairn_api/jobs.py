@@ -10,8 +10,12 @@ Run with: uvicorn cairn_api.jobs:app  (or CAIRN_PROCESS=jobs python -m cairn_api
 
   CAIRN_JOBS_MONGODB_URI            the cairnJobs user's connection string (required)
   CAIRN_MONGODB_DB                  the Cairn database name, cairn by default
-  CAIRN_SMTP_HOST, CAIRN_SMTP_PORT, CAIRN_SMTP_USERNAME, CAIRN_EMAIL_FROM
-  CAIRN_SMTP_PASSWORD               or CAIRN_SMTP_PASSWORD_FILE
+  CAIRN_EMAIL_FROM                  the sender, for example "Cairn <no-reply@mail.example>"
+  CAIRN_EMAIL_PROVIDER              twilio (the default) or smtp (local development only)
+  TWILIO_SENDGRID_API_KEY           or TWILIO_SENDGRID_API_KEY_FILE, for twilio
+  CAIRN_SMTP_HOST, CAIRN_SMTP_PORT, CAIRN_SMTP_USERNAME, and CAIRN_SMTP_PASSWORD(_FILE), for smtp
+  CAIRN_PENDING_ACCOUNT_RETENTION_DAYS   UC-REG-10. Unset until the retention schedule sets it [LEGAL REVIEW]
+  CAIRN_NO_CASE_ACCOUNT_RETENTION_DAYS   UC-REG-13. Optional, unset until the retention schedule sets it
   CAIRN_AUTH0_DOMAIN, CAIRN_AUTH0_MGMT_CLIENT_ID
   CAIRN_AUTH0_MGMT_CLIENT_SECRET    or CAIRN_AUTH0_MGMT_CLIENT_SECRET_FILE
   CAIRN_APPLE_CLIENT_ID, CAIRN_APPLE_TEAM_ID, CAIRN_APPLE_KEY_ID
@@ -19,13 +23,14 @@ Run with: uvicorn cairn_api.jobs:app  (or CAIRN_PROCESS=jobs python -m cairn_api
   CAIRN_REGISTRATION_COPY, CAIRN_CASE_COPY   optional, the same replacement copy files the API uses
 
 A job whose provider isn't configured yet answers "skipped" instead of failing,
-so the schedule can run before an email provider is chosen. Responses and logs
+so the schedule can run before a provider's secrets or a retention period are set. Responses and logs
 hold counts only, never anything personal.
 """
 from __future__ import annotations
 
 import logging
 import os
+from datetime import timedelta
 from typing import Callable
 
 import httpx
@@ -38,8 +43,9 @@ from .copy_store import load_case_copy, load_copy
 from .db import client_for
 from .identity_cleanup import CleanupSettings, IdentityCleanup
 from .identity_cleanup import run_once as run_identity_cleanup
-from .outbound import SmtpMailer
+from .outbound import Mailer, SmtpMailer
 from .outbound import run_once as run_outbound
+from .twilio_client import SendGridMailer
 
 log = logging.getLogger("cairn_api.jobs")
 
@@ -73,10 +79,16 @@ def jobs_database():
     return _client[os.environ.get("CAIRN_MONGODB_DB", "cairn")]
 
 
-def mailer_from_env() -> SmtpMailer:
-    return SmtpMailer(host=_env("CAIRN_SMTP_HOST"), port=int(os.environ.get("CAIRN_SMTP_PORT", "587")),
-                      username=_env("CAIRN_SMTP_USERNAME"), password=_secret("CAIRN_SMTP_PASSWORD"),
-                      sender=_env("CAIRN_EMAIL_FROM"))
+def mailer_from_env() -> Mailer:
+    """Twilio SendGrid by default. SMTP only for local development with a mail catcher."""
+    provider = os.environ.get("CAIRN_EMAIL_PROVIDER", "twilio")
+    if provider == "twilio":
+        return SendGridMailer(api_key=_secret("TWILIO_SENDGRID_API_KEY"), sender=_env("CAIRN_EMAIL_FROM"))
+    if provider == "smtp":
+        return SmtpMailer(host=_env("CAIRN_SMTP_HOST"), port=int(os.environ.get("CAIRN_SMTP_PORT", "587")),
+                          username=_env("CAIRN_SMTP_USERNAME"), password=_secret("CAIRN_SMTP_PASSWORD"),
+                          sender=_env("CAIRN_EMAIL_FROM"))
+    raise RuntimeError("CAIRN_EMAIL_PROVIDER must be twilio or smtp.")
 
 
 def cleanup_settings_from_env() -> CleanupSettings:
@@ -107,6 +119,24 @@ def identity_cleanup() -> dict:
     return {"sent": done, "failed": failed}
 
 
+def _days(name: str) -> timedelta:
+    days = int(_env(name))
+    if days < 1:
+        raise RuntimeError(f"{name} must be at least 1.")
+    return timedelta(days=days)
+
+
+def purge_stale_accounts() -> dict:
+    """UC-REG-10 and UC-REG-13. Daily. Deletes accounts that stopped before finishing onboarding, and, when its
+    period is set, accounts that finished but never created a case. The periods come from the retention schedule
+    and have no defaults on purpose: until CAIRN_PENDING_ACCOUNT_RETENTION_DAYS is set the job is skipped.
+    [LEGAL REVIEW REQUIRED]"""
+    pending = _days("CAIRN_PENDING_ACCOUNT_RETENTION_DAYS")
+    no_case = _days("CAIRN_NO_CASE_ACCOUNT_RETENTION_DAYS") if os.environ.get(
+        "CAIRN_NO_CASE_ACCOUNT_RETENTION_DAYS") else None
+    return {"affected": maintenance.purge_stale_accounts(jobs_database(), pending, no_case), "failed": 0}
+
+
 def _database_job(name: str) -> Callable[[], dict]:
     def run() -> dict:
         return {"affected": maintenance.JOBS[name](jobs_database()), "failed": 0}
@@ -118,6 +148,7 @@ def _database_job(name: str) -> Callable[[], dict]:
 JOBS: dict[str, Callable[[], dict]] = {
     "outbound": outbound,
     "identity_cleanup": identity_cleanup,
+    "purge_stale_accounts": purge_stale_accounts,                      # UC-REG-10, UC-REG-13, daily
     "purge_held_cases": _database_job("purge_held_cases"),            # UC-END-13, at least hourly
     "purge_inactive_drafts": _database_job("purge_inactive_drafts"),  # DEC-07, at least daily
     "expire_trials": _database_job("expire_trials"),                  # reporting only

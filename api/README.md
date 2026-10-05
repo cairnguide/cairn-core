@@ -11,7 +11,7 @@ HTTP API for the MVP use cases in `database/docs/cairn-mvp-use-cases.md`, the re
 
 | Use case | Endpoint |
 |---|---|
-| UC-REG-01, welcome | `GET /v1/welcome` (also `GET /v1/sign-in-methods`) |
+| UC-REG-01, welcome | `GET /v1/welcome` (also `GET /v1/sign-in-methods`). `email_sign_in` carries the UC-REG-04 copy for the email link |
 | UC-REG-02 to UC-REG-05, create an account or sign in | `POST /v1/registrations` after every Auth0 sign-in |
 | UC-REG-06, age | Not built, by product decision. No age is asked or stored |
 | UC-REG-07 to UC-REG-10, acknowledgments and declining | `POST /v1/onboarding/acknowledgments/{privacy_terms,trial_terms,ai_notice}` (plus `GET /v1/policies`) |
@@ -20,6 +20,7 @@ HTTP API for the MVP use cases in `database/docs/cairn-mvp-use-cases.md`, the re
 | UC-REG-13, resume | `GET /v1/onboarding` (and the 200 from `POST /v1/registrations`) |
 | UC-REG-14, I need a moment | `GET /v1/onboarding/need-a-moment`. Every onboarding response carries `support` |
 | Settings | `GET` and `PATCH /v1/me` |
+| UC-REG-05, add or remove another way to sign in | `POST /v1/me/sign-in-methods` (signed in the original way, with the new sign-in's token in the body), `DELETE /v1/me/sign-in-methods/{method}` |
 | UC-REG-15, delete my account (was UC-ACCT-01) | `GET /v1/me/deletion`, then `POST /v1/me/deletion`. The response says the user is signed out |
 | UC-REG-16, download all my data | `GET /v1/me/data-export`, then `GET /v1/me/data-export/file` (JSON) |
 | UC-REG-15, UC-REG-16, UC-CASE-20 asked in chat | `POST /v1/me/messages`. The client keeps `session` and sends it back |
@@ -114,14 +115,16 @@ Adding a voice means a new voice file and manifest entry, a new value in `schema
 | Job | Function | Notes |
 |---|---|---|
 | Trial status | `maintenance.expire_trials`, job `expire_trials` | Reporting only. Read-only is enforced from `trial_ends_at` directly |
-| Outbound email | `python api/scripts/send_outbound.py` or job `outbound` | Every 5 minutes. Deletion confirmations (one each, address purged once sent), trial reminders for users who chose email, the notifications users chose, and a check-in the user said yes to. Every notification and check-in passes a check that it names no person who died and no circumstance. Nothing about tasks is sent during a rest. SMTP, provider not chosen yet. Register the sending domain with Apple's Private Email Relay Service |
+| Outbound email | `python api/scripts/send_outbound.py` or job `outbound` | Every 5 minutes. Deletion confirmations (one each, address purged once sent), trial reminders for users who chose email, the notifications users chose, and a check-in the user said yes to. Every notification and check-in passes a check that it names no person who died and no circumstance. Nothing about tasks is sent during a rest. Sent through Twilio SendGrid (`twilio_client.SendGridMailer`, `TWILIO_SENDGRID_API_KEY`). Register the sending domain with Apple's Private Email Relay Service |
 | Held case deletion (UC-END-13) | `maintenance.purge_held_cases`, job `purge_held_cases` | At least hourly. Deletes cases whose 7-day hold has ended and queues their confirmation |
 | Trial clocks (DEC-26-01) | `maintenance.settle_trial_clocks`, job `settle_trial_clocks` | Hourly. Starts the free days again when a care rest ends on its own, and moves `trial_ends_at` later by the paused time |
 | Draft cleanup (DEC-07) | `maintenance.purge_inactive_drafts`, job `purge_inactive_drafts` | At least daily. Deletes drafts idle for `app_settings.draft_retention_days` (28), with their answers and context. Never touches active cases |
 | Identity cleanup | `python api/scripts/identity_cleanup.py` or job `identity_cleanup` | Deletes Auth0 users and revokes Apple tokens after account deletion |
-| Stale accounts | `maintenance.purge_stale_accounts(db, pending, no_case)` | Periods come from the retention schedule [LEGAL REVIEW REQUIRED] |
+| Unfinished sign-ups (UC-REG-10, UC-REG-13) | `maintenance.purge_stale_accounts`, job `purge_stale_accounts` | Daily. Deletes accounts still in `pending_onboarding` after `CAIRN_PENDING_ACCOUNT_RETENTION_DAYS`, and, if `CAIRN_NO_CASE_ACCOUNT_RETENTION_DAYS` is set, finished accounts that never created a case. Queues identity cleanup for every sign-in on the account. Skipped until the retention schedule sets the first period [LEGAL REVIEW REQUIRED] |
 
-On Cloudflare, Cron Triggers in `cloudflare/wrangler.jsonc` run the first five through `cairn_api/jobs.py` (`POST /jobs/{name}` in the private jobs container). Stale account purging isn't scheduled until the retention periods are set.
+On Cloudflare, Cron Triggers in `cloudflare/wrangler.jsonc` run every job above through `cairn_api/jobs.py` (`POST /jobs/{name}` in the private jobs container). A job whose provider or period isn't set answers `skipped`.
+
+Every email and text message goes through Twilio. See "Twilio (email and text messages)" in the [repository README](../README.md#twilio-email-and-text-messages) for the settings, the GitHub secrets, and the hand-run live checks.
 
 ## Security choices
 
@@ -136,7 +139,7 @@ On Cloudflare, Cron Triggers in `cloudflare/wrangler.jsonc` run the first five t
 
 ## Decisions to confirm with the product owner
 
-1. **Accounts aren't linked across sign-in methods.** An email that already has an account gets a 409 naming the method used last time. Linking a second method after signing in with the first (UC-REG-05) isn't built. Support merges accounts with `database/docs/support-account-merge.md`.
+1. **Accounts are never linked automatically across sign-in methods.** An email that already has an account gets a 409 naming the method used last time, with an option to add the new method after signing in the old way. `POST /v1/me/sign-in-methods` does that (UC-REG-05): the request is signed in the original way and the body carries the second sign-in's token. One account per sign-in, one sign-in per method. Two accounts that already exist are still merged by support (`database/docs/support-account-merge.md`).
 2. **Fiduciary flag (UC-4, UC-8).** The spec says not to add a user-level column without sign-off. The relationship picked at case hand-off only shapes the response (`language_profile`). It's stored per case as `case_members.relationship`.
 3. **POA role confirmation (UC-3).** `confirm_current_role` offers `named_executor`, `next_of_kin`, and `not_sure` as client routing values only. The note that POA authority ends at death is marked `legal_review_required`. [LEGAL REVIEW REQUIRED]
 4. **`context_items` is a MongoDB collection** (open question 1), in the same database as everything else.

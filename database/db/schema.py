@@ -209,8 +209,16 @@ collection("users", closed({
     # The AI reminder (UC-CASE-23): when it was last shown, and on which local day for the once-a-day rule.
     "ai_reminder_shown_at": NULL_TIMESTAMP,
     "ai_reminder_shown_on": NULL_CALENDAR_DATE,
+    # UC-REG-05. Other sign-ins the user added after signing in with the original one. Never added automatically.
+    # Absent until the first link. idp_subject is unique across accounts (index below and store.link_identity).
+    "linked_identities": {"bsonType": "array", "maxItems": len(SIGN_IN_METHODS) - 1, "items": document({
+        "idp_subject": text(1, 255),
+        "sign_in_method": enum(*SIGN_IN_METHODS),
+        "email_lower": text(3, 320),
+        "linked_at": TIMESTAMP,
+    })},
     "created_at": TIMESTAMP,
-}),
+}, optional=("linked_identities",)),
     {"$eq": ["$email_lower", {"$toLower": "$email"}]},
     # At least 28 days (D-02), counted in hours so daylight saving time never shifts it. Later only by care rests.
     {"$or": [{"$and": [is_null("$trial_started_at"), is_null("$trial_ends_at"), is_null("$trial_clock_paused_at")]},
@@ -516,6 +524,12 @@ collection("schema_migrations", closed({
 INDEXES: list[tuple[str, list[tuple[str, int]], dict]] = [
     ("users", [("idp_subject", 1)], {"unique": True, "name": "users_idp_subject_uq"}),
     ("users", [("email_lower", 1)], {"unique": True, "name": "users_email_lower_uq"}),
+    ("users", [("linked_identities.idp_subject", 1)],
+     {"unique": True, "name": "users_linked_subject_uq",
+      "partialFilterExpression": {"linked_identities.idp_subject": {"$exists": True}}}),
+    ("users", [("linked_identities.email_lower", 1)],
+     {"name": "users_linked_email_idx",
+      "partialFilterExpression": {"linked_identities.email_lower": {"$exists": True}}}),
     ("consents", [("user_id", 1), ("purpose", 1)], {"name": "consents_user_idx"}),
     ("cases", [("created_by", 1), ("created_at", 1)], {"name": "cases_created_by_idx"}),
     ("cases", [("members.user_id", 1)], {"name": "cases_members_idx"}),

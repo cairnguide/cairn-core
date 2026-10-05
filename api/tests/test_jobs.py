@@ -14,7 +14,7 @@ def _client(registry):
 
 def test_every_scheduled_job_the_worker_calls_exists():
     # Keep in step with JOBS_BY_CRON in cloudflare/src/index.ts.
-    assert set(jobs.JOBS) == {"outbound", "identity_cleanup", "purge_held_cases",
+    assert set(jobs.JOBS) == {"outbound", "identity_cleanup", "purge_stale_accounts", "purge_held_cases",
                               "purge_inactive_drafts", "expire_trials", "settle_trial_clocks"}
 
 
@@ -35,7 +35,7 @@ def test_an_unknown_job_is_not_found():
 
 
 def test_a_job_without_its_provider_is_skipped_not_failed(monkeypatch):
-    for name in ("CAIRN_JOBS_MONGODB_URI", "CAIRN_SMTP_HOST"):
+    for name in ("CAIRN_JOBS_MONGODB_URI", "TWILIO_SENDGRID_API_KEY", "TWILIO_SENDGRID_API_KEY_FILE"):
         monkeypatch.delenv(name, raising=False)
     r = _client(jobs.JOBS).post("/jobs/outbound")
     assert r.status_code == 200

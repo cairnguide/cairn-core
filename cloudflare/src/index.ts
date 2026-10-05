@@ -36,11 +36,20 @@ const API_KEYS = [
 const JOBS_KEYS = [
   "CAIRN_JOBS_MONGODB_URI",
   "CAIRN_MONGODB_DB",
+  "CAIRN_EMAIL_FROM",
+  "CAIRN_EMAIL_PROVIDER",
+  "TWILIO_SENDGRID_API_KEY",
+  "TWILIO_ACCOUNT_SID",
+  "TWILIO_AUTH_TOKEN",
+  "TWILIO_FROM_NUMBER",
+  "TWILIO_MESSAGING_SERVICE_SID",
+  "TWILIO_VERIFY_SERVICE_SID",
   "CAIRN_SMTP_HOST",
   "CAIRN_SMTP_PORT",
   "CAIRN_SMTP_USERNAME",
   "CAIRN_SMTP_PASSWORD",
-  "CAIRN_EMAIL_FROM",
+  "CAIRN_PENDING_ACCOUNT_RETENTION_DAYS",
+  "CAIRN_NO_CASE_ACCOUNT_RETENTION_DAYS",
   "CAIRN_AUTH0_DOMAIN",
   "CAIRN_AUTH0_MGMT_CLIENT_ID",
   "CAIRN_AUTH0_MGMT_CLIENT_SECRET",
@@ -56,7 +65,7 @@ export const JOBS_BY_CRON: Record<string, readonly string[]> = {
   "*/5 * * * *": ["outbound"],
   "*/15 * * * *": ["identity_cleanup"],
   "7 * * * *": ["purge_held_cases", "settle_trial_clocks"],
-  "30 3 * * *": ["purge_inactive_drafts", "expire_trials"],
+  "30 3 * * *": ["purge_inactive_drafts", "expire_trials", "purge_stale_accounts"],
 };
 
 function pick(env: Env, keys: readonly string[]): Settings {
