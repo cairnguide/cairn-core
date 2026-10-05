@@ -14,9 +14,9 @@ opted-in check-in) goes through SendGridMailer once TWILIO_SENDGRID_API_KEY and 
 Auth0 sends the sign-in magic link itself (UC-REG-04). Point Auth0's email provider at SendGrid so that goes
 through Twilio too (auth0/README.md).
 
-Text messages and Verify are built and tested here, and nothing user-facing calls them yet. Offering text
-messages to users is OPEN-05 (card 50, default off) and needs legal review of the consent line. When it is
-turned on, UC-CASE-19's text_message flow collects the number just in time, verifies it with
+Text messages and Verify are built and tested here, and nothing user-facing calls them. Text messages are not
+in the MVP (OPEN-05, decided 2026-10-05). If they are added later, after legal review of the consent line,
+UC-CASE-19's text_message flow collects the number just in time, verifies it with
 TwilioClient.start_verification and check_verification, and outbound.py sends with TwilioClient.send_sms.
 
 Privacy

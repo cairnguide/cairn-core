@@ -21,16 +21,16 @@ New tests: `api/tests/test_account_creation_gaps.py` and `api/tests/test_twilio_
 | UC-REG-02 Google | Met | Done | |
 | UC-REG-03 Apple | Partial | Done, Open | Authenticate the sending domain in SendGrid and register it with Apple's relay (operations). The live email check can now send to a relay address |
 | UC-REG-04 Email | Partial | Done, Open | Auth0 tenant: 15-minute link, SendGrid as its email provider (operations) |
-| UC-REG-05 Account exists | Partial | Done | Two accounts that both have cases still go to support |
+| UC-REG-05 Account exists | Partial | Done | Two accounts that both have cases still go to support. Linking rules confirmed (D-2026-10-05-L1) |
 | UC-REG-06 Age | Removed | Removed | By product decision. Departs from the spec [LEGAL REVIEW REQUIRED] |
 | UC-REG-07 Privacy and Terms | Met | Done | Legal review items |
 | UC-REG-08 Free trial | Partial | Done, Open | Subscription purchase and billing. `trial_checkbox` still says "case" |
 | UC-REG-09 AI notice | Met | Done, Client | AI label in every chat view (client). Legal review |
-| UC-REG-10 Decline | Partial | Done, Open | The retention period [LEGAL REVIEW REQUIRED] |
+| UC-REG-10 Decline | Partial | Done | Deleted after 90 days (D-2026-10-05-R1). Add it to the retention schedule in CAIRN-POL-PRIV-01 |
 | UC-REG-11 Preferred name | Met | Done | |
 | UC-REG-12 Personality | Met | Done, Open | Review of draft sample replies |
 | UC-REG-13 Resume | Partial | Done, Open | The no-case retention period [LEGAL REVIEW REQUIRED] |
-| UC-REG-14 Distress | Partial | Done, Open | Clinical sign-off of the phrase list (DEC-26-06) |
+| UC-REG-14 Distress | Partial | Done, Open | Clinical sign-off of the phrase list (DEC-26-06). Suicide loss confirmed as not a crisis (D-2026-10-05-S1) |
 | UC-REG-15 Delete my account | Partial | Done, Client, Open | Sign-out is client. Q12, Q13 drafts |
 | UC-REG-16 Download all my data | Met | Done, Open | File format (Q14): JSON only |
 | UC-ACCT-01 Delete account | Superseded | Superseded | By UC-REG-15 |
@@ -45,7 +45,7 @@ New tests: `api/tests/test_account_creation_gaps.py` and `api/tests/test_twilio_
 
 ### 2. Text messages had no sender (OPEN-05)
 - **Before.** Nothing could send a text. `CAIRN_SMS_ENABLED=true` was refused because nothing was built.
-- **Now.** `TwilioClient.send_sms` (Programmable Messaging) and `start_verification` and `check_verification` (Twilio Verify, the spec's "verify by code") are built and tested. **Text messages are still not offered to anyone.** OPEN-05's default is off, and the spec marks the text-message flow for legal review. `CAIRN_SMS_ENABLED=true` is still refused, with a message that says why. Turning it on needs: number collection, the consent line, an `sms` channel in `CHANNELS`, encrypted storage of the number, and its deletion path. None of that is in this change.
+- **Now.** `TwilioClient.send_sms` (Programmable Messaging) and `start_verification` and `check_verification` (Twilio Verify, the spec's "verify by code") are built and tested. **Text messages are not offered to anyone.** The product owner confirmed on 2026-10-05 that text messages are not in the MVP (OPEN-05 stays off). The sender is kept for later. `CAIRN_SMS_ENABLED=true` is still refused, with a message that says why. Turning it on needs: number collection, the consent line, an `sms` channel in `CHANNELS`, encrypted storage of the number, and its deletion path. None of that is in this change.
 - Tests: `test_a_text_message_uses_basic_auth_and_the_from_number`, `test_a_trial_account_refusing_an_unverified_number_keeps_twilios_code_only`, `test_verify_starts_a_code_by_text_and_checks_it`, `test_an_expired_or_used_code_is_simply_not_approved`.
 
 ### 3. UC-REG-05: no way to add a second sign-in method
@@ -63,8 +63,8 @@ New tests: `api/tests/test_account_creation_gaps.py` and `api/tests/test_twilio_
 
 ### 4. UC-REG-10 and UC-REG-13: the cleanup existed but never ran
 - **Before.** `maintenance.purge_stale_accounts` existed, with no job, no schedule, and no way to set the periods.
-- **Now.** The `purge_stale_accounts` job runs daily (`30 3 * * *`). The periods come from `CAIRN_PENDING_ACCOUNT_RETENTION_DAYS` and the optional `CAIRN_NO_CASE_ACCOUNT_RETENTION_DAYS`. Neither has a default, because the retention schedule sets them. Until the first is set, the job answers `skipped`. A period under one day is refused.
-- Tests: `test_uc_reg_10_the_cleanup_job_waits_for_the_retention_schedule`, `test_uc_reg_10_and_13_unfinished_sign_ups_are_deleted_after_the_set_period`, `test_uc_reg_10_a_zero_day_period_is_refused`.
+- **Now.** The `purge_stale_accounts` job runs daily (`30 3 * * *`). An account still in `pending_onboarding` 90 days after it was created is deleted with its consents and identity cleanup (D-2026-10-05-R1). `CAIRN_PENDING_ACCOUNT_RETENTION_DAYS` can override 90. Finished accounts that never created a case are deleted only when `CAIRN_NO_CASE_ACCOUNT_RETENTION_DAYS` is set, because that period isn't decided. A period under one day is refused.
+- Tests: `test_uc_reg_10_unfinished_sign_ups_have_90_days`, `test_uc_reg_10_and_13_unfinished_sign_ups_are_deleted_after_the_set_period`, `test_uc_reg_10_a_zero_day_period_is_refused`.
 
 ### 5. UC-REG-04: the expired-link and resend copy was unreachable
 - **Before.** `email_link_expired`, `email_check_spelling`, `send_new_link`, and `resend_link` were in the copy file, but no response returned them, so the client had to hard-code them.
@@ -73,7 +73,7 @@ New tests: `api/tests/test_account_creation_gaps.py` and `api/tests/test_twilio_
 
 ### 6. UC-REG-14: sign-up used its own phrase list
 - **Before.** Sign-up had a separate, older phrase list marked "align with card 26 once written". The crisis plan is now written (`cairn-support-crisis-plan.json`), and case creation follows it in `safety.py`. Sign-up missed ending language (DEC-26-05, "I'm done", "I can't do this anymore") and acute distress ("I can't stop crying").
-- **Now.** `onboarding.shows_distress` uses `safety.classify`: level 3 or 4 pauses sign-up, the same as case creation. The acceptance criterion "behavior matches the crisis plan" now holds by construction. One difference to confirm: the crisis plan treats naming someone who died by suicide as a loss, not a risk, so that alone no longer pauses sign-up.
+- **Now.** `onboarding.shows_distress` uses `safety.classify`: level 3 or 4 pauses sign-up, the same as case creation. The acceptance criterion "behavior matches the crisis plan" now holds by construction. The crisis plan treats naming someone who died by suicide as a loss, not a risk, so that alone doesn't pause sign-up. The product owner confirmed this on 2026-10-05 (D-2026-10-05-S1): a case can be about a death by suicide, and that doesn't start the crisis plan.
 - Tests: `test_uc_reg_14_sign_up_pauses_on_what_the_crisis_plan_calls_level_3_or_4`, `test_uc_reg_14_ordinary_answers_do_not_pause`, and the existing `test_distress_in_free_text_pauses_and_saves_nothing`.
 
 ## Twilio integration testing
@@ -85,11 +85,18 @@ New tests: `api/tests/test_account_creation_gaps.py` and `api/tests/test_twilio_
   - Runs don't overlap. The live tests are outside `testpaths`, so the other workflows never collect them, and the pull request rule against skipped tests isn't affected.
 - Secrets and settings are listed in the repository README, "Twilio (email and text messages)".
 
-## Decisions for the product owner
+## Decisions
+
+Confirmed by the product owner on 2026-10-05:
+
+1. **Text messages are not in the MVP** (OPEN-05 stays off). The Twilio sender and Verify client stay, unused, for later. Adding text messages later needs legal review of the consent line first.
+2. **Unfinished sign-ups are deleted after 90 days** (D-2026-10-05-R1, UC-REG-10). Built as the job's default. Add it to the retention schedule in CAIRN-POL-PRIV-01.
+3. **Linking rules are right for the MVP** (D-2026-10-05-L1): one sign-in per method, so at most three in all. The account email stays the one from the original sign-in, and only added methods can be removed.
+4. **A death by suicide is a loss, not a crisis** (D-2026-10-05-S1). Naming one during sign-up or case creation doesn't pause sign-up or start the crisis plan. The user's own risk signals still do.
+
+Still open:
 
 1. **Email needs a SendGrid API key.** The Twilio Account SID and Auth Token cover text messages and Verify, but Twilio SendGrid accepts only its own API key. Add `TWILIO_SENDGRID_API_KEY` as a repository secret and a Worker secret.
-2. **OPEN-05, text messages.** The sender is ready. Should text messages be offered in the MVP? If yes, legal review of the consent line comes first, and then the number collection, storage, and `sms` channel work.
-3. **Retention periods** for unfinished sign-ups and for accounts with no case (UC-REG-10, UC-REG-13). [LEGAL REVIEW REQUIRED]
-4. **Linking rules.** Built as one sign-in per method, so at most three in all. The account email stays the one from the original sign-in, and only added methods can be removed. The new copy (`link_after_sign_in`, `sign_in_method_*`) is draft.
-5. **Suicide loss during sign-up** no longer pauses sign-up by itself, to match the crisis plan. Confirm with the clinical reviewer (DEC-26-06).
-6. **`trial_checkbox`** still says "after I start my first case" while the summary says "journey" (carried over from `account-lifecycle-gap-audit.md`, decision 7).
+2. **The retention period for accounts that finish sign-up but never create a case** (UC-REG-13). [LEGAL REVIEW REQUIRED]
+3. **The new linking copy** (`link_after_sign_in`, `sign_in_method_*`) is draft and needs product and legal review.
+4. **`trial_checkbox`** still says "after I start my first case". Card 47 now says "journey". The spec file and copy should be updated together.

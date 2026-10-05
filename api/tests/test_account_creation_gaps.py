@@ -2,8 +2,9 @@
 
 UC-REG-04  the copy around the email link is on the welcome screen
 UC-REG-05  adding a second way to sign in, only after signing in the original way
-UC-REG-10, UC-REG-13  the scheduled job that deletes unfinished sign-ups once the retention period is set
-UC-REG-14  sign-up reads free text with the crisis plan's detector, the same one case creation uses
+UC-REG-10, UC-REG-13  the scheduled job that deletes unfinished sign-ups after 90 days (D-2026-10-05-R1)
+UC-REG-14  sign-up reads free text with the crisis plan's detector, the same one case creation uses. Naming a
+           death by suicide is a loss, not a crisis (D-2026-10-05-S1)
 UC-REG-15, UC-REG-16  deleting and downloading cover linked sign-ins too
 
 The first section needs no database. The rest run against a scratch MongoDB (tests/conftest.py).
@@ -48,6 +49,7 @@ def test_uc_reg_14_sign_up_pauses_on_what_the_crisis_plan_calls_level_3_or_4(tex
 @pytest.mark.parametrize("text", [
     "Pat", "Mary-Kate", None, "",
     "I'm done with these questions for now",  # clearly about the paperwork (DEC-26-05)
+    "My brother died by suicide",            # a loss, not a crisis (D-2026-10-05-S1)
 ])
 def test_uc_reg_14_ordinary_answers_do_not_pause(text):
     assert not onboarding.shows_distress(text)
@@ -224,12 +226,18 @@ def _age(api, subject: str, days: int) -> None:
     api.db.users.update_one({"_id": u["_id"]}, {"$set": {"created_at": u["created_at"] - timedelta(days=days)}})
 
 
-def test_uc_reg_10_the_cleanup_job_waits_for_the_retention_schedule(api, jobs_on_scratch):
+def test_uc_reg_10_unfinished_sign_ups_have_90_days(api, jobs_on_scratch):
+    """D-2026-10-05-R1. With nothing set, the job runs with 90 days: day 91 is deleted, day 89 isn't."""
+    assert jobs.PENDING_ACCOUNT_RETENTION_DAYS == 90
+    old, recent = "email|stale-91", "email|stale-89"
+    for subject, days in ((old, 91), (recent, 89)):
+        assert api.post("/v1/registrations", json={}, headers=as_user(subject)).status_code == 201
+        _age(api, subject, days)
     from fastapi.testclient import TestClient
-    client = TestClient(jobs.create_jobs_app())
-    r = client.post("/jobs/purge_stale_accounts")
-    assert r.json() == {"job": "purge_stale_accounts", "status": "skipped",
-                        "missing": "CAIRN_PENDING_ACCOUNT_RETENTION_DAYS"}
+    r = TestClient(jobs.create_jobs_app()).post("/jobs/purge_stale_accounts")
+    assert r.status_code == 200 and r.json()["status"] == "ok", r.text
+    assert api.db.users.find_one({"idp_subject": old}) is None
+    assert api.db.users.find_one({"idp_subject": recent}) is not None
 
 
 def test_uc_reg_10_and_13_unfinished_sign_ups_are_deleted_after_the_set_period(api, jobs_on_scratch):

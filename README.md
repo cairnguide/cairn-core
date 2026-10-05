@@ -163,7 +163,7 @@ make run-jobs
 make job NAME=purge_held_cases
 ```
 
-`outbound`, `identity_cleanup`, and `purge_stale_accounts` answer `"status": "skipped"` until you add the Twilio, Auth0 Management, and retention settings to `.env` (see [Twilio](#twilio-email-and-text-messages)).
+`outbound` and `identity_cleanup` answer `"status": "skipped"` until you add the Twilio and Auth0 Management settings to `.env` (see [Twilio](#twilio-email-and-text-messages)). `purge_stale_accounts` runs with its 90-day default.
 
 ### 6. Deploy to Cloudflare from the Codespace
 
@@ -315,7 +315,8 @@ Edit the `vars` block in [`cloudflare/wrangler.jsonc`](cloudflare/wrangler.jsonc
 | `CAIRN_DB_POOL_MIN`, `CAIRN_DB_POOL_MAX` | Connections per API container. Keep `max_instances × CAIRN_DB_POOL_MAX` under your database's connection limit |
 | `CAIRN_API_INSTANCES` | How many API containers share traffic. Up to `max_instances` in the `containers` block |
 | `CAIRN_EMAIL_PROVIDER` | `twilio` (Twilio SendGrid). `smtp` is for local development only |
-| `CAIRN_PENDING_ACCOUNT_RETENTION_DAYS`, `CAIRN_NO_CASE_ACCOUNT_RETENTION_DAYS` | Leave out until the retention schedule sets them [LEGAL REVIEW REQUIRED]. Until then `purge_stale_accounts` is skipped |
+| `CAIRN_PENDING_ACCOUNT_RETENTION_DAYS` | Days before an unfinished sign-up is deleted. `90`, the decided period (D-2026-10-05-R1). Leave it out to use 90 |
+| `CAIRN_NO_CASE_ACCOUNT_RETENTION_DAYS` | Leave out. The period for finished accounts with no case isn't decided [LEGAL REVIEW REQUIRED] |
 | `CAIRN_CORS_ORIGINS` | Only for a web client served from another origin: its origins, comma-separated, for example `https://app.cairn.example`. Leave it out for native apps |
 
 Optional settings from [api/README.md](api/README.md), such as `CAIRN_OVERWHELM_SKIP_THRESHOLD`, can be added here too. Every name the containers receive is listed in `API_KEYS` and `JOBS_KEYS` in [`cloudflare/src/index.ts`](cloudflare/src/index.ts).
@@ -346,7 +347,7 @@ npx wrangler secret put TWILIO_SENDGRID_API_KEY
 npx wrangler secret put CAIRN_EMAIL_FROM
 ```
 
-The Account SID and Auth Token are for text messages and Verify. Nothing sends a text to users until OPEN-05 turns text messages on, so these can wait, but setting them now does no harm:
+The Account SID and Auth Token are for text messages and Verify. Text messages aren't in the MVP (OPEN-05, decided 2026-10-05), so nothing sends a text to users. These can wait, but setting them now does no harm:
 
 ```bash
 npx wrangler secret put TWILIO_ACCOUNT_SID
@@ -466,7 +467,7 @@ The cron schedule and its jobs:
 | `*/5 * * * *` | `outbound` | Deletion confirmations, trial reminders, and chosen notifications by email, through Twilio SendGrid |
 | `*/15 * * * *` | `identity_cleanup` | Deletes Auth0 users and revokes Apple tokens after account deletion |
 | `7 * * * *` | `purge_held_cases` | Deletes cases whose 7-day hold has ended (UC-END-13) |
-| `30 3 * * *` | `purge_inactive_drafts`, `expire_trials`, `purge_stale_accounts` | Deletes idle drafts (DEC-07). Trial status, for reporting. Deletes unfinished sign-ups once the retention periods are set (UC-REG-10, UC-REG-13) |
+| `30 3 * * *` | `purge_inactive_drafts`, `expire_trials`, `purge_stale_accounts` | Deletes idle drafts (DEC-07). Trial status, for reporting. Deletes sign-ups still unfinished after 90 days (UC-REG-10) |
 
 To change a schedule, edit `triggers.crons` in `wrangler.jsonc` and `JOBS_BY_CRON` in `src/index.ts` together, then deploy.
 
@@ -492,8 +493,8 @@ Every email and text message Cairn sends goes through Twilio. The code is [`api/
 |---|---|---|---|
 | Deletion confirmations (UC-REG-15, UC-CASE-21), trial reminders (UC-REG-08), the notifications a user chose (UC-CASE-19), and the opted-in check-in | Twilio SendGrid, v3 Mail Send | `TWILIO_SENDGRID_API_KEY` | Live. The `outbound` job, every 5 minutes |
 | The sign-in magic link (UC-REG-04) | Twilio SendGrid, through Auth0's email provider | The same SendGrid key, entered in Auth0 | Tenant setting, see [auth0/README.md](auth0/README.md) |
-| Text messages | Twilio Programmable Messaging | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` | Built and tested. Not offered to users until OPEN-05 (card 50) and legal review |
-| Verifying a phone number by code | Twilio Verify | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID` | Built and tested. Used when OPEN-05 turns text messages on |
+| Text messages | Twilio Programmable Messaging | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` | Built and tested. Not in the MVP (OPEN-05, decided 2026-10-05). Turning it on later needs legal review of the consent wording |
+| Verifying a phone number by code | Twilio Verify | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID` | Built and tested. For after the MVP, if text messages are added |
 
 **Email needs its own key.** Twilio SendGrid doesn't accept the Account SID and Auth Token. In the SendGrid console (or Twilio console > Email), create an API key with **Mail Send** access only, and authenticate Cairn's sending domain (SPF and DKIM). Register the same domain with Apple's Private Email Relay Service so `@privaterelay.appleid.com` addresses receive mail (UC-REG-03). Open and click tracking are switched off on every message in code, so SendGrid never adds a tracking pixel or rewrites links.
 

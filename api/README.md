@@ -120,9 +120,9 @@ Adding a voice means a new voice file and manifest entry, a new value in `schema
 | Trial clocks (DEC-26-01) | `maintenance.settle_trial_clocks`, job `settle_trial_clocks` | Hourly. Starts the free days again when a care rest ends on its own, and moves `trial_ends_at` later by the paused time |
 | Draft cleanup (DEC-07) | `maintenance.purge_inactive_drafts`, job `purge_inactive_drafts` | At least daily. Deletes drafts idle for `app_settings.draft_retention_days` (28), with their answers and context. Never touches active cases |
 | Identity cleanup | `python api/scripts/identity_cleanup.py` or job `identity_cleanup` | Deletes Auth0 users and revokes Apple tokens after account deletion |
-| Unfinished sign-ups (UC-REG-10, UC-REG-13) | `maintenance.purge_stale_accounts`, job `purge_stale_accounts` | Daily. Deletes accounts still in `pending_onboarding` after `CAIRN_PENDING_ACCOUNT_RETENTION_DAYS`, and, if `CAIRN_NO_CASE_ACCOUNT_RETENTION_DAYS` is set, finished accounts that never created a case. Queues identity cleanup for every sign-in on the account. Skipped until the retention schedule sets the first period [LEGAL REVIEW REQUIRED] |
+| Unfinished sign-ups (UC-REG-10, UC-REG-13) | `maintenance.purge_stale_accounts`, job `purge_stale_accounts` | Daily. Deletes accounts still in `pending_onboarding` 90 days after they were created (D-2026-10-05-R1, `CAIRN_PENDING_ACCOUNT_RETENTION_DAYS` overrides it). Finished accounts that never created a case are deleted only if `CAIRN_NO_CASE_ACCOUNT_RETENTION_DAYS` is set, and that period isn't decided [LEGAL REVIEW REQUIRED]. Queues identity cleanup for every sign-in on the account |
 
-On Cloudflare, Cron Triggers in `cloudflare/wrangler.jsonc` run every job above through `cairn_api/jobs.py` (`POST /jobs/{name}` in the private jobs container). A job whose provider or period isn't set answers `skipped`.
+On Cloudflare, Cron Triggers in `cloudflare/wrangler.jsonc` run every job above through `cairn_api/jobs.py` (`POST /jobs/{name}` in the private jobs container). A job whose provider isn't set answers `skipped`.
 
 Every email and text message goes through Twilio. See "Twilio (email and text messages)" in the [repository README](../README.md#twilio-email-and-text-messages) for the settings, the GitHub secrets, and the hand-run live checks.
 

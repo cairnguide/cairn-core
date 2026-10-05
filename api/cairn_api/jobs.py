@@ -14,7 +14,7 @@ Run with: uvicorn cairn_api.jobs:app  (or CAIRN_PROCESS=jobs python -m cairn_api
   CAIRN_EMAIL_PROVIDER              twilio (the default) or smtp (local development only)
   TWILIO_SENDGRID_API_KEY           or TWILIO_SENDGRID_API_KEY_FILE, for twilio
   CAIRN_SMTP_HOST, CAIRN_SMTP_PORT, CAIRN_SMTP_USERNAME, and CAIRN_SMTP_PASSWORD(_FILE), for smtp
-  CAIRN_PENDING_ACCOUNT_RETENTION_DAYS   UC-REG-10. Unset until the retention schedule sets it [LEGAL REVIEW]
+  CAIRN_PENDING_ACCOUNT_RETENTION_DAYS   UC-REG-10. 90 by default (D-2026-10-05-R1)
   CAIRN_NO_CASE_ACCOUNT_RETENTION_DAYS   UC-REG-13. Optional, unset until the retention schedule sets it
   CAIRN_AUTH0_DOMAIN, CAIRN_AUTH0_MGMT_CLIENT_ID
   CAIRN_AUTH0_MGMT_CLIENT_SECRET    or CAIRN_AUTH0_MGMT_CLIENT_SECRET_FILE
@@ -119,19 +119,25 @@ def identity_cleanup() -> dict:
     return {"sent": done, "failed": failed}
 
 
-def _days(name: str) -> timedelta:
-    days = int(_env(name))
+# D-2026-10-05-R1. An account that hasn't finished sign-up is deleted 90 days after it was created (UC-REG-10).
+PENDING_ACCOUNT_RETENTION_DAYS = 90
+
+
+def _days(name: str, default: int | None = None) -> timedelta:
+    raw = os.environ.get(name)
+    days = int(raw) if raw else default
+    if days is None:
+        raise NotConfigured(name)
     if days < 1:
         raise RuntimeError(f"{name} must be at least 1.")
     return timedelta(days=days)
 
 
 def purge_stale_accounts() -> dict:
-    """UC-REG-10 and UC-REG-13. Daily. Deletes accounts that stopped before finishing onboarding, and, when its
-    period is set, accounts that finished but never created a case. The periods come from the retention schedule
-    and have no defaults on purpose: until CAIRN_PENDING_ACCOUNT_RETENTION_DAYS is set the job is skipped.
-    [LEGAL REVIEW REQUIRED]"""
-    pending = _days("CAIRN_PENDING_ACCOUNT_RETENTION_DAYS")
+    """UC-REG-10 and UC-REG-13. Daily. Deletes accounts that haven't finished sign-up 90 days after they were
+    created (D-2026-10-05-R1). Accounts that finished sign-up but never created a case are deleted only when
+    CAIRN_NO_CASE_ACCOUNT_RETENTION_DAYS is set, because that period isn't decided. [LEGAL REVIEW REQUIRED]"""
+    pending = _days("CAIRN_PENDING_ACCOUNT_RETENTION_DAYS", PENDING_ACCOUNT_RETENTION_DAYS)
     no_case = _days("CAIRN_NO_CASE_ACCOUNT_RETENTION_DAYS") if os.environ.get(
         "CAIRN_NO_CASE_ACCOUNT_RETENTION_DAYS") else None
     return {"affected": maintenance.purge_stale_accounts(jobs_database(), pending, no_case), "failed": 0}

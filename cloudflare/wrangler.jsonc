@@ -48,7 +48,7 @@
       "*/5 * * * *",   // outbound email
       "*/15 * * * *",  // identity cleanup
       "7 * * * *",     // held case deletion (UC-END-13) and trial clocks after a care rest (DEC-26-01), hourly
-      "30 3 * * *"     // draft cleanup (DEC-07), trial status, and unfinished sign-ups (UC-REG-10), daily
+      "30 3 * * *"     // draft cleanup (DEC-07), trial status, and sign-ups unfinished after 90 days (UC-REG-10), daily
     ]
   },
 
@@ -70,6 +70,7 @@
     "CAIRN_DB_POOL_MIN": "1",
     "CAIRN_DB_POOL_MAX": "5",
     "CAIRN_EMAIL_PROVIDER": "twilio",
+    "CAIRN_PENDING_ACCOUNT_RETENTION_DAYS": "90",
     "CAIRN_SMTP_PORT": "587"
   }
 }

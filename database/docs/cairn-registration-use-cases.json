@@ -92,6 +92,24 @@
       "topic": "Email sign-in",
       "decision": "Passwordless magic link is the default for email accounts. If passwords are supported, follow NIST SP 800-63B-4.",
       "source": "https://pages.nist.gov/800-63-4/sp800-63b.html"
+    },
+    {
+      "id": "D-2026-10-05-R1",
+      "topic": "Unfinished sign-ups",
+      "decision": "An account that has not finished onboarding (status pending_onboarding) is deleted 90 days after it was created, with its consent records (UC-REG-10). The period for accounts that finish onboarding but never create a case (UC-REG-13) is not set.",
+      "date": "2026-10-05"
+    },
+    {
+      "id": "D-2026-10-05-L1",
+      "topic": "Linking a second sign-in method",
+      "decision": "For the MVP: a second sign-in is added only after signing in with a method the account already has. One sign-in per method (at most three). The account email stays the one from the original sign-in. Only methods added later can be removed. Never linked automatically (UC-REG-05).",
+      "date": "2026-10-05"
+    },
+    {
+      "id": "D-2026-10-05-S1",
+      "topic": "Death by suicide during sign-up",
+      "decision": "Naming a death by suicide is a loss, not a crisis. It does not pause sign-up or start the crisis plan. The user's own risk signals still do (UC-REG-14, card 26).",
+      "date": "2026-10-05"
     }
   ],
 
@@ -410,9 +428,9 @@
       "postconditions": ["Account remains pending_onboarding."],
       "acceptance_criteria": [
         "The user is never left without a next action.",
-        "Pending accounts and their consent records are deleted after the period set in the retention schedule."
+        "Pending accounts and their consent records are deleted 90 days after the account was created (D-2026-10-05-R1)."
       ],
-      "legal_review": ["Set the pending-account cleanup period in the retention schedule."]
+      "legal_review": ["Add the 90-day pending-account cleanup (D-2026-10-05-R1) to the retention schedule."]
     },
     {
       "id": "UC-REG-11",
