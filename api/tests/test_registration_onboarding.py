@@ -37,7 +37,7 @@ def start(api, subject, method="email", email=None, **body):
 def test_copy_is_the_spec_copy_verbatim():
     copy = load_copy()
     assert copy.spec == COPY
-    assert copy.version == "1.3.0"  # spec 1.2.0 plus the 2026-09-25 account spec
+    assert copy.version == "1.4.0"  # spec 1.3.0 plus the 2026-09-25 account spec
 
 
 def test_no_em_dashes_or_semicolons_in_any_user_facing_copy():

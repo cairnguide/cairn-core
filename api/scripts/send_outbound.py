@@ -6,12 +6,12 @@ same job runs through cairn_api.jobs instead (see the repository README).
 
   CAIRN_JOBS_MONGODB_URI     the cairnJobs user's connection string
   CAIRN_MONGODB_DB           the Cairn database name, cairn by default
-  CAIRN_SMTP_HOST            the email provider's SMTP host
-  CAIRN_SMTP_PORT            587 by default (STARTTLS)
-  CAIRN_SMTP_USERNAME
-  CAIRN_SMTP_PASSWORD_FILE   path to the SMTP password (or CAIRN_SMTP_PASSWORD, the value itself)
-  CAIRN_EMAIL_FROM           for example "Cairn <no-reply@mail.example>". Register this domain with
-                             Apple's Private Email Relay Service so relay addresses receive it.
+  TWILIO_SENDGRID_API_KEY    the Twilio SendGrid key with Mail Send access (or TWILIO_SENDGRID_API_KEY_FILE)
+  CAIRN_EMAIL_FROM           for example "Cairn <no-reply@mail.example>". Authenticate this domain in SendGrid
+                             and register it with Apple's Private Email Relay Service so relay addresses
+                             receive it.
+  CAIRN_EMAIL_PROVIDER       twilio by default. smtp, with CAIRN_SMTP_HOST, CAIRN_SMTP_PORT,
+                             CAIRN_SMTP_USERNAME, and CAIRN_SMTP_PASSWORD(_FILE), for local development only
   CAIRN_REGISTRATION_COPY    optional, the same replacement copy file the API uses
   CAIRN_CASE_COPY            optional, the same replacement copy file the API uses
 """

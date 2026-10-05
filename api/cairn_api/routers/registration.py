@@ -27,8 +27,9 @@ router = APIRouter(prefix="/v1", tags=["Registration"])
     summary="The welcome screen",
     description=(
         "UC-REG-01. Acknowledgment first, then three equally weighted ways to continue, a sign-in link, and a "
-        "link to the public journey map. Asks for nothing. After a cancelled Google or Apple sign-in, call "
-        "with oauth_cancelled=true to add the reassurance note (UC-REG-02, UC-REG-03)."
+        "link to the public journey map, plus the copy around the email link (UC-REG-04). Asks for nothing. "
+        "After a cancelled Google or Apple sign-in, call with oauth_cancelled=true to add the reassurance note "
+        "(UC-REG-02, UC-REG-03)."
     ),
 )
 def welcome(request: Request, oauth_cancelled: bool = False) -> WelcomeResponse:
@@ -40,6 +41,7 @@ def welcome(request: Request, oauth_cancelled: bool = False) -> WelcomeResponse:
         methods=onboarding.sign_in_options(copy, settings.email_connection),
         sign_in_label=copy["sign_in_link"],
         not_ready=Link(label=copy["welcome_not_ready_link"], url=settings.journey_map_url),
+        email_sign_in=onboarding.email_sign_in(copy),
         notes=notes,
         support=onboarding.support(copy),
     )
@@ -94,7 +96,7 @@ def register(req: RegistrationRequest, request: Request, response: Response,
             # Accounts are never linked automatically across providers.
             taken_by = s.sign_in_method_for_email(identity.email)
             if taken_by:
-                raise account_exists(copy, taken_by)
+                raise account_exists(copy, taken_by, identity.sign_in_method.value)
         user_id = s.create_account(identity.subject, identity.email, identity.sign_in_method.value,
                                    req.name_from_provider, req.time_zone)
         s.user_id = user_id
@@ -109,9 +111,13 @@ def register(req: RegistrationRequest, request: Request, response: Response,
     return result
 
 
-def account_exists(copy: Copy, method: str) -> ApiError:
+def account_exists(copy: Copy, method: str, attempted: str) -> ApiError:
+    """UC-REG-05. The method used before is the primary button. The second option adds the method just tried, which
+    the client does by signing in with the original method and then calling POST /v1/me/sign-in-methods."""
     name = onboarding.provider_name(method, copy)
     primary = Option(value=method, label=copy["sign_in_with_provider"].format(provider=name))
+    link = Option(value="link_after_sign_in", label=copy["link_after_sign_in"].format(
+        provider=name, new_provider=onboarding.provider_name(attempted, copy)))
     return ApiError(409, "account_exists", copy["account_exists"].format(provider=name), sign_in_method=method,
                     next_step=NextStep(action="sign_in_with_existing_method", prompt=primary.label,
-                                       options=[primary]).model_dump())
+                                       options=[primary, link]).model_dump())

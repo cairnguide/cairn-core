@@ -1460,6 +1460,7 @@
       "id": "OPEN-05",
       "topic": "Text messages in the MVP",
       "default": "off",
+      "decision": "Off for the MVP. Confirmed by the product owner on 2026-10-05.",
       "card": 50
     },
     {

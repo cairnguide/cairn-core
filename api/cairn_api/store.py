@@ -139,6 +139,24 @@ def queue_confirmation(db, cs, action_type: str, email: str, user_id: UUID | Non
          "claimed_at": None, "attempts": 0, "last_error": None}, session=cs)
 
 
+def subject_filter(idp_subject: str) -> dict:
+    """Matches the account a sign-in belongs to, whether it created the account or was linked later."""
+    return {"$or": [{"idp_subject": idp_subject}, {"linked_identities.idp_subject": idp_subject}]}
+
+
+def identity_deletion(idp_subject: str, provider: str | None, now: datetime) -> dict:
+    return {"_id": uuid.uuid4(), "idp_subject": idp_subject, "provider": provider, "requested_at": now,
+            "attempts": 0, "last_error": None}
+
+
+def identity_deletions(user: dict, now: datetime) -> list[dict]:
+    """Identity provider cleanup for every sign-in on an account: the one it was created with and each linked one
+    (Auth0 user deletion, and Apple token revocation, TN3194)."""
+    return [identity_deletion(user["idp_subject"], user.get("sign_in_method"), now),
+            *(identity_deletion(i["idp_subject"], i["sign_in_method"], now)
+              for i in user.get("linked_identities", []))]
+
+
 def setting_int(db, cs, key: str) -> int:
     row = db.app_settings.find_one({"_id": key}, session=cs)
     if row is None:
@@ -269,23 +287,32 @@ class Session:
     # -------------------------------------------------------------- sign up and sign in
 
     def resolve_user(self, idp_subject: str) -> UUID | None:
-        row = self._c("users").find_one({"idp_subject": idp_subject}, {"_id": 1})
+        """The account for a sign-in: the one it was created with, or one the user linked later (UC-REG-05)."""
+        row = self._c("users").find_one(subject_filter(idp_subject), {"_id": 1})
         return row["_id"] if row else None
 
     def sign_in_method_for_email(self, email: str) -> str | None:
         """Which method already owns an email address, or None. Called only with the caller's own verified
         email, so it answers "which method did I use", never "does this other person have an account"."""
-        row = self._c("users").find_one({"email_lower": email.lower()}, {"sign_in_method": 1})
-        return (row.get("sign_in_method") or "unknown") if row else None
+        lower = email.lower()
+        row = self._c("users").find_one({"$or": [{"email_lower": lower}, {"linked_identities.email_lower": lower}]},
+                                        {"email_lower": 1, "sign_in_method": 1, "linked_identities": 1})
+        if row is None:
+            return None
+        if row["email_lower"] == lower:
+            return row.get("sign_in_method") or "unknown"
+        return next(i["sign_in_method"] for i in row["linked_identities"] if i["email_lower"] == lower)
 
     def create_account(self, idp_subject: str, email: str, sign_in_method: str,
                        name_prefill: str | None = None, time_zone: str | None = None) -> UUID:
         """Creates the account in pending_onboarding, or returns the existing one for the same subject.
         No legal name is collected. A provider-shared name is kept only as a pre-fill (UC-REG-02 to 04)."""
         users = self._c("users")
-        existing = users.find_one({"idp_subject": idp_subject}, {"_id": 1})
+        existing = users.find_one(subject_filter(idp_subject), {"_id": 1, "idp_subject": 1})
         if existing:
-            users.update_one({"_id": existing["_id"]}, {"$set": {"email": email, "email_lower": email.lower()}})
+            # The account's email follows the sign-in it was created with, never a linked one.
+            if existing["idp_subject"] == idp_subject:
+                users.update_one({"_id": existing["_id"]}, {"$set": {"email": email, "email_lower": email.lower()}})
             return existing["_id"]
         uid = uuid.uuid4()
         users.insert_one({
@@ -296,6 +323,45 @@ class Session:
             "trial_started_at": None, "trial_ends_at": None, "trial_clock_paused_at": None,
             "ai_reminder_shown_at": None, "ai_reminder_shown_on": None, "created_at": self.now})
         return uid
+
+    def linked_identities(self) -> list[dict]:
+        u = self._c("users").find_one({"_id": self.require_user()}, {"linked_identities": 1})
+        return u.get("linked_identities", []) if u else []
+
+    def link_identity(self, idp_subject: str, sign_in_method: str, email: str) -> str:
+        """UC-REG-05. Adds a second sign-in to the caller's account. The caller is signed in with a sign-in that
+        already belongs to the account, and the router has verified the second one's token. Never automatic.
+        Returns linked, already_linked, same_method, or in_use (that sign-in or its email is another account's)."""
+        uid = self.require_user()
+        users = self._c("users")
+        u = users.find_one({"_id": uid}, {"idp_subject": 1, "sign_in_method": 1, "linked_identities": 1})
+        owner = users.find_one(subject_filter(idp_subject), {"_id": 1})
+        if owner is not None:
+            return "already_linked" if owner["_id"] == uid else "in_use"
+        linked = u.get("linked_identities", [])
+        if sign_in_method == u.get("sign_in_method") or any(i["sign_in_method"] == sign_in_method for i in linked):
+            return "same_method"
+        lower = email.lower()
+        if users.find_one({"_id": {"$ne": uid}, "$or": [{"email_lower": lower},
+                                                         {"linked_identities.email_lower": lower}]}, {"_id": 1}):
+            return "in_use"
+        users.update_one({"_id": uid}, {"$push": {"linked_identities": {
+            "idp_subject": idp_subject, "sign_in_method": sign_in_method, "email_lower": lower,
+            "linked_at": self.now}}})
+        return "linked"
+
+    def unlink_identity(self, sign_in_method: str) -> bool:
+        """Removes a linked sign-in and queues its identity provider cleanup. The sign-in the account was created
+        with is never removed here, so the account always keeps one."""
+        uid = self.require_user()
+        found = next((i for i in self.linked_identities() if i["sign_in_method"] == sign_in_method), None)
+        if found is None:
+            return False
+        self._c("users").update_one({"_id": uid},
+                                    {"$pull": {"linked_identities": {"idp_subject": found["idp_subject"]}}})
+        self._c("identity_deletion_requests").insert_one(identity_deletion(found["idp_subject"], sign_in_method,
+                                                                           self.now))
+        return True
 
     def test_login(self, username: str) -> tuple[bool, dict | None]:
         """Development only: a test login for POST /v1/dev/token, from the separate <db>_dev database that
@@ -326,6 +392,7 @@ class Session:
                                      "name_prefill", "voice", "time_zone", "onboarding_step", "trial_started_at",
                                      "trial_ends_at", "trial_clock_paused_at", "ai_reminder_shown_at",
                                      "ai_reminder_shown_on", "created_at")}
+        out["linked_sign_in_methods"] = [i["sign_in_method"] for i in u.get("linked_identities", [])]
         return {**out, "id": u["_id"], "stored_status": u["status"],
                 "status": effective_account_status(u["status"], u["trial_ends_at"], self.now,
                                                    u.get("trial_clock_paused_at"))}
@@ -423,9 +490,7 @@ class Session:
         self._c("cases").update_many({"members.user_id": uid}, {"$pull": {"members": {"user_id": uid}}})
         self._c("action_confirmation_outbox").delete_many({"user_id": uid})
         queue_confirmation(self._db, self._cs, "account_deleted", u["email"], None, self.now)
-        self._c("identity_deletion_requests").insert_one(
-            {"_id": uuid.uuid4(), "idp_subject": u["idp_subject"], "provider": u.get("sign_in_method"),
-             "requested_at": self.now, "attempts": 0, "last_error": None})
+        self._c("identity_deletion_requests").insert_many(identity_deletions(u, self.now))
         self._c("consents").delete_many({"user_id": uid})
         self._c("trial_reminders").delete_many({"user_id": uid})
         self._c("users").delete_one({"_id": uid})

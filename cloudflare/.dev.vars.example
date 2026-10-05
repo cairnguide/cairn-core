@@ -3,10 +3,12 @@
 # Copy the two URIs from the repository's .env (scripts/dev-setup.sh writes them) and change the host.
 MONGODB_URI=mongodb://cairn_api:CHANGE_ME@host.docker.internal:27017/cairn?authSource=cairn&replicaSet=rs0&directConnection=true
 CAIRN_JOBS_MONGODB_URI=mongodb://cairn_jobs:CHANGE_ME@host.docker.internal:27017/cairn?authSource=cairn&replicaSet=rs0&directConnection=true
-# CAIRN_SMTP_HOST=
-# CAIRN_SMTP_USERNAME=
-# CAIRN_SMTP_PASSWORD=
+# TWILIO_SENDGRID_API_KEY=
 # CAIRN_EMAIL_FROM=
+# TWILIO_ACCOUNT_SID=
+# TWILIO_AUTH_TOKEN=
+# TWILIO_FROM_NUMBER=
+# TWILIO_VERIFY_SERVICE_SID=
 # CAIRN_AUTH0_MGMT_CLIENT_ID=
 # CAIRN_AUTH0_MGMT_CLIENT_SECRET=
 # CAIRN_APPLE_CLIENT_ID=

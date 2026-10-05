@@ -202,4 +202,4 @@ The following are not built, as the spec says:
 - the journey after week 4
 - the pre-need path
 - deaths outside the US (shown the out-of-scope message)
-- text messages (OPEN-05 is off, and turning it on is refused)
+- text messages (OPEN-05 is off, confirmed for the MVP on 2026-10-05, and turning it on is refused)

@@ -18,8 +18,9 @@ Before anything is sent, private_enough checks that it names no person who died 
 Every message is short and private. It never names the person who died, the circumstance, task details,
 or anything that was deleted. Nothing personal is logged: counts and error codes only.
 
-The email provider is not chosen yet. SmtpMailer works with any provider that offers SMTP. The sending
-domain must be registered with Apple's Private Email Relay Service so relay addresses receive mail.
+Email goes through Twilio SendGrid (twilio_client.SendGridMailer, chosen in jobs.mailer_from_env). SmtpMailer
+stays for local development with an SMTP catcher. The sending domain must be authenticated in SendGrid (SPF and
+DKIM) and registered with Apple's Private Email Relay Service so relay addresses receive mail (UC-REG-03).
 """
 from __future__ import annotations
 
@@ -32,6 +33,7 @@ from typing import Protocol
 from . import account as acct
 from . import maintenance
 from .copy_store import Copy
+from .twilio_client import DeliveryError
 
 log = logging.getLogger("cairn_api.outbound")
 
@@ -112,6 +114,8 @@ def _try(mailer: Mailer, to: str, msg: Message) -> str | None:
     """Send one message. Returns an error code, never the address or the provider's message."""
     try:
         mailer.send(to, msg.subject, msg.body)
+    except DeliveryError as exc:
+        return str(exc)[:100]
     except (smtplib.SMTPException, OSError) as exc:
         return type(exc).__name__[:100]
     return None

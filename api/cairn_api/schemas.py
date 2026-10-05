@@ -286,11 +286,35 @@ class SignInMethodsResponse(ResponseModel):
     methods: list[SignInOption]
 
 
+class LinkSignInMethodRequest(RequestModel):
+    access_token: str = Field(min_length=1, max_length=8192, description=(
+        "An Auth0 access token for the Cairn API from signing in with the method to add. The request itself must "
+        "carry a token from a sign-in that already belongs to this account."))
+
+
+class SignInMethodsChange(ResponseModel):
+    result: Literal["linked", "already_linked", "unlinked"]
+    message: str
+    account: AccountOut
+
+
+class EmailSignInCopy(ResponseModel):
+    """UC-REG-04. What the client shows around Auth0's passwordless email link. Auth0 sends the link."""
+    check_inbox: str = Field(description="Shown after the address is submitted, until the link is used.")
+    link_lifetime_minutes: int = Field(description="Links expire after this and are single use.")
+    link_expired: str = Field(description="Shown when the link has expired, with send_new_link as the one button.")
+    send_new_link: str
+    resend_after_seconds: int = Field(description="With no email after this long, show check_spelling and resend.")
+    check_spelling: str
+    resend: str
+
+
 class WelcomeResponse(ResponseModel):
     acknowledgment: str
     methods: list[SignInOption] = Field(description="Equally weighted. Show all three with the same emphasis.")
     sign_in_label: str
     not_ready: Link
+    email_sign_in: EmailSignInCopy
     notes: list[Note]
     support: Support
 
@@ -307,6 +331,8 @@ class AccountOut(ResponseModel):
     id: UUID
     email: str
     sign_in_method: SignInMethod | None
+    linked_sign_in_methods: list[SignInMethod] = Field(
+        default_factory=list, description="Other ways the user added to sign in (UC-REG-05).")
     preferred_name: str | None
     name_pronunciation: str | None
     voice: Voice = Field(description="The voice chosen in onboarding or Settings. Tone only.")

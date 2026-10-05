@@ -38,12 +38,12 @@ Cairn walks a family through the logistics of a death, one step at a time. The d
   │                          │                app user only)      │    (cairnApp role only,
   │                          │                                    │     validators on)
   │   Cron Triggers ──▶ scheduled() ──▶ CairnJobs container ──────┼──▶ MongoDB as cairn_jobs
-  │                                     (private, never public)   │    SMTP, Auth0, Apple
+  │                                     (private, never public)   │    Twilio, Auth0, Apple
   └──────────────────────────────────────────────────────────────┘
 ```
 
 - The API is unchanged Python. It runs in a [Cloudflare Container](https://developers.cloudflare.com/containers/), built from the `Dockerfile` in this repository. A small Worker in `cloudflare/` is the front door. It receives every request and forwards it to the container.
-- Scheduled jobs (outbound email, identity cleanup, held case deletion, draft cleanup, trial status) run in a second container from the same image. [Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/) call the Worker, and the Worker calls that container. It holds the jobs user's connection string and provider secrets. The API container never sees them, and no public request can reach the jobs container.
+- Scheduled jobs (outbound email through Twilio, identity cleanup, held case deletion, draft cleanup, unfinished sign-up cleanup, trial status) run in a second container from the same image. [Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/) call the Worker, and the Worker calls that container. It holds the jobs user's connection string and provider secrets. The API container never sees them, and no public request can reach the jobs container.
 - MongoDB is not on Cloudflare. Use [MongoDB Atlas](https://www.mongodb.com/docs/atlas/) (M10 or larger), or any MongoDB 7.0 or newer replica set reachable over the internet with TLS. Every request is one multi-document transaction, which needs a replica set.
 - Sign-in is Auth0 ([auth0/README.md](auth0/README.md)). The API only verifies Auth0's signed tokens.
 
@@ -163,7 +163,7 @@ make run-jobs
 make job NAME=purge_held_cases
 ```
 
-`outbound` and `identity_cleanup` answer `"status": "skipped"` until you add SMTP and Auth0 Management settings to `.env`.
+`outbound` and `identity_cleanup` answer `"status": "skipped"` until you add the Twilio and Auth0 Management settings to `.env` (see [Twilio](#twilio-email-and-text-messages)). `purge_stale_accounts` runs with its 90-day default.
 
 ### 6. Deploy to Cloudflare from the Codespace
 
@@ -314,7 +314,9 @@ Edit the `vars` block in [`cloudflare/wrangler.jsonc`](cloudflare/wrangler.jsonc
 | `CAIRN_AI_PROVIDER_NAME` | The AI provider named on the privacy step [LEGAL REVIEW REQUIRED] |
 | `CAIRN_DB_POOL_MIN`, `CAIRN_DB_POOL_MAX` | Connections per API container. Keep `max_instances × CAIRN_DB_POOL_MAX` under your database's connection limit |
 | `CAIRN_API_INSTANCES` | How many API containers share traffic. Up to `max_instances` in the `containers` block |
-| `CAIRN_SMTP_PORT` | 587 unless your email provider says otherwise |
+| `CAIRN_EMAIL_PROVIDER` | `twilio` (Twilio SendGrid). `smtp` is for local development only |
+| `CAIRN_PENDING_ACCOUNT_RETENTION_DAYS` | Days before an unfinished sign-up is deleted. `90`, the decided period (D-2026-10-05-R1). Leave it out to use 90 |
+| `CAIRN_NO_CASE_ACCOUNT_RETENTION_DAYS` | Leave out. The period for finished accounts with no case isn't decided [LEGAL REVIEW REQUIRED] |
 | `CAIRN_CORS_ORIGINS` | Only for a web client served from another origin: its origins, comma-separated, for example `https://app.cairn.example`. Leave it out for native apps |
 
 Optional settings from [api/README.md](api/README.md), such as `CAIRN_OVERWHELM_SKIP_THRESHOLD`, can be added here too. Every name the containers receive is listed in `API_KEYS` and `JOBS_KEYS` in [`cloudflare/src/index.ts`](cloudflare/src/index.ts).
@@ -335,25 +337,31 @@ npx wrangler secret put CAIRN_JOBS_MONGODB_URI
 
 `MONGODB_URI` is the `cairn_api` user's connection string from step 3, for the API. `CAIRN_JOBS_MONGODB_URI` is the `cairn_jobs` user's, for the jobs only. The database name comes from `CAIRN_MONGODB_DB` in `wrangler.jsonc` (`cairn`).
 
-When you've chosen an email provider, add SMTP for the outbound job:
+For the outbound job, add Twilio (see [Twilio](#twilio-email-and-text-messages)). Email needs the Twilio SendGrid API key and the sender:
 
 ```bash
-npx wrangler secret put CAIRN_SMTP_HOST
-```
-
-```bash
-npx wrangler secret put CAIRN_SMTP_USERNAME
-```
-
-```bash
-npx wrangler secret put CAIRN_SMTP_PASSWORD
+npx wrangler secret put TWILIO_SENDGRID_API_KEY
 ```
 
 ```bash
 npx wrangler secret put CAIRN_EMAIL_FROM
 ```
 
-For the identity cleanup job, add the Auth0 Management API client and the Sign in with Apple key ([auth0/README.md](auth0/README.md), step 4):
+The Account SID and Auth Token are for text messages and Verify. Text messages aren't in the MVP (OPEN-05, decided 2026-10-05), so nothing sends a text to users. These can wait, but setting them now does no harm:
+
+```bash
+npx wrangler secret put TWILIO_ACCOUNT_SID
+```
+
+```bash
+npx wrangler secret put TWILIO_AUTH_TOKEN
+```
+
+```bash
+npx wrangler secret put TWILIO_FROM_NUMBER
+```
+
+For the identity cleanup job, add the Auth0 Management API client and the Sign in with Apple key ([auth0/README.md](auth0/README.md), step 5):
 
 ```bash
 npx wrangler secret put CAIRN_AUTH0_MGMT_CLIENT_ID
@@ -379,7 +387,7 @@ npx wrangler secret put CAIRN_APPLE_KEY_ID
 npx wrangler secret put CAIRN_APPLE_PRIVATE_KEY < AuthKey_XXXXXXXXXX.p8
 ```
 
-Until these are set, those two jobs log "skipped" and do nothing. Deletion confirmation emails wait in the queue until SMTP is set.
+Until these are set, those two jobs log "skipped" and do nothing. Deletion confirmation emails wait in the queue until the Twilio SendGrid key is set.
 
 `wrangler secret put` before the first deploy creates the Worker with only the secret. That's expected. The deploy in the next step fills in the rest.
 
@@ -408,6 +416,8 @@ To use your own domain, open **Workers & Pages > cairn-api > Settings > Domains 
 ### 8. (Optional) Deploy from GitHub Actions
 
 [`.github/workflows/deploy-cloudflare.yml`](.github/workflows/deploy-cloudflare.yml) runs steps 2 and 7 for you: the schema, templates, then `wrangler deploy`.
+
+Deploys run only by hand, from this workflow or `npx wrangler deploy`. Don't connect the repository to Cloudflare **Workers Builds** (Workers & Pages > Settings > Builds). It would deploy every merge to `main` without applying the schema or loading templates first. It also fails today, because it expects the Worker name in `cloudflare/wrangler.jsonc` (`cairn-api`) to match the dashboard project's name. The `cairn-core` project was disconnected from Workers Builds on 2026-10-05 for this reason, before anything was deployed.
 
 1. In the repository, open **Settings > Environments > New environment** and name it `cloudflare`. Add required reviewers if you want an approval before each deploy.
 2. Add four environment secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CAIRN_ADMIN_MONGODB_URI` (an administrator, for `apply.py`), and `CAIRN_LOADER_MONGODB_URI` (the `cairn_loader` user). On Atlas, also add the environment variable `CAIRN_MANAGE_ROLES` set to `false`, because Atlas manages the roles.
@@ -456,10 +466,10 @@ The cron schedule and its jobs:
 
 | Cron (UTC) | Jobs | What it does |
 |---|---|---|
-| `*/5 * * * *` | `outbound` | Deletion confirmations, trial reminders, and chosen notifications by email |
+| `*/5 * * * *` | `outbound` | Deletion confirmations, trial reminders, and chosen notifications by email, through Twilio SendGrid |
 | `*/15 * * * *` | `identity_cleanup` | Deletes Auth0 users and revokes Apple tokens after account deletion |
 | `7 * * * *` | `purge_held_cases` | Deletes cases whose 7-day hold has ended (UC-END-13) |
-| `30 3 * * *` | `purge_inactive_drafts`, `expire_trials` | Deletes idle drafts (DEC-07). Trial status, for reporting |
+| `30 3 * * *` | `purge_inactive_drafts`, `expire_trials`, `purge_stale_accounts` | Deletes idle drafts (DEC-07). Trial status, for reporting. Deletes sign-ups still unfinished after 90 days (UC-REG-10) |
 
 To change a schedule, edit `triggers.crons` in `wrangler.jsonc` and `JOBS_BY_CRON` in `src/index.ts` together, then deploy.
 
@@ -476,6 +486,63 @@ make cf-dev
 ```
 
 Then open http://localhost:8787/docs. `cloudflare/.dev.vars` is gitignored.
+
+## Twilio (email and text messages)
+
+Every email and text message Cairn sends goes through Twilio. The code is [`api/cairn_api/twilio_client.py`](api/cairn_api/twilio_client.py). It calls Twilio's REST APIs with `httpx`, so there's no Twilio SDK to install.
+
+| What | Twilio product | Credentials | Status |
+|---|---|---|---|
+| Deletion confirmations (UC-REG-15, UC-CASE-21), trial reminders (UC-REG-08), the notifications a user chose (UC-CASE-19), and the opted-in check-in | Twilio SendGrid, v3 Mail Send | `TWILIO_SENDGRID_API_KEY` | Live. The `outbound` job, every 5 minutes |
+| The sign-in magic link (UC-REG-04) | Twilio SendGrid, through Auth0's email provider | The same SendGrid key, entered in Auth0 | Tenant setting, see [auth0/README.md](auth0/README.md) |
+| Text messages | Twilio Programmable Messaging | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` | Built and tested. Not in the MVP (OPEN-05, decided 2026-10-05). Turning it on later needs legal review of the consent wording |
+| Verifying a phone number by code | Twilio Verify | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID` | Built and tested. For after the MVP, if text messages are added |
+
+**Email needs its own key.** Twilio SendGrid doesn't accept the Account SID and Auth Token. In the SendGrid console (or Twilio console > Email), create an API key with **Mail Send** access only, and authenticate Cairn's sending domain (SPF and DKIM). Register the same domain with Apple's Private Email Relay Service so `@privaterelay.appleid.com` addresses receive mail (UC-REG-03). Open and click tracking are switched off on every message in code, so SendGrid never adds a tracking pixel or rewrites links.
+
+**The trial.** A Twilio trial can only text verified caller IDs, adds "Sent from your Twilio trial account" to each text, and has a limited number of messages. That's why the live checks run only by hand.
+
+### Settings
+
+| Name | Where it's used | Secret |
+|---|---|---|
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` | Text messages, Verify, and the credential check | Yes |
+| `TWILIO_FROM_NUMBER` or `TWILIO_MESSAGING_SERVICE_SID` | The number (E.164) or Messaging Service texts come from | No |
+| `TWILIO_VERIFY_SERVICE_SID` | The Verify service (Twilio console > Verify > Services) | No |
+| `TWILIO_SENDGRID_API_KEY` | Email | Yes |
+| `CAIRN_EMAIL_FROM` | The sender, for example `Cairn <no-reply@mail.example>` | No |
+| `CAIRN_EMAIL_PROVIDER` | `twilio` (default) or `smtp` for a local mail catcher | No |
+
+Locally, put them in `.env` (gitignored). On Cloudflare, use `wrangler secret put` ([step 6](#6-set-the-secrets)). Only the jobs container receives them, never the API container.
+
+### GitHub secrets
+
+The [Twilio integration](.github/workflows/twilio-integration.yml) workflow reads these as GitHub Actions secrets. Repository secrets (**Settings > Secrets and variables > Actions**) and `cairnguide` organization secrets shared with this repository both work. `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_SENDGRID_API_KEY` are set as organization secrets.
+
+| Secret | Needed for |
+|---|---|
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` | Every run |
+| `TWILIO_FROM_NUMBER` (or `TWILIO_MESSAGING_SERVICE_SID`) and `TWILIO_TEST_TO_NUMBER` | Send one text message |
+| `TWILIO_VERIFY_SERVICE_SID` and `TWILIO_TEST_TO_NUMBER` | Send one Verify code |
+| `TWILIO_SENDGRID_API_KEY`, `CAIRN_EMAIL_FROM`, `TWILIO_TEST_TO_EMAIL` | Send one email |
+
+`TWILIO_TEST_TO_NUMBER` must be a verified caller ID on a trial account. Set `TWILIO_TEST_TO_EMAIL` to an Apple relay address now and then to check UC-REG-03 delivery.
+
+### Running the live checks
+
+The live checks never run on a push, a pull request, or a schedule. Every push and pull request runs the mocked tests in [`api/tests/test_twilio_client.py`](api/tests/test_twilio_client.py) instead, which send nothing.
+
+Open **Actions > Twilio integration > Run workflow**. With every box unticked, it only checks the credentials, which is free. Each ticked box sends one message, so one run uses at most two texts and one email. Or from the command line:
+
+```bash
+gh workflow run twilio-integration.yml -f send_email=true
+```
+
+To run them locally with the values in your shell:
+
+```bash
+cd api && CAIRN_TWILIO_LIVE_EMAIL=1 pytest integration -ra -s
+```
 
 ## Command reference
 

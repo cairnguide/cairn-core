@@ -96,6 +96,7 @@ def account_out(account: dict, copy: Copy) -> AccountOut:
         **{k: account[k] for k in ("id", "email", "sign_in_method", "preferred_name", "name_pronunciation",
                                    "voice", "status", "onboarding_step", "trial_started_at",
                                    "trial_ends_at", "time_zone")},
+        linked_sign_in_methods=account.get("linked_sign_in_methods", []),
         trial_end_date=local_trial_end(account),
         ai_label=copy["ai_persistent_label"] if ai_ack else None,
     )

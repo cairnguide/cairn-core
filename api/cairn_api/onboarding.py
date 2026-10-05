@@ -7,11 +7,10 @@ every response and never depend on the voice.
 """
 from __future__ import annotations
 
-import re
-
 from fastapi import Request
 
 from . import account as acct
+from . import safety
 from .copy_store import Copy
 from .db import Session
 from .messages import registration_next_step
@@ -19,6 +18,7 @@ from .schemas import (
     Checkbox,
     Choice,
     ConsentType,
+    EmailSignInCopy,
     Link,
     NextStep,
     Note,
@@ -62,6 +62,18 @@ def sign_in_options(copy: Copy, email_connection: str) -> list[SignInOption]:
             for m in SignInMethod]
 
 
+# UC-REG-04. Auth0's passwordless email connection must use the same lifetime (auth0/README.md).
+EMAIL_LINK_LIFETIME_MINUTES = 15
+EMAIL_RESEND_AFTER_SECONDS = 60
+
+
+def email_sign_in(copy: Copy) -> EmailSignInCopy:
+    return EmailSignInCopy(check_inbox=copy["email_check_inbox"], link_lifetime_minutes=EMAIL_LINK_LIFETIME_MINUTES,
+                           link_expired=copy["email_link_expired"], send_new_link=copy["send_new_link"],
+                           resend_after_seconds=EMAIL_RESEND_AFTER_SECONDS, check_spelling=copy["email_check_spelling"],
+                           resend=copy["resend_link"])
+
+
 def provider_name(method: str | None, copy: Copy) -> str:
     if method == "email":
         return copy["provider_email"]
@@ -70,19 +82,13 @@ def provider_name(method: str | None, copy: Copy) -> str:
 
 # ------------------------------------------------------------------ distress (UC-REG-14)
 
-# Phrases that stop the task flow wherever free text is typed during sign-up.
-# Matching is deliberately broad. A false positive only pauses sign-up. The
-# text that matched is never stored, logged, or recorded as an inference.
-# [REVIEW] Align this list with the crisis plan on Trello card 26 once written.
-_DISTRESS = re.compile(
-    r"\b(suicid\w*|kill (my ?self|me)|end (it all|my life)|want(ed)? to die|wish i (was|were) dead|"
-    r"don'?t want to (live|be here)|can'?t go on|no reason to live|better off dead|hurt(ing)? my ?self|self[- ]harm)\b",
-    re.IGNORECASE,
-)
-
-
+# Free text typed during sign-up is read by the same detector as case creation: the reviewed phrase list in
+# safety.py, which follows the Support and Crisis Plan (card 26). Acute distress or risk of harm (level 3 or 4)
+# stops the flow. Ending language not clearly about the paperwork counts (DEC-26-05). Someone naming a person who
+# died by suicide is a loss, not a risk to the user, so it doesn't by itself. A false positive only pauses
+# sign-up. The text that matched is never stored, logged, or recorded as an inference.
 def shows_distress(*texts: str | None) -> bool:
-    return any(t and _DISTRESS.search(t.replace("’", "'")) for t in texts)
+    return any(t and safety.classify(t).mode is not None for t in texts)
 
 
 def paused_screen(copy: Copy, distress: bool) -> Screen:

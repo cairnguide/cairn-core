@@ -1,4 +1,5 @@
-"""The signed-in account: Settings (name, voice, time zone), deleting the account (UC-REG-15, was
+"""The signed-in account: Settings (name, voice, time zone), other ways to sign in (UC-REG-05), deleting the
+account (UC-REG-15, was
 UC-ACCT-01), downloading all of its data (UC-REG-16), and account requests typed to Cairn.
 
 Everything here stays available when the account is read-only, and deleting and
@@ -11,10 +12,11 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
 from .. import account as acct
-from .. import account_chat, export, intake
+from .. import account_chat, export, intake, onboarding
 from .. import notifications as nt
 from ..auth import Identity, get_identity
 from ..copy_store import Copy
+from ..errors import ApiError
 from ..schemas import (
     AccountChatSession,
     AccountDeletionInfo,
@@ -27,12 +29,15 @@ from ..schemas import (
     DataExport,
     DataExportInfo,
     IntakeSession,
+    LinkSignInMethodRequest,
     NextStep,
     Note,
     NotificationChangeIn,
     Option,
     ReadAloud,
     SafetyMode,
+    SignInMethod,
+    SignInMethodsChange,
     SupportResource,
 )
 from .notifications import apply_change
@@ -71,6 +76,61 @@ def update_me(req: AccountPatch, request: Request, identity: Identity = Depends(
         s.update_account(**fields)
         s.audit("account_settings_updated", object_type="user", object_id=uid)
         return _account_response(s, request)
+
+
+@router.post(
+    "/sign-in-methods",
+    response_model=SignInMethodsChange,
+    summary="Add another way to sign in",
+    description=(
+        "UC-REG-05. The request is signed in with a sign-in that already belongs to this account. The body carries "
+        "an access token from signing in with the method to add, which is verified the same way. Accounts are never "
+        "linked automatically. One account per sign-in, and one sign-in per method."),
+    responses={403: {"description": "The token to add is invalid or its email isn't confirmed."},
+               409: {"description": "same_method: the account already signs in that way. sign_in_method_in_use: "
+                                    "that sign-in or its email belongs to another account (support can merge, "
+                                    "database/docs/support-account-merge.md)."}},
+)
+def link_sign_in_method(req: LinkSignInMethodRequest, request: Request,
+                        identity: Identity = Depends(get_identity)) -> SignInMethodsChange:
+    copy: Copy = request.app.state.copy
+    second = request.app.state.token_verifier.verify(req.access_token)
+    if not second.email or not second.email_verified:
+        raise ApiError(403, "email_not_verified", copy["email_check_inbox"])
+    provider = onboarding.provider_name(second.sign_in_method.value, copy)
+    with request.app.state.db.session(identity.subject) as s:
+        uid = s.require_user()
+        result = s.link_identity(second.subject, second.sign_in_method.value, second.email)
+        if result == "in_use":
+            raise ApiError(409, "sign_in_method_in_use", copy["sign_in_method_in_use"].format(provider=provider))
+        if result == "same_method":
+            raise ApiError(409, "same_method", copy["sign_in_method_already_linked"].format(provider=provider))
+        if result == "linked":
+            s.audit("sign_in_method_linked", object_type="user", object_id=uid)
+        key = "sign_in_method_linked" if result == "linked" else "sign_in_method_already_linked"
+        return SignInMethodsChange(result=result, message=copy[key].format(provider=provider),
+                                   account=acct.account_out(acct.load_account(s), copy))
+
+
+@router.delete(
+    "/sign-in-methods/{method}",
+    response_model=SignInMethodsChange,
+    summary="Remove a way to sign in that was added later",
+    description="The sign-in the account was created with stays, so the account always has one. The removed "
+                "sign-in's identity provider record is deleted by the identity cleanup job.",
+    responses={409: {"description": "That's the sign-in the account was created with, or it isn't linked."}},
+)
+def unlink_sign_in_method(method: SignInMethod, request: Request,
+                          identity: Identity = Depends(get_identity)) -> SignInMethodsChange:
+    copy: Copy = request.app.state.copy
+    provider = onboarding.provider_name(method.value, copy)
+    with request.app.state.db.session(identity.subject) as s:
+        uid = s.require_user()
+        if not s.unlink_identity(method.value):
+            raise ApiError(409, "sign_in_method_cannot_remove", copy["sign_in_method_cannot_remove"])
+        s.audit("sign_in_method_unlinked", object_type="user", object_id=uid)
+        return SignInMethodsChange(result="unlinked", message=copy["sign_in_method_unlinked"].format(provider=provider),
+                                   account=acct.account_out(acct.load_account(s), copy))
 
 
 def deletion_info_for(account: dict, copy: Copy) -> AccountDeletionInfo:

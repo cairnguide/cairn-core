@@ -1,5 +1,7 @@
 # Backend stand-up gap audit: hosting the API, registration, and account creation
 
+> **2026-10-05:** `account-creation-review-gap-audit.md` closes items 20 (email provider) and 21 (linking a second sign-in method). Every email now goes through Twilio SendGrid, and text messages have a Twilio sender, still not offered (OPEN-05).
+
 Date: 2026-09-27. Branch: `cloudflare-hosting`.
 
 Updated 2026-10-03, when this branch took in the move from PostgreSQL to MongoDB (`main`, pull request 8). The check below was run against PostgreSQL. The test logins were moved to MongoDB, and the items that named PostgreSQL now say what replaces them.
@@ -61,7 +63,7 @@ None of these can be done in code in this repository. Items marked **blocks prod
 15. **AI provider named on the privacy step** (`CAIRN_AI_PROVIDER_NAME`, UC-REG-07). **[LEGAL REVIEW REQUIRED]**
 16. **`draft_copy` in the registration copy** (personality samples, deletion wording, link labels) needs product and legal review (api/README.md).
 17. **Template counsel review.** The loader refuses unreviewed templates in production. Not needed to register, but needed before a case can start a journey.
-18. **Retention periods** for accounts that never finish onboarding (UC-REG-10) and never create a case (UC-REG-13), used by `purge_stale_accounts`. **[LEGAL REVIEW REQUIRED]**
+18. **Retention periods** for accounts that never create a case (UC-REG-13), used by `purge_stale_accounts`. **[LEGAL REVIEW REQUIRED]** Accounts that never finish onboarding (UC-REG-10) are deleted after 90 days (decided 2026-10-05).
 19. **UC-REG-14 crisis plan** (Trello card 26) is not written.
 20. **Email provider** for the outbound job (deletion confirmations, trial reminders).
 

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Cairn API",
-    "description": "\nCairn walks a family through the logistics of a death, one step at a time.\n\nEvery response that moves a conversation forward carries a `next_step` with a\nsingle prompt, so clients can ask one question at a time. Errors use RFC 9457\nproblem details (`application/problem+json`) and never echo submitted values.\n\nAuthentication is an Auth0 access token. Accounts can be created with Google,\nApple, or an email magic link (see GET /v1/welcome). Onboarding follows\nUC-REG-01 to UC-REG-14, one question per screen. Case creation follows\nUC-CASE-01 to UC-CASE-18: a case starts as a draft, and the free period of 28\ndays starts only when the user taps Start journey on their first case. After\nit ends the account is read-only until subscribed. No payment information is\nasked for anywhere in case creation. Free text is redacted as it is received\nand never stored. The case is the security boundary. It is enforced in one\ndata-access layer that every request goes through, with MongoDB validators and\nleast-privilege roles as the backstop.\n\nThe user decides how and how often Cairn keeps in touch, per journey\n(UC-CASE-19). With no choice, nothing is sent outside the app. Apart from that,\nCairn sends only one confirmation for a deletion the user asked for\n(UC-CASE-21). Deleting a case or the account, downloading all data, and\nchanging notifications are always free, including on a read-only account.\n",
+    "description": "\nCairn walks a family through the logistics of a death, one step at a time.\n\nEvery response that moves a conversation forward carries a `next_step` with a\nsingle prompt, so clients can ask one question at a time. Errors use RFC 9457\nproblem details (`application/problem+json`) and never echo submitted values.\n\nAuthentication is an Auth0 access token. Accounts can be created with Google,\nApple, or an email magic link (see GET /v1/welcome). Onboarding follows\nUC-REG-01 to UC-REG-14, one question per screen. Case creation follows\nUC-CASE-01 to UC-CASE-18: a case starts as a draft, and the free period of 28\ndays starts only when the user starts their first journey. After\nit ends the account is read-only until subscribed. No payment information is\nasked for anywhere in case creation. Free text is redacted as it is received\nand never stored. The case is the security boundary. It is enforced in one\ndata-access layer that every request goes through, with MongoDB validators and\nleast-privilege roles as the backstop.\n\nThe user decides how and how often Cairn keeps in touch, per journey\n(UC-CASE-19). With no choice, nothing is sent outside the app. Apart from that,\nCairn sends only one confirmation for a deletion the user asked for\n(UC-CASE-21). Deleting a case or the account, downloading all data, and\nchanging notifications are always free, including on a read-only account.\n",
     "version": "0.1.0"
   },
   "paths": {
@@ -12,7 +12,7 @@
           "Registration"
         ],
         "summary": "The welcome screen",
-        "description": "UC-REG-01. Acknowledgment first, then three equally weighted ways to continue, a sign-in link, and a link to the public journey map. Asks for nothing. After a cancelled Google or Apple sign-in, call with oauth_cancelled=true to add the reassurance note (UC-REG-02, UC-REG-03).",
+        "description": "UC-REG-01. Acknowledgment first, then three equally weighted ways to continue, a sign-in link, and a link to the public journey map, plus the copy around the email link (UC-REG-04). Asks for nothing. After a cancelled Google or Apple sign-in, call with oauth_cancelled=true to add the reassurance note (UC-REG-02, UC-REG-03).",
         "operationId": "welcome_v1_welcome_get",
         "parameters": [
           {
@@ -471,6 +471,109 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/v1/me/sign-in-methods": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Add another way to sign in",
+        "description": "UC-REG-05. The request is signed in with a sign-in that already belongs to this account. The body carries an access token from signing in with the method to add, which is verified the same way. Accounts are never linked automatically. One account per sign-in, and one sign-in per method.",
+        "operationId": "link_sign_in_method_v1_me_sign_in_methods_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkSignInMethodRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInMethodsChange"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token to add is invalid or its email isn't confirmed."
+          },
+          "409": {
+            "description": "same_method: the account already signs in that way. sign_in_method_in_use: that sign-in or its email belongs to another account (support can merge, database/docs/support-account-merge.md)."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/me/sign-in-methods/{method}": {
+      "delete": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Remove a way to sign in that was added later",
+        "description": "The sign-in the account was created with stays, so the account always has one. The removed sign-in's identity provider record is deleted by the identity cleanup job.",
+        "operationId": "unlink_sign_in_method_v1_me_sign_in_methods__method__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "method",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SignInMethod"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInMethodsChange"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "That's the sign-in the account was created with, or it isn't linked."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/me/deletion": {
@@ -3171,6 +3274,14 @@
               }
             ]
           },
+          "linked_sign_in_methods": {
+            "items": {
+              "$ref": "#/components/schemas/SignInMethod"
+            },
+            "type": "array",
+            "title": "Linked Sign In Methods",
+            "description": "Other ways the user added to sign in (UC-REG-05)."
+          },
           "preferred_name": {
             "anyOf": [
               {
@@ -4690,6 +4801,54 @@
         ],
         "title": "DeceasedOut"
       },
+      "EmailSignInCopy": {
+        "properties": {
+          "check_inbox": {
+            "type": "string",
+            "title": "Check Inbox",
+            "description": "Shown after the address is submitted, until the link is used."
+          },
+          "link_lifetime_minutes": {
+            "type": "integer",
+            "title": "Link Lifetime Minutes",
+            "description": "Links expire after this and are single use."
+          },
+          "link_expired": {
+            "type": "string",
+            "title": "Link Expired",
+            "description": "Shown when the link has expired, with send_new_link as the one button."
+          },
+          "send_new_link": {
+            "type": "string",
+            "title": "Send New Link"
+          },
+          "resend_after_seconds": {
+            "type": "integer",
+            "title": "Resend After Seconds",
+            "description": "With no email after this long, show check_spelling and resend."
+          },
+          "check_spelling": {
+            "type": "string",
+            "title": "Check Spelling"
+          },
+          "resend": {
+            "type": "string",
+            "title": "Resend"
+          }
+        },
+        "type": "object",
+        "required": [
+          "check_inbox",
+          "link_lifetime_minutes",
+          "link_expired",
+          "send_new_link",
+          "resend_after_seconds",
+          "check_spelling",
+          "resend"
+        ],
+        "title": "EmailSignInCopy",
+        "description": "UC-REG-04. What the client shows around Auth0's passwordless email link. Auth0 sends the link."
+      },
       "ExportAnswer": {
         "properties": {
           "field": {
@@ -5864,6 +6023,23 @@
           "url"
         ],
         "title": "Link"
+      },
+      "LinkSignInMethodRequest": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "maxLength": 8192,
+            "minLength": 1,
+            "title": "Access Token",
+            "description": "An Auth0 access token for the Cairn API from signing in with the method to add. The request itself must carry a token from a sign-in that already belongs to this account."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "access_token"
+        ],
+        "title": "LinkSignInMethodRequest"
       },
       "NextStep": {
         "properties": {
@@ -7296,6 +7472,33 @@
         ],
         "title": "SignInMethod"
       },
+      "SignInMethodsChange": {
+        "properties": {
+          "result": {
+            "type": "string",
+            "enum": [
+              "linked",
+              "already_linked",
+              "unlinked"
+            ],
+            "title": "Result"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "account": {
+            "$ref": "#/components/schemas/AccountOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "result",
+          "message",
+          "account"
+        ],
+        "title": "SignInMethodsChange"
+      },
       "SignInMethodsResponse": {
         "properties": {
           "methods": {
@@ -8309,6 +8512,9 @@
           "not_ready": {
             "$ref": "#/components/schemas/Link"
           },
+          "email_sign_in": {
+            "$ref": "#/components/schemas/EmailSignInCopy"
+          },
           "notes": {
             "items": {
               "$ref": "#/components/schemas/Note"
@@ -8326,6 +8532,7 @@
           "methods",
           "sign_in_label",
           "not_ready",
+          "email_sign_in",
           "notes",
           "support"
         ],

@@ -29,7 +29,7 @@ Authentication is an Auth0 access token. Accounts can be created with Google,
 Apple, or an email magic link (see GET /v1/welcome). Onboarding follows
 UC-REG-01 to UC-REG-14, one question per screen. Case creation follows
 UC-CASE-01 to UC-CASE-18: a case starts as a draft, and the free period of 28
-days starts only when the user taps Start journey on their first case. After
+days starts only when the user starts their first journey. After
 it ends the account is read-only until subscribed. No payment information is
 asked for anywhere in case creation. Free text is redacted as it is received
 and never stored. The case is the security boundary. It is enforced in one

@@ -1,0 +1,101 @@
+# Live checks against Twilio (email, text messages, and Verify). Run by hand only:
+# Actions > Twilio integration > Run workflow. It never runs on a push, a pull request, or a schedule,
+# because the Twilio trial has a limited number of messages.
+#
+# With every box left unticked, it only checks the credentials, which is free and sends nothing.
+# Each box sends at most one message. All three boxes ticked: two text messages and one email.
+#
+# Secrets, repository or cairnguide organization (Settings > Secrets and variables > Actions):
+#   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN    always
+#   TWILIO_FROM_NUMBER                       the Twilio number to send from (or TWILIO_MESSAGING_SERVICE_SID)
+#   TWILIO_TEST_TO_NUMBER                    where test texts go. On a trial, a verified caller ID
+#   TWILIO_VERIFY_SERVICE_SID                for the Verify check
+#   TWILIO_SENDGRID_API_KEY                  for email. Twilio SendGrid's own API key, not the Auth Token
+#   CAIRN_EMAIL_FROM                         for example: Cairn <no-reply@mail.example>
+#   TWILIO_TEST_TO_EMAIL                     where the test email goes. An Apple relay address checks UC-REG-03
+# The tests are in api/integration/test_twilio_live.py.
+name: Twilio integration
+
+on:
+  workflow_dispatch:
+    inputs:
+      send_sms:
+        description: "Send one text message (uses 1 trial SMS)"
+        type: boolean
+        default: false
+      start_verification:
+        description: "Send one Verify code by text (uses 1 trial SMS)"
+        type: boolean
+        default: false
+      send_email:
+        description: "Send one email through Twilio SendGrid (uses 1 trial email)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Never two runs at once, so a double click can't spend the trial twice.
+concurrency:
+  group: twilio-integration
+  cancel-in-progress: false
+
+jobs:
+  twilio:
+    name: Twilio live checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: api/pyproject.toml
+
+      - name: Install
+        run: pip install -e 'api[test]'
+
+      - name: Run the live checks
+        working-directory: api
+        env:
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+          TWILIO_FROM_NUMBER: ${{ secrets.TWILIO_FROM_NUMBER }}
+          TWILIO_MESSAGING_SERVICE_SID: ${{ secrets.TWILIO_MESSAGING_SERVICE_SID }}
+          TWILIO_VERIFY_SERVICE_SID: ${{ secrets.TWILIO_VERIFY_SERVICE_SID }}
+          TWILIO_TEST_TO_NUMBER: ${{ secrets.TWILIO_TEST_TO_NUMBER }}
+          TWILIO_SENDGRID_API_KEY: ${{ secrets.TWILIO_SENDGRID_API_KEY }}
+          CAIRN_EMAIL_FROM: ${{ secrets.CAIRN_EMAIL_FROM }}
+          TWILIO_TEST_TO_EMAIL: ${{ secrets.TWILIO_TEST_TO_EMAIL }}
+          CAIRN_TWILIO_LIVE_SMS: ${{ inputs.send_sms && '1' || '0' }}
+          CAIRN_TWILIO_LIVE_VERIFY: ${{ inputs.start_verification && '1' || '0' }}
+          CAIRN_TWILIO_LIVE_EMAIL: ${{ inputs.send_email && '1' || '0' }}
+        run: pytest integration -ra -s --junitxml=twilio.xml
+
+      - name: Summary
+        if: always()
+        working-directory: api
+        env:
+          SMS: ${{ inputs.send_sms }}
+          VERIFY: ${{ inputs.start_verification }}
+          EMAIL: ${{ inputs.send_email }}
+        run: |
+          {
+            echo "### Twilio live checks"
+            echo "| Check | Requested |"
+            echo "|---|---|"
+            echo "| Credentials (free) | always |"
+            echo "| One text message | $SMS |"
+            echo "| One Verify code | $VERIFY |"
+            echo "| One email | $EMAIL |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ -f twilio.xml ]]; then
+            python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import xml.etree.ElementTree as ET
+          for s in ET.parse("twilio.xml").getroot().iter("testsuite"):
+              print(f"\nTests: {s.get('tests')}, failed: {int(s.get('failures', 0)) + int(s.get('errors', 0))}, "
+                    f"not requested: {s.get('skipped')}")
+          PY
+          fi

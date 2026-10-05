@@ -23,6 +23,7 @@ from .store import (
     delete_case,
     effective_account_status,
     from_date,
+    identity_deletions,
     local_date,
     queue_confirmation,
     setting_int,
@@ -101,14 +102,12 @@ def purge_stale_accounts(db, pending_older_than: timedelta, no_case_older_than: 
     if no_case_older_than is not None:
         who.append({"status": "active_no_case", "created_at": {"$lt": now - no_case_older_than}})
     n = 0
-    for user in db.users.find({"$or": who}, {"idp_subject": 1, "sign_in_method": 1}):
+    for user in db.users.find({"$or": who}, {"idp_subject": 1, "sign_in_method": 1, "linked_identities": 1}):
         def run(cs, user=user):
             if db.cases.find_one({"$or": [{"created_by": user["_id"]}, {"members.user_id": user["_id"]}]},
                                  {"_id": 1}, session=cs):
                 return 0
-            db.identity_deletion_requests.insert_one(
-                {"_id": uuid.uuid4(), "idp_subject": user["idp_subject"], "provider": user.get("sign_in_method"),
-                 "requested_at": now, "attempts": 0, "last_error": None}, session=cs)
+            db.identity_deletion_requests.insert_many(identity_deletions(user, now), session=cs)
             db.consents.delete_many({"user_id": user["_id"]}, session=cs)
             db.trial_reminders.delete_many({"user_id": user["_id"]}, session=cs)
             db.users.delete_one({"_id": user["_id"]}, session=cs)
