@@ -127,7 +127,7 @@ Tests: `api/tests/test_account_lifecycle.py` (database, as the cairnApp user) an
 4. **Email me instead keeps the existing reasons and pace** where there are some. Otherwise it proposes the Keep it simple values. It is always read back first.
 5. **Inactivity counts from** the last intake answer, task status change, snooze, or opening the journey.
 6. **Read-only accounts get no notifications**, because there is nothing to act on except subscribing, and that would be a nudge. Confirmations still go.
-7. **`trial_checkbox`** still says "28 days after I start my first case". Should it say "journey" like the new summary?
+7. **`trial_checkbox`** still says "28 days after I start my first case". Should it say "journey" like the new summary? Resolved 2026-10-05: it says "my first journey" (`account-creation-review-gap-audit.md`).
 8. **Q12 and Q13 (card 50)** are built as their drafts say: no hold for account deletion, and the address is purged right after the confirmation is sent.
 9. **`deceased.ssn_last4` exists** (decision 6 in `database/CLAUDE.md`), while UC-REG-16 says no SSNs are stored. It is never exported, and no endpoint writes it. Consider dropping the column if last-four digits are no longer planned.
 

@@ -117,6 +117,8 @@
       "id": "UC-REG-08",
       "change": "Trial start wording and reminder wording updated.",
       "copy": "Cairn is free for 28 days, and we will not ask for a card. Your 28 days begin when you start your first journey, so nothing counts down while you get settled. Once they begin, they keep counting even if you pause. After 28 days, a subscription is needed to keep adding and updating your tasks. If you do not subscribe, your account becomes read-only on day 29. Nothing is deleted and nothing is charged. You can always close, download, or delete your information for free. We will remind you in Cairn before your free time ends, and outside Cairn only in the way you choose when you start your journey.",
+      "checkbox_copy": "I understand that 28 days after I start my first journey, I will need a subscription to keep using Cairn fully.",
+      "checkbox_change": "2026-10-05: the checkbox says 'my first journey', matching the summary.",
       "open_question": "Does the trial reminder follow notification choices or is it always sent? (card 50, Q1)"
     },
     {

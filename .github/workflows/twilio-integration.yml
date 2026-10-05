@@ -5,7 +5,7 @@
 # With every box left unticked, it only checks the credentials, which is free and sends nothing.
 # Each box sends at most one message. All three boxes ticked: two text messages and one email.
 #
-# Repository secrets (Settings > Secrets and variables > Actions):
+# Secrets, repository or cairnguide organization (Settings > Secrets and variables > Actions):
 #   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN    always
 #   TWILIO_FROM_NUMBER                       the Twilio number to send from (or TWILIO_MESSAGING_SERVICE_SID)
 #   TWILIO_TEST_TO_NUMBER                    where test texts go. On a trial, a verified caller ID

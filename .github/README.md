@@ -24,7 +24,7 @@ Open **Actions > Twilio integration > Run workflow**, or:
 gh workflow run twilio-integration.yml -f send_sms=true
 ```
 
-It reads these repository secrets:
+It reads these secrets, from the repository or from the `cairnguide` organization (the Twilio SID, Auth Token, and SendGrid key are organization secrets):
 
 | Secret | Needed for |
 |---|---|

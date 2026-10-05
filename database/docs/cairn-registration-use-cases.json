@@ -2,11 +2,12 @@
   "spec": {
     "id": "cairn-registration-onboarding",
     "title": "Cairn account registration and onboarding use cases",
-    "version": "1.2.0",
-    "date": "2026-09-24",
+    "version": "1.3.0",
+    "date": "2026-10-05",
     "source_of_truth": "https://trello.com/c/nCJTOytG",
     "replaces": "Registration portion of UC-1 to UC-13",
     "status": "Approved for build. User-facing copy pending legal review.",
+    "changelog_1_3_0": "2026-10-05: the trial starts with the first journey, not the first case (DEC-01). D-03, D-05, the onboarding sequence, copy.trial_summary, copy.trial_checkbox, and the trial rules and criteria use 'first journey'. Adds decisions D-2026-10-05-R1, L1, and S1.",
     "instructions_for_claude_code": [
       "Compare the existing registration code against every use case below and revise it to match. Report any use case the current code already satisfies, partially satisfies, or does not implement.",
       "Treat the data_requirements section as the target shape. Adapt names to the existing schema and migrations rather than duplicating tables that already serve the same purpose.",
@@ -53,7 +54,7 @@
     {
       "id": "D-03",
       "topic": "Trial start",
-      "decision": "The 28-day clock starts when the user creates their first case, not at account creation."
+      "decision": "The 28-day clock starts when the user selects Start journey on their first journey (DEC-01, 2026-09-25), not at account creation or when a draft is saved."
     },
     {
       "id": "D-04",
@@ -63,7 +64,7 @@
     {
       "id": "D-05",
       "topic": "Trial end",
-      "decision": "On day 29, counted from first case creation, the account becomes read-only. No data is deleted and nothing is charged. The user can still view records, subscribe, or delete the account."
+      "decision": "On day 29, counted from the start of the first journey plus any care rest (DEC-26-01), the account becomes read-only. No data is deleted and nothing is charged. The user can still view records, subscribe, or delete the account."
     },
     {
       "id": "D-06",
@@ -122,7 +123,7 @@
     "UC-REG-09 AI guide acknowledgment",
     "UC-REG-11 Preferred name",
     "UC-REG-12 Personality selection",
-    "Hand-off to case creation (trial clock starts when the first case is saved)"
+    "Hand-off to case creation (trial clock starts when the first journey starts)"
   ],
 
   "copy": {
@@ -135,8 +136,8 @@
     "age_under_18": "Cairn is built for adults handling these tasks. If you're helping a family member, they can create an account.",
     "privacy_terms_summary": "Your privacy matters, especially right now. Cairn never uses your information, or information about the person who died, for marketing or advertising. We do not sell it or share it for ads. We use it only to help you with the steps in front of you. You can delete your account and your information at any time from Settings.",
     "privacy_terms_checkbox": "I have read and agree to the Privacy Policy and Terms of Use.",
-    "trial_summary": "Cairn is free for 28 days, and we will not ask for a card. Your 28 days begin when you start your first case, so nothing counts down while you get settled. After 28 days, a subscription is needed to keep adding and updating your tasks. If you do not subscribe, your account becomes read-only on day 29. Nothing is deleted and nothing is charged. We will remind you before your free time ends.",
-    "trial_checkbox": "I understand that 28 days after I start my first case, I will need a subscription to keep using Cairn fully.",
+    "trial_summary": "Cairn is free for 28 days, and we will not ask for a card. Your 28 days begin when you start your first journey, so nothing counts down while you get settled. Once they begin, they keep counting even if you pause. After 28 days, a subscription is needed to keep adding and updating your tasks. If you do not subscribe, your account becomes read-only on day 29. Nothing is deleted and nothing is charged. You can always close, download, or delete your information for free. We will remind you in Cairn before your free time ends, and outside Cairn only in the way you choose when you start your journey.",
+    "trial_checkbox": "I understand that 28 days after I start my first journey, I will need a subscription to keep using Cairn fully.",
     "ai_notice": "Before we begin, an important notice. Cairn is an artificial intelligence (AI) guide. It is not a human. It is not an attorney and cannot give legal advice. It is not a therapist, counselor, or medical professional. Cairn helps you organize the steps after a death and points you to official instructions, and it can make mistakes. Whenever your situation calls for an attorney, a therapist, or crisis support, Cairn will always tell you and point you to one. If you are in crisis, you can call or text 988, or chat at 988lifeline.org, any time.",
     "ai_notice_legal": "This notice is provided consistent with the disclosure requirements of California Senate Bill 243 (2025), which requires that you be told clearly that you are interacting with an artificially generated assistant and not a human.",
     "ai_checkbox": "I understand Cairn is an AI guide, not a human, attorney, or therapist, and is not a substitute for professional advice.",
@@ -169,12 +170,12 @@
         "age_confirmed_at": "timestamp, nullable",
         "onboarding_step": "enum tracking the last completed step, used by UC-REG-13",
         "status": "enum: pending_onboarding | active_no_case | trial_active | read_only | subscribed | pending_deletion",
-        "trial_started_at": "timestamp, nullable. Set once, when the first case is created. Never reset.",
+        "trial_started_at": "timestamp, nullable. Set once, when the first journey starts. Never reset.",
         "trial_ends_at": "timestamp, nullable. trial_started_at plus 28 days.",
         "created_at": "timestamp"
       },
       "rules": [
-        "trial_started_at is written in the same transaction that creates the account's first case, and only if it is null.",
+        "trial_started_at is written in the same transaction that starts the account's first journey, and only if it is null.",
         "Account is read-only when status is not subscribed and current time is at or after trial_ends_at.",
         "Display trial_end_date in the user's local time zone.",
         "Read-only means cases and tasks can be viewed but not created or edited. Account deletion and subscription remain available."
@@ -378,10 +379,10 @@
       "postconditions": ["trial_terms consent recorded. trial_started_at remains null."],
       "acceptance_criteria": [
         "No payment method is requested anywhere in signup.",
-        "trial_started_at is set only when the first case is created, in the same transaction.",
+        "trial_started_at is set only when the first journey starts, in the same transaction.",
         "trial_ends_at equals trial_started_at plus 28 days.",
         "Creating a second case never changes trial_started_at.",
-        "copy.case_created_trial_start is shown when the first case is saved, with the end date in the user's local time zone.",
+        "The confirmation shown when the first journey starts gives the end date in the user's local time zone.",
         "Reminders fire at day 21 and day 27 using copy.trial_reminder_day_21 and copy.trial_reminder_day_27.",
         "At or after trial_ends_at without a subscription, status becomes read_only and copy.read_only_banner is shown. No data is deleted and nothing is charged.",
         "The later subscription screen shows price, renewal term, what is included, and how to cancel before purchase."
@@ -489,7 +490,7 @@
       "postconditions": ["User continues from where they left off."],
       "acceptance_criteria": [
         "Acknowledgments are not repeated unless the version changed.",
-        "No free days are used before the first case is created."
+        "No free days are used before the first journey starts."
       ],
       "legal_review": ["Set the cleanup period for accounts that complete signup but never create a case."]
     },

@@ -24,7 +24,7 @@ New tests: `api/tests/test_account_creation_gaps.py` and `api/tests/test_twilio_
 | UC-REG-05 Account exists | Partial | Done | Two accounts that both have cases still go to support. Linking rules confirmed (D-2026-10-05-L1) |
 | UC-REG-06 Age | Removed | Removed | By product decision. Departs from the spec [LEGAL REVIEW REQUIRED] |
 | UC-REG-07 Privacy and Terms | Met | Done | Legal review items |
-| UC-REG-08 Free trial | Partial | Done, Open | Subscription purchase and billing. `trial_checkbox` still says "case" |
+| UC-REG-08 Free trial | Partial | Done, Open | Subscription purchase and billing. `trial_checkbox` now says "first journey" |
 | UC-REG-09 AI notice | Met | Done, Client | AI label in every chat view (client). Legal review |
 | UC-REG-10 Decline | Partial | Done | Deleted after 90 days (D-2026-10-05-R1). Add it to the retention schedule in CAIRN-POL-PRIV-01 |
 | UC-REG-11 Preferred name | Met | Done | |
@@ -93,10 +93,11 @@ Confirmed by the product owner on 2026-10-05:
 2. **Unfinished sign-ups are deleted after 90 days** (D-2026-10-05-R1, UC-REG-10). Built as the job's default. Add it to the retention schedule in CAIRN-POL-PRIV-01.
 3. **Linking rules are right for the MVP** (D-2026-10-05-L1): one sign-in per method, so at most three in all. The account email stays the one from the original sign-in, and only added methods can be removed.
 4. **A death by suicide is a loss, not a crisis** (D-2026-10-05-S1). Naming one during sign-up or case creation doesn't pause sign-up or start the crisis plan. The user's own risk signals still do.
+5. **The trial says "first journey" everywhere.** `trial_checkbox` now reads "I understand that 28 days after I start my first journey, I will need a subscription to keep using Cairn fully." The copy file is 1.4.0 and the registration spec is 1.3.0. Because the text changed, everyone who agreed to the old trial terms is asked once more on next sign-in (UC-REG-13).
+6. **The Twilio SendGrid key is set.** `TWILIO_SENDGRID_API_KEY`, `TWILIO_ACCOUNT_SID`, and `TWILIO_AUTH_TOKEN` are organization secrets in `cairnguide`, which the Twilio integration workflow reads the same way as repository secrets.
 
 Still open:
 
-1. **Email needs a SendGrid API key.** The Twilio Account SID and Auth Token cover text messages and Verify, but Twilio SendGrid accepts only its own API key. Add `TWILIO_SENDGRID_API_KEY` as a repository secret and a Worker secret.
+1. **The rest of the live email check's settings.** The email check also needs `CAIRN_EMAIL_FROM` (a sender SendGrid has verified) and `TWILIO_TEST_TO_EMAIL`. The Cloudflare jobs container needs the key too: `npx wrangler secret put TWILIO_SENDGRID_API_KEY`.
 2. **The retention period for accounts that finish sign-up but never create a case** (UC-REG-13). [LEGAL REVIEW REQUIRED]
 3. **The new linking copy** (`link_after_sign_in`, `sign_in_method_*`) is draft and needs product and legal review.
-4. **`trial_checkbox`** still says "after I start my first case". Card 47 now says "journey". The spec file and copy should be updated together.

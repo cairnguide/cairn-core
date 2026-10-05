@@ -513,9 +513,9 @@ Every email and text message Cairn sends goes through Twilio. The code is [`api/
 
 Locally, put them in `.env` (gitignored). On Cloudflare, use `wrangler secret put` ([step 6](#6-set-the-secrets)). Only the jobs container receives them, never the API container.
 
-### GitHub repository secrets
+### GitHub secrets
 
-The [Twilio integration](.github/workflows/twilio-integration.yml) workflow reads these from **Settings > Secrets and variables > Actions > Repository secrets**:
+The [Twilio integration](.github/workflows/twilio-integration.yml) workflow reads these as GitHub Actions secrets. Repository secrets (**Settings > Secrets and variables > Actions**) and `cairnguide` organization secrets shared with this repository both work. `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_SENDGRID_API_KEY` are set as organization secrets.
 
 | Secret | Needed for |
 |---|---|

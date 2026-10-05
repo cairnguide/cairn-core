@@ -37,7 +37,7 @@ EMAIL_BODY = "This is a test of Cairn's email delivery through Twilio SendGrid. 
 def _need(*names: str) -> dict[str, str]:
     missing = [n for n in names if not os.environ.get(n)]
     if missing:
-        pytest.fail(f"Set {', '.join(missing)} (GitHub repository secrets) for this check.")
+        pytest.fail(f"Set {', '.join(missing)} (GitHub repository or organization secrets) for this check.")
     return {n: os.environ[n] for n in names}
 
 
