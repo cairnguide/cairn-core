@@ -9,12 +9,14 @@ functions, and triggers that held it until 2026-10-01. The rules:
   preferences) is reached only through a case id that passed that check. A case
   that isn't visible looks exactly like one that doesn't exist.
 * Writes to case data need an owner or co_executor membership, and also:
-  an account that can write (onboarding complete, not read-only), or for a
-  draft, an account that can edit drafts (read-only included, UC-CASE-18).
+  an account that can write (setup complete, adult confirmed, access full), or
+  for a draft, an account that can edit drafts (read-only included, UC-CASE-18).
   Deleting and notification preferences never check either (D-2026-09-25-F1).
-* Account fields the user can't set (onboarding_step, status, the trial) are
-  written only by advance_onboarding and start_journey. trial_started_at is
-  written once, with a filter that only matches while it is unset.
+* Account fields the user can't set (onboarding_step, status, access, the
+  trial, the subscription) are written only by the methods that own them:
+  advance_onboarding, start_journey, the break methods, and the Stripe event
+  methods. trial_started_at is written once, with a filter that only matches
+  while it is unset. No break ever changes a subscription field (BRK-D-08).
 * consents and audit_events are append-only. There is no method that updates
   them, and only account deletion removes consents.
 * Values are checked here first so the user gets a plain answer. The collection
@@ -43,22 +45,31 @@ from .errors import UNAUTHORIZED, ApiError, RuleViolation
 TRIAL = timedelta(hours=672)  # exactly 28 days (D-02), in hours so daylight saving time never shifts it
 WRITE_ROLES = ("owner", "co_executor")
 OPEN_TASK_STATUSES = ("not_started", "check_on_this", "in_progress", "not_today")
-WRITABLE_STATUSES = ("active_no_case", "trial_active", "subscribed")
-STEPS = ("account_created", "privacy_terms_accepted", "trial_terms_accepted", "ai_notice_accepted",
-         "preferred_name_saved", "complete")
+STEPS = ("account_created", "adult_confirmed", "privacy_terms_accepted", "trial_terms_accepted",
+         "ai_notice_accepted", "preferred_name_saved", "voice_saved", "complete")
 CONSENT_FOR_STEP = {"privacy_terms_accepted": "privacy_terms", "trial_terms_accepted": "trial_terms",
                     "ai_notice_accepted": "ai_notice"}
 # The account fields the app may set directly (Settings and onboarding screens).
-ACCOUNT_FIELDS = {"preferred_name", "name_pronunciation", "name_prefill", "voice", "time_zone"}
+ACCOUNT_FIELDS = {"preferred_name", "name_pronunciation", "voice", "time_zone"}
 # The case fields the app may set directly. status and the journey start belong to start_journey,
-# deletion_requested_at to request_case_deletion. journey_template_key can change on an active case
-# when an answer changes the base path (UC-CASE-09).
-CASE_FIELDS = {"tasks_paused_until", "purge_after", "last_intake_step", "death_not_yet_occurred", "skip_explainers",
+# deletion_requested_at to request_case_deletion, tasks_paused_until to the break methods (BRK-D-06).
+# journey_template_key can change on an active case when an answer changes the base path (UC-CASE-09).
+CASE_FIELDS = {"purge_after", "last_intake_step", "death_not_yet_occurred", "skip_explainers",
                "name_fallback", "attorney_triggers", "shown_notices", "journey_template_key",
                "loss_survivor_resources", "secure_now_first"}
-# "Until I come back" (crisis plan rest choices): a rest with no end the user picked. The far date only means
-# "until the user returns". tasks_paused_until is reused for every rest.
+# "Until I come back" (UC-BRK-05): a break with no end. users.break_until stays null. Each active case's
+# tasks_paused_until gets this far date, which only means "until the user returns", so existing reads still work.
 REST_UNTIL_RETURN = timedelta(days=365)
+# The subscription fields only Stripe events and the subscription routes change (cairn-subscription-use-cases-v33).
+SUBSCRIPTION_FIELDS = {"subscription_status", "access", "stripe_customer_id", "stripe_subscription_id",
+                       "stripe_checkout_session_id", "current_period_end", "cancel_at_period_end", "billing_notice",
+                       "subscribed_at", "annual_reminder_due_at", "cancel_requested_at"}
+# Notification choices for the whole account (account D-13). in_app is always on.
+NOTIFICATION_FIELDS = {"channels", "frequency", "quiet_hours_start", "quiet_hours_end", "browser_push_endpoint",
+                       "due_date_lead", "inactivity_after", "journey_confirmed_at"}
+DEFAULT_NOTIFICATIONS = {"channels": ["email", "in_app"], "frequency": "due_only", "quiet_hours_start": "21:00",
+                         "quiet_hours_end": "08:00", "browser_push_endpoint": None, "due_date_lead": "three_days",
+                         "inactivity_after": "off", "journey_confirmed_at": None}
 JURISDICTIONS = frozenset(
     "AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR "
     "PA RI SC SD TN TX UT VT VA WA WV WI WY DC PR GU VI AS MP".split())
@@ -93,15 +104,27 @@ def local_date(now: datetime, time_zone: str | None) -> date:
     return now.astimezone(ZoneInfo(time_zone or "UTC")).date()
 
 
-def effective_account_status(status: str, trial_ends_at: datetime | None, now: datetime,
-                             trial_clock_paused_at: datetime | None = None) -> str:
-    """read_only is derived from trial_ends_at, so enforcement never waits for the expire_trials job.
-    While a care rest has stopped the free days, the account never becomes read-only (DEC-26-01)."""
-    if status in ("subscribed", "pending_deletion", "pending_onboarding"):
-        return status
-    if trial_ends_at is not None and now >= trial_ends_at and trial_clock_paused_at is None:
-        return "read_only"
-    return status
+def free_days_running(u: dict, now: datetime) -> bool:
+    """The 28 free days have started and not ended. A care rest that stopped them keeps them running."""
+    if u.get("trial_started_at") is None:
+        return False
+    return u.get("trial_clock_paused_at") is not None or now < u["trial_ends_at"]
+
+
+def effective_access(u: dict, now: datetime) -> str:
+    """D-19. read_only once the free days have ended, unless a subscription is active. Derived on every read, so
+    enforcement never waits for the expire_trials job. While a care rest has stopped the free days, the account
+    never becomes read-only (DEC-26-01). Before the first journey there are no free days to end."""
+    if u.get("subscription_status") == "active":
+        return "full"
+    if u.get("trial_started_at") is None:
+        return "read_only" if u.get("subscription_status") == "lapsed" else "full"
+    return "full" if free_days_running(u, now) else "read_only"
+
+
+def on_break(u: dict, now: datetime) -> bool:
+    """A break is running (UC-BRK-08): started, and with no end or an end still ahead."""
+    return u.get("break_started_at") is not None and (u.get("break_until") is None or u["break_until"] > now)
 
 
 def denied() -> RuleViolation:
@@ -119,12 +142,19 @@ class _Bound:
 
 
 def delete_case(db, cs, case_id: UUID) -> bool:
-    """Deletes a case and everything in it. Audit rows are kept. Shared with the jobs (maintenance.py)."""
-    deleted = db.cases.delete_one({"_id": case_id}, session=cs).deleted_count
-    db.notification_preferences.delete_one({"_id": case_id}, session=cs)
+    """Deletes a case and everything in it. Audit rows are kept. Shared with the jobs (maintenance.py).
+    A check-in about this case is cancelled (crisis plan follow_up rules). When the owner has no active journey
+    left, an unsent break-ending notice is cancelled too (UC-BRK-09)."""
+    case = db.cases.find_one_and_delete({"_id": case_id}, {"created_by": 1}, session=cs)
     for name in CASE_SCOPED:
         db[name].delete_many({"case_id": case_id}, session=cs)
-    return bool(deleted)
+    db.users.update_many({"check_in_case_id": case_id}, {"$set": {
+        "check_in_at": None, "check_in_case_id": None, "check_in_sent_at": None}}, session=cs)
+    if case is not None and not db.cases.find_one({"created_by": case["created_by"], "status": {"$ne": "draft"}},
+                                                  {"_id": 1}, session=cs):
+        db.users.update_one({"_id": case["created_by"], "break_notice_sent_at": None},
+                            {"$set": {"break_notice_at": None}}, session=cs)
+    return case is not None
 
 
 def audit_doc(actor_id, action: str, case_id=None, object_type=None, object_id=None, *, now: datetime) -> dict:
@@ -236,15 +266,45 @@ def intake_value_valid(key: str, v) -> bool:
     return False
 
 
-def notification_choice_valid(channels: list, reasons: list, lead_days, inactivity_days) -> bool:
-    """in_app_only stands alone with no reasons. Any other channel needs a reason, and each reason its timing."""
-    return (len(channels) >= 1 and set(channels) <= {"email", "push", "in_app_only"}
+_HH_MM = frozenset(f"{h:02d}:{m:02d}" for h in range(24) for m in range(60))
+
+
+def notification_values_valid(v: dict) -> bool:
+    """Account notification choices (account D-13): in_app always, no sms, a push endpoint only with browser."""
+    channels = v["channels"]
+    return (isinstance(channels, list) and "in_app" in channels and set(channels) <= {"email", "in_app", "browser"}
             and len(set(channels)) == len(channels)
-            and set(reasons) <= {"due_date_upcoming", "inactivity"} and len(set(reasons)) == len(reasons)
-            and ((len(channels) == 1 and not reasons) if "in_app_only" in channels else len(reasons) >= 1)
-            and (lead_days is not None) == ("due_date_upcoming" in reasons)
-            and (inactivity_days is not None) == ("inactivity" in reasons)
-            and lead_days in (None, 1, 3, 7) and inactivity_days in (None, 3, 7, 14))
+            and v["frequency"] in ("due_only", "daily", "weekly", "none")
+            and v["quiet_hours_start"] in _HH_MM and v["quiet_hours_end"] in _HH_MM
+            and v["due_date_lead"] in ("day_before", "three_days", "one_week")
+            and v["inactivity_after"] in ("off", "three_days", "one_week", "two_weeks")
+            and (v["browser_push_endpoint"] is None
+                 or ("browser" in channels and isinstance(v["browser_push_endpoint"], str)
+                     and v["browser_push_endpoint"].startswith("https://")
+                     and 12 <= len(v["browser_push_endpoint"]) <= 2048)))
+
+
+def session_activity(db, idp_subject: str, issued_at: datetime | None, now: datetime, *, timeout: timedelta,
+                     every: timedelta) -> bool:
+    """D-20 and UC-REG-19. False when the token belongs to a session that went quiet for longer than timeout: it was
+    issued before the quiet stretch ended, so the user must sign in again. Otherwise records the activity, at most
+    once per every, outside the request's transaction so it never conflicts with it. A token issued after the
+    quiet stretch is a new sign-in. Without an issue time (tests, development) there is nothing to compare."""
+    users = db.users
+    u = users.find_one(subject_filter(idp_subject), {"last_active_at": 1})
+    if u is None:
+        return True
+    last = u.get("last_active_at")
+    if last is not None and issued_at is not None and now - last > timeout and issued_at <= last + timeout:
+        return False
+    if last is None or now - last >= every:
+        users.update_one({"_id": u["_id"]}, {"$set": {"last_active_at": now}})
+    return True
+
+
+def end_session(db, idp_subject: str, quiet_since: datetime) -> None:
+    """UC-REG-19 Sign out: the session counts as quiet since quiet_since, so the token that signed out stops working."""
+    db.users.update_one(subject_filter(idp_subject), {"$set": {"last_active_at": quiet_since}})
 
 
 # ------------------------------------------------------------------ the session
@@ -304,7 +364,7 @@ class Session:
         return next(i["sign_in_method"] for i in row["linked_identities"] if i["email_lower"] == lower)
 
     def create_account(self, idp_subject: str, email: str, sign_in_method: str,
-                       name_prefill: str | None = None, time_zone: str | None = None) -> UUID:
+                       time_zone: str | None = None) -> UUID:
         """Creates the account in pending_onboarding, or returns the existing one for the same subject.
         No legal name is collected. A provider-shared name is kept only as a pre-fill (UC-REG-02 to 04)."""
         users = self._c("users")
@@ -318,10 +378,18 @@ class Session:
         users.insert_one({
             "_id": uid, "idp_subject": idp_subject, "email": email, "email_lower": email.lower(),
             "sign_in_method": sign_in_method, "preferred_name": None, "name_pronunciation": None,
-            "name_prefill": name_prefill, "voice": "steady_direct", "time_zone": time_zone,
-            "onboarding_step": "account_created", "status": "pending_onboarding",
+            "name_prefill": None, "adult_attested": None, "adult_attested_at": None,
+            "voice": "steady_direct", "time_zone": time_zone, "onboarding_step": "account_created",
+            "status": "pending_onboarding", "access": "full", "subscription_status": "none",
             "trial_started_at": None, "trial_ends_at": None, "trial_clock_paused_at": None,
-            "ai_reminder_shown_at": None, "ai_reminder_shown_on": None, "created_at": self.now})
+            "ai_reminder_shown_at": None, "ai_reminder_shown_on": None, "last_active_at": self.now,
+            "check_in_at": None, "check_in_case_id": None, "check_in_by_email": False, "check_in_sent_at": None,
+            "break_started_at": None, "break_until": None, "break_notice_at": None, "break_notice_sent_at": None,
+            "subscribe_prompt_shown_on": None, "price_notice_sent_for": None, "stripe_customer_id": None,
+            "stripe_subscription_id": None,
+            "stripe_checkout_session_id": None, "current_period_end": None, "cancel_at_period_end": False,
+            "billing_notice": "none", "subscribed_at": None, "annual_reminder_due_at": None,
+            "cancel_requested_at": None, "created_at": self.now})
         return uid
 
     def linked_identities(self) -> list[dict]:
@@ -383,29 +451,54 @@ class Session:
             return None
         return self._c("users").find_one({"_id": self.user_id})
 
+    ACCOUNT_OUT = ("email", "sign_in_method", "preferred_name", "name_pronunciation", "name_prefill",
+                   "adult_attested", "adult_attested_at", "voice", "time_zone", "onboarding_step", "status",
+                   "subscription_status", "trial_started_at", "trial_ends_at", "trial_clock_paused_at",
+                   "ai_reminder_shown_at", "ai_reminder_shown_on", "check_in_at", "check_in_case_id",
+                   "check_in_sent_at", "break_started_at", "break_until", "break_notice_at", "break_notice_sent_at",
+                   "subscribe_prompt_shown_on", "stripe_customer_id", "stripe_subscription_id",
+                   "stripe_checkout_session_id", "current_period_end", "cancel_at_period_end", "billing_notice",
+                   "subscribed_at", "annual_reminder_due_at", "cancel_requested_at", "created_at")
+
     def load_account(self) -> dict | None:
-        """The caller's account, with status as the effective status (read_only after the trial)."""
+        """The caller's account. access is the effective access (read_only once the free days end, D-19)."""
         u = self._user()
         if u is None:
             return None
-        out = {k: u.get(k) for k in ("email", "sign_in_method", "preferred_name", "name_pronunciation",
-                                     "name_prefill", "voice", "time_zone", "onboarding_step", "trial_started_at",
-                                     "trial_ends_at", "trial_clock_paused_at", "ai_reminder_shown_at",
-                                     "ai_reminder_shown_on", "created_at")}
+        out = {k: u.get(k) for k in self.ACCOUNT_OUT}
         out["linked_sign_in_methods"] = [i["sign_in_method"] for i in u.get("linked_identities", [])]
-        return {**out, "id": u["_id"], "stored_status": u["status"],
-                "status": effective_account_status(u["status"], u["trial_ends_at"], self.now,
-                                                   u.get("trial_clock_paused_at"))}
+        return {**out, "id": u["_id"], "stored_access": u.get("access"), "access": effective_access(u, self.now),
+                "free_days_running": free_days_running(u, self.now), "on_break": on_break(u, self.now)}
+
+    @staticmethod
+    def _setup_done(a: dict | None) -> bool:
+        return bool(a) and a["onboarding_step"] == "complete" and a["status"] == "setup_complete" and bool(
+            a["adult_attested"])
 
     def account_can_write(self) -> bool:
-        """Onboarding complete and not read-only (D-05). Deleting never depends on this."""
+        """Setup complete, adult confirmed, and access full (D-05, D-19). Deleting never depends on this."""
         a = self.load_account()
-        return bool(a) and a["onboarding_step"] == "complete" and a["status"] in WRITABLE_STATUSES
+        return self._setup_done(a) and a["access"] == "full"
 
     def account_can_edit_drafts(self) -> bool:
         """UC-CASE-18. A read-only account can still create and edit drafts."""
-        a = self.load_account()
-        return bool(a) and a["onboarding_step"] == "complete" and a["status"] in (*WRITABLE_STATUSES, "read_only")
+        return self._setup_done(self.load_account())
+
+    def record_adult_answer(self, adult: bool) -> bool:
+        """UC-REG-06. Yes or no, with the time. Never a birthdate or an age. A yes moves onboarding past the
+        question. A no stops onboarding: the account stays pending_onboarding, nothing more is collected, and
+        purge_stale_accounts deletes it after the pending-account period. Returns whether the answer was saved.
+        Once given, the answer is not changed here (OPEN-09)."""
+        uid = self.require_user()
+        users = self._c("users")
+        u = users.find_one({"_id": uid}, {"adult_attested": 1, "onboarding_step": 1})
+        if u.get("adult_attested") is False:
+            return False
+        if u.get("adult_attested") is not True:
+            users.update_one({"_id": uid}, {"$set": {"adult_attested": adult, "adult_attested_at": self.now}})
+        if adult and u["onboarding_step"] == "account_created":
+            self.advance_onboarding("adult_confirmed")
+        return True
 
     def update_account(self, **fields) -> None:
         """Settings and onboarding screens. Only ACCOUNT_FIELDS, never onboarding, status, or the trial."""
@@ -451,13 +544,17 @@ class Session:
         if to in CONSENT_FOR_STEP and not self._c("consents").find_one(
                 {"user_id": self.user_id, "purpose": CONSENT_FOR_STEP[to]}, {"_id": 1}):
             raise RuleViolation("prerequisite")
+        if to == "adult_confirmed" and u.get("adult_attested") is not True:
+            raise RuleViolation("prerequisite")
         if to == "preferred_name_saved" and u.get("preferred_name") is None:
+            raise RuleViolation("prerequisite")
+        if to == "complete" and self.notification_preferences() is None:
             raise RuleViolation("prerequisite")
         changes: dict = {"onboarding_step": to}
         if to == "preferred_name_saved":
             changes["name_prefill"] = None
         if to == "complete" and u["status"] == "pending_onboarding":
-            changes["status"] = "active_no_case"
+            changes["status"] = "setup_complete"
         # The filter on the current step serializes two requests racing on the same account.
         if not self._c("users").update_one({"_id": self.user_id, "onboarding_step": u["onboarding_step"]},
                                            {"$set": changes}).matched_count:
@@ -474,11 +571,13 @@ class Session:
             {"user_id": self.user_id}, {"_id": 0, "kind": 1, "due_at": 1, "email_sent_at": 1}, sort=[("due_at", 1)]))
 
     def delete_my_account(self) -> None:
-        """UC-REG-15. Everything goes now, in this transaction: every case the user created in any status
-        (holds included) with all of its data, their memberships, consents, reminders, and the account.
-        Pending case confirmations are dropped so exactly one confirmation goes out, and it has no user id.
-        The identity provider cleanup is queued (Apple token revocation, TN3194). Audit rows keep ids only.
-        Never checks whether the account can write (D-2026-09-25-F1)."""
+        """UC-REG-15 and UC-ACCT-01. Everything goes now, in this transaction: every case the user created in any
+        status (holds included) with all of its data, their memberships, consents, reminders, notification
+        choices and the browser push endpoint, any scheduled check-in or break notice (they live on the account),
+        and the account. Pending confirmations are dropped so exactly one confirmation goes out, and it has no
+        user id. The identity provider cleanup is queued (Apple token revocation, TN3194). Audit rows keep ids
+        only. Never checks whether the account can write (D-2026-09-25-F1). A Stripe subscription is cancelled
+        by the router before this runs (UC-SUB-16)."""
         u = self._user()
         if u is None:
             raise denied()
@@ -493,6 +592,7 @@ class Session:
         self._c("identity_deletion_requests").insert_many(identity_deletions(u, self.now))
         self._c("consents").delete_many({"user_id": uid})
         self._c("trial_reminders").delete_many({"user_id": uid})
+        self._c("notification_preferences").delete_one({"_id": uid})
         self._c("users").delete_one({"_id": uid})
         self._c("audit_events").insert_one(audit_doc(uid, "account_deleted", None, "user", uid, now=self.now))
 
@@ -564,8 +664,8 @@ class Session:
             "journey_template_version": None, "journey_started_at": None, "journey_started_on": None,
             "last_intake_step": None, "last_activity_at": self.now, "death_not_yet_occurred": False,
             "skip_explainers": False, "name_fallback": "your_loved_one", "attorney_triggers": [],
-            "shown_notices": [], "tasks_paused_until": None, "deletion_requested_at": None, "check_in_at": None,
-            "loss_survivor_resources": False, "secure_now_first": False})
+            "shown_notices": [], "tasks_paused_until": None,
+            "deletion_requested_at": None, "loss_survivor_resources": False, "secure_now_first": False})
         return case_id
 
     def load_case(self, case_id: UUID) -> dict | None:
@@ -632,17 +732,19 @@ class Session:
             raise RuleViolation("prerequisite")
 
         ends = self.now + TRIAL
-        started = self._c("users").update_one({"_id": uid, "trial_started_at": None}, [{"$set": {
-            "trial_started_at": self.now, "trial_ends_at": ends,
-            "status": {"$cond": [{"$eq": ["$status", "active_no_case"]}, "trial_active", "$status"]}}}])
+        started = self._c("users").update_one({"_id": uid, "trial_started_at": None}, {"$set": {
+            "trial_started_at": self.now, "trial_ends_at": ends}})
         trial_started = bool(started.modified_count)
         if trial_started:
+            # Account D-14: one note, a week before the free days end, by email and in Cairn.
             remind = timedelta(days=self.setting_int("trial_reminder_days_before"))
-            self._c("trial_reminders").insert_many([
-                {"_id": uuid.uuid4(), "user_id": uid, "kind": kind, "due_at": due, "email_sent_at": None}
-                for kind, due in (("trial_day_21", self.now + timedelta(hours=504)),
-                                  ("trial_day_27", self.now + timedelta(hours=648)),
-                                  ("trial_ends_soon", ends - remind))])
+            self._c("trial_reminders").insert_one({"_id": uuid.uuid4(), "user_id": uid, "kind": "trial_ends_soon",
+                                                   "due_at": ends - remind, "email_sent_at": None,
+                                                   "skipped_at": None})
+        if on_break(user, self.now):
+            # A journey started during a break rests with the others (BRK-D-06).
+            self._c("cases").update_one({"_id": case_id}, {"$set": {"tasks_paused_until": self._paused_until(
+                user["break_until"])}})
         self.audit("journey_started", case_id, "case", case_id)
         return trial_started
 
@@ -679,7 +781,7 @@ class Session:
         self.audit("case_deletion_cancelled", case_id, "case", case_id)
         return True
 
-    # -------------------------------------------------------------- rests and the free days (crisis plan, DEC-26-01)
+    # -------------------------------------------------------------- breaks and the free days (UC-BRK, DEC-26-01)
 
     def _rest_member(self, case_id: UUID) -> dict:
         """A rest is a safety feature, so it needs a membership and nothing else: never onboarding,
@@ -689,43 +791,74 @@ class Session:
             raise denied()
         return case
 
-    def begin_rest(self, case_id: UUID, until: datetime, *, care: bool) -> bool:
-        """Steps back from tasks until the given time. A care rest (level 2 choice, or the automatic pause at
-        levels 3 and 4) on an active journey also stops the free days. A normal rest never does. Returns True
-        when this call stopped the free days. The reason is never stored."""
-        case = self._rest_member(case_id)
-        self._c("cases").update_one({"_id": case_id}, {"$set": {"tasks_paused_until": until}})
-        if not care or case["status"] == "draft":
-            return False  # a draft has no trial clock: a care rest only stops questions (UC-CASE-14)
+    def _paused_until(self, break_until: datetime | None) -> datetime:
+        return break_until or self.now + REST_UNTIL_RETURN
+
+    def _pause_active_cases(self, uid: UUID, until: datetime | None) -> None:
+        """BRK-D-06. Every active journey rests with the person. Drafts have no tasks to pause."""
+        self._c("cases").update_many({"created_by": uid, "status": {"$ne": "draft"}},
+                                     {"$set": {"tasks_paused_until": until}})
+
+    def begin_break(self, until: datetime | None, *, care: bool, notice_at: datetime | None = None) -> bool:
+        """UC-BRK-05 and UC-BRK-07. A break on the account: break_until is None for Until I come back. Every active
+        journey's tasks_paused_until follows it. A care rest (levels 2 to 4) also stops the free days, only while
+        they are running (DEC-26-01). A normal rest never does. Starting a break during one keeps the original
+        start (UC-BRK-11). notice_at is the break-ending notice time, or None (UC-BRK-09, BRK-D-03). Never touches
+        a subscription field (BRK-D-08). The reason and the kind of break are never stored. Returns True when this
+        call stopped the free days."""
+        uid = self.require_user()
         u = self._user()
-        if (u["status"] in ("subscribed", "pending_deletion") or u["trial_started_at"] is None
-                or u.get("trial_clock_paused_at") is not None or self.now >= u["trial_ends_at"]):
+        continuing = on_break(u, self.now)
+        started = u["break_started_at"] if continuing else self.now
+        if until is not None and until <= started:
+            raise RuleViolation("invalid_parameter")
+        # A changed break never sends a second notice (UC-BRK-11).
+        sent = u["break_notice_sent_at"] if continuing else None
+        self._c("users").update_one({"_id": uid}, {"$set": {
+            "break_started_at": started, "break_until": until, "break_notice_at": None if sent else notice_at,
+            "break_notice_sent_at": sent}})
+        self._pause_active_cases(uid, self._paused_until(until))
+        if not care or u["trial_started_at"] is None or u.get("trial_clock_paused_at") is not None:
             return False
-        return bool(self._c("users").update_one({"_id": u["_id"], "trial_clock_paused_at": None},
+        if not self._c("cases").find_one({"created_by": uid, "status": {"$ne": "draft"}}, {"_id": 1}):
+            return False  # no journey yet: a care rest only stops the questions (UC-CASE-14)
+        if not free_days_running(u, self.now):
+            return False  # a subscriber whose free days have ended: nothing about billing changes (BRK-D-08)
+        return bool(self._c("users").update_one({"_id": uid, "trial_clock_paused_at": None},
                                                 {"$set": {"trial_clock_paused_at": self.now}}).modified_count)
 
-    def end_rest(self, case_id: UUID) -> timedelta | None:
-        """The user came back to tasks. Clears the rest and, when no other journey is resting, starts the free
-        days again. Returns how long they were paused, or None when they weren't."""
-        self._rest_member(case_id)
-        self._c("cases").update_one({"_id": case_id}, {"$set": {"tasks_paused_until": None,
-                                                                "last_activity_at": self.now}})
+    def end_break(self) -> timedelta | None:
+        """UC-BRK-10. The user is back. Clears the break and every journey's tasks_paused_until, cancels an unsent
+        notice, and starts the free days again (settle_trial_clock). Returns how long they were paused, or None."""
+        uid = self.require_user()
+        self._c("users").update_one({"_id": uid}, {"$set": {
+            "break_started_at": None, "break_until": None, "break_notice_at": None, "break_notice_sent_at": None}})
+        self._pause_active_cases(uid, None)
+        self._c("cases").update_many({"created_by": uid, "status": {"$ne": "draft"}},
+                                     {"$set": {"last_activity_at": self.now}})
         return self.settle_trial_clock()
 
+    def begin_rest(self, case_id: UUID, until: datetime, *, care: bool) -> bool:
+        """A rest started from a case (a level 3 or 4 pause, or a level 2 choice). Breaks are the account's, so
+        this checks the membership and then starts a break for the person."""
+        self._rest_member(case_id)
+        return self.begin_break(None if until - self.now >= REST_UNTIL_RETURN else until, care=care)
+
+    def end_rest(self, case_id: UUID) -> timedelta | None:
+        """The user came back to tasks from a case."""
+        self._rest_member(case_id)
+        return self.end_break()
+
     def settle_trial_clock(self) -> timedelta | None:
-        """Starts the free days again once no rest is running, and moves trial_ends_at (and any reminder not
-        yet sent) later by exactly the paused time. A rest that ended on its own ends at its end time."""
+        """Starts the free days again once no break is running, and moves trial_ends_at (and any note not yet
+        sent) later by exactly the paused time (AC-26-04). A break that ended on its own ends at its end time.
+        If the user subscribed early, the router moves the first charge date in Stripe (UC-SUB-06)."""
         u = self._user()
-        if u is None or u.get("trial_clock_paused_at") is None:
-            return None
-        rests = [c["tasks_paused_until"] for c in self._c("cases").find(
-            {"created_by": u["_id"], "status": {"$ne": "draft"}, "tasks_paused_until": {"$ne": None}},
-            {"tasks_paused_until": 1})]
-        if any(r > self.now for r in rests):
+        if u is None or u.get("trial_clock_paused_at") is None or on_break(u, self.now):
             return None
         paused_at = u["trial_clock_paused_at"]
-        ended = max([r for r in rests if r >= paused_at], default=self.now)
-        paused = max(ended - paused_at, timedelta(0))
+        ended = u["break_until"] if u.get("break_until") and u["break_until"] >= paused_at else self.now
+        paused = max(min(ended, self.now) - paused_at, timedelta(0))
         moved = self._c("users").update_one(
             {"_id": u["_id"], "trial_clock_paused_at": paused_at},
             {"$set": {"trial_clock_paused_at": None, "trial_ends_at": u["trial_ends_at"] + paused}})
@@ -734,7 +867,7 @@ class Session:
         if paused:
             # The app can't update reminders (only the job claims them), so an unsent one is replaced, later.
             reminders = self._c("trial_reminders")
-            for r in list(reminders.find({"user_id": u["_id"], "email_sent_at": None})):
+            for r in list(reminders.find({"user_id": u["_id"], "email_sent_at": None, "skipped_at": None})):
                 if reminders.delete_one({"_id": r["_id"], "email_sent_at": None}).deleted_count:
                     reminders.insert_one({**r, "due_at": r["due_at"] + paused})
         return paused
@@ -762,21 +895,26 @@ class Session:
 
     # -------------------------------------------------------------- check-in and the SB 243 count
 
-    def set_check_in(self, case_id: UUID, when: datetime) -> None:
-        """Only on an explicit yes to "Would it be okay if I checked in with you tomorrow?" (DEC-26-04)."""
-        self._rest_member(case_id)
-        self._c("cases").update_one({"_id": case_id}, {"$set": {"check_in_at": when}})
+    def set_check_in(self, when: datetime, case_id: UUID | None = None, *, by_email: bool = False) -> None:
+        """Only on an explicit yes to "Would it be okay if I checked in with you tomorrow?" (DEC-26-04). Stored on
+        the account, so it works during setup before any case exists (AC-26-12). case_id cancels it if that case
+        is deleted. by_email is the yes to email asked during setup before notification choices exist."""
+        uid = self.require_user()
+        if case_id is not None:
+            self._rest_member(case_id)
+        self._c("users").update_one({"_id": uid}, {"$set": {
+            "check_in_at": when, "check_in_case_id": case_id, "check_in_by_email": by_email,
+            "check_in_sent_at": None}})
 
-    def take_due_check_in(self, case_id: UUID) -> bool:
-        """A check-in that is due and not going by email shows once, the next time the user opens Cairn."""
-        case = self._c("cases").find_one({"_id": case_id, **self._visible()}, {"check_in_at": 1, "members": 1})
-        if case is None or case.get("check_in_at") is None or case["check_in_at"] > self.now:
+    def take_due_check_in(self) -> bool:
+        """A check-in that is due shows once, the next time the user opens Cairn, whether or not it also went by
+        email (in-app is always one of the channels). Showing it clears it."""
+        u = self._user()
+        if u is None or u.get("check_in_at") is None or u["check_in_at"] > self.now:
             return False
-        prefs = self._c("notification_preferences").find_one({"_id": case_id}, {"channels": 1})
-        if prefs and "email" in prefs["channels"]:
-            return False  # the jobs send it by email
-        return bool(self._c("cases").update_one({"_id": case_id, "check_in_at": case["check_in_at"]},
-                                                {"$set": {"check_in_at": None}}).modified_count)
+        return bool(self._c("users").update_one({"_id": u["_id"], "check_in_at": u["check_in_at"]}, {"$set": {
+            "check_in_at": None, "check_in_case_id": None, "check_in_by_email": False,
+            "check_in_sent_at": None}}).modified_count)
 
     def count_level_4_referral(self) -> None:
         """An anonymous monthly count for SB 243 reporting. No user, no case, no time of day."""
@@ -1042,47 +1180,117 @@ class Session:
                                                   {"_id": 0, "item_key": 1, "payload": 1, "updated_at": 1},
                                                   sort=[("item_key", 1)]))
 
-    # -------------------------------------------------------------- keeping in touch (UC-CASE-19, UC-CASE-20)
+    # -------------------------------------------------------------- keeping in touch (account D-13)
 
-    def notification_preferences(self, case_id: UUID) -> dict | None:
-        if self._c("cases").find_one({"_id": case_id, **self._visible()}, {"_id": 1}) is None:
+    def notification_preferences(self) -> dict | None:
+        """The account's notification choices, or None before UC-REG-15."""
+        if self.user_id is None:
             return None
-        row = self._c("notification_preferences").find_one({"_id": case_id})
-        return {**row, "case_id": row.pop("_id")} if row else None
+        return self._c("notification_preferences").find_one({"_id": self.user_id})
 
-    def save_notification_preferences(self, case_id: UUID, values: dict) -> None:
-        """Insert or replace one journey's choice. Always free: no write check on the account
-        (D-2026-09-25-F1). Owner or co_executor only."""
-        case = self._case(case_id)
-        if not self._member(case, WRITE_ROLES):
+    def save_notification_preferences(self, values: dict) -> dict:
+        """UC-REG-15, UC-REG-17, UC-CASE-19. Insert or change the account's choices. Always free: no write check
+        on the account, never gated on onboarding past the account existing (D-2026-09-25-F1). in_app is always
+        kept. A push endpoint is kept only while browser is chosen."""
+        uid = self.require_user()
+        if not set(values) <= NOTIFICATION_FIELDS:
             raise denied()
-        if not notification_choice_valid(values["channels"], values["reasons"], values["due_date_lead_days"],
-                                         values["inactivity_days"]):
+        current = self.notification_preferences() or DEFAULT_NOTIFICATIONS
+        merged = {**{k: current[k] for k in NOTIFICATION_FIELDS}, **values}
+        merged["channels"] = [c for c in ("email", "in_app", "browser") if c in merged["channels"] or c == "in_app"]
+        if "browser" not in merged["channels"]:
+            merged["browser_push_endpoint"] = None
+        if not notification_values_valid(merged):
             raise RuleViolation("check_violation", "notification_choice_valid")
-        self._c("notification_preferences").update_one(
-            {"_id": case_id}, {"$set": {**values, "updated_at": self.now}}, upsert=True)
-
-    def ensure_default_preferences(self, case_id: UUID) -> None:
-        """Every started journey has a row. Skipped or never asked means in_app_only."""
-        case = self._case(case_id)
-        if not self._member(case, WRITE_ROLES):
-            raise denied()
-        self._c("notification_preferences").update_one({"_id": case_id}, {"$setOnInsert": {
-            "channels": ["in_app_only"], "reasons": [], "due_date_lead_days": None, "inactivity_days": None,
-            "frequency": "daily_max", "push_permission_granted": False, "updated_at": self.now}}, upsert=True)
+        self._c("notification_preferences").update_one({"_id": uid}, {"$set": {**merged, "updated_at": self.now}},
+                                                       upsert=True)
+        return self.notification_preferences()
 
     def any_email_choice(self) -> bool:
-        ids = [c["id"] for c in self.owned_cases()]
-        return self._c("notification_preferences").find_one(
-            {"_id": {"$in": ids}, "channels": "email"}, {"_id": 1}) is not None
-
-    def same_as_candidate(self, case_id: UUID) -> UUID | None:
-        """The user's first other journey that has a choice."""
-        others = [c["id"] for c in self.owned_cases() if c["id"] != case_id]
-        chosen = {r["_id"] for r in self._c("notification_preferences").find({"_id": {"$in": others}}, {"_id": 1})}
-        return next((c for c in others if c in chosen), None)
+        p = self.notification_preferences()
+        return bool(p) and "email" in p["channels"]
 
     def notifications_sent(self, case_id: UUID) -> list[dict]:
         self._case(case_id)
         return list(self._c("notification_log").find(
             {"case_id": case_id}, {"_id": 0, "reason": 1, "channel": 1, "sent_at": 1}, sort=[("sent_at", 1)]))
+
+    # -------------------------------------------------------------- sessions (D-20)
+
+    def mark_subscribe_prompt_shown(self) -> bool:
+        """UC-SUB-01. At most once a day. Returns False when it was already shown today."""
+        u = self._user()
+        today = from_date(local_date(self.now, u.get("time_zone")))
+        return bool(self._c("users").update_one({"_id": u["_id"], "subscribe_prompt_shown_on": {"$ne": today}},
+                                                {"$set": {"subscribe_prompt_shown_on": today}}).modified_count)
+
+    # -------------------------------------------------------------- the subscription (cairn-subscription-use-cases)
+
+    def add_subscription_consent(self, policy_version: str, price_shown: str, auth_provider: str | None,
+                                 client: str | None) -> None:
+        """UC-SUB-02. Append-only, with the copy version and the price shown."""
+        self._c("consents").insert_one({
+            "_id": uuid.uuid4(), "user_id": self.require_user(), "purpose": "subscription_terms",
+            "policy_version": policy_version, "granted_at": self.now, "auth_provider": auth_provider,
+            "client": client, "price_shown": price_shown})
+
+    def subscription_consent_since(self, since: datetime) -> bool:
+        return self._c("consents").find_one({"user_id": self.require_user(), "purpose": "subscription_terms",
+                                             "granted_at": {"$gte": since}}, {"_id": 1}) is not None
+
+    def update_subscription(self, **fields) -> None:
+        """The caller's own subscription fields, from the subscription routes (a Checkout Session id, a cancel
+        request time). Nothing outside SUBSCRIPTION_FIELDS."""
+        uid = self.require_user()
+        if not set(fields) <= SUBSCRIPTION_FIELDS:
+            raise denied()
+        self._c("users").update_one({"_id": uid}, {"$set": fields})
+
+    def queue_confirmation(self, action_type: str, *, replace_unsent: bool = False) -> None:
+        """UC-CASE-21. One confirmation of something the user just did, to the sign-in email. Sent even during a
+        break (AC-BRK-07). replace_unsent keeps only one of this type waiting, so several Settings changes in a row
+        send one message."""
+        u = self._user()
+        if replace_unsent:
+            self._c("action_confirmation_outbox").delete_many({"user_id": u["_id"], "action_type": action_type,
+                                                               "claimed_at": None})
+        queue_confirmation(self._db, self._cs, action_type, u["email"], u["_id"], self.now)
+
+    # -------------------------------------------------------------- Stripe events (UC-SUB-22)
+    # Called only by the webhook route, after the Stripe signature checked out. The session has no user: the event
+    # names the account by its id (client_reference_id) or its Stripe customer id, never by email.
+
+    def record_stripe_event(self, event_id: str, event_type: str, account_id: UUID | None) -> bool:
+        """Records an event once, by Stripe's id. Returns False when it was already applied (a repeat delivery)."""
+        events = self._c("stripe_events")
+        row = events.find_one({"_id": event_id}, {"processed_at": 1})
+        if row is not None:
+            return row["processed_at"] is None
+        events.insert_one({"_id": event_id, "type": event_type, "account_id": account_id, "received_at": self.now,
+                           "processed_at": None, "attempts": 0})
+        return True
+
+    def finish_stripe_event(self, event_id: str, *, processed: bool, account_id: UUID | None = None) -> None:
+        changes: dict = {"processed_at": self.now} if processed else {}
+        if account_id is not None:
+            changes["account_id"] = account_id
+        self._c("stripe_events").update_one({"_id": event_id}, {"$set": changes, "$inc": {"attempts": 1}})
+
+    def stripe_account(self, account_id: UUID | None = None, customer_id: str | None = None) -> dict | None:
+        """The account a Stripe object belongs to. Never looked up by email (UC-SUB-22)."""
+        users = self._c("users")
+        row = users.find_one({"_id": account_id}) if account_id is not None else None
+        if row is None and customer_id:
+            row = users.find_one({"stripe_customer_id": customer_id})
+        return row
+
+    def queue_confirmation_for(self, user_id: UUID, email: str, action_type: str) -> None:
+        """A confirmation from a Stripe event (the user subscribed). Queued once per subscription (UC-SUB-04)."""
+        queue_confirmation(self._db, self._cs, action_type, email, user_id, self.now)
+
+    def apply_stripe_state(self, user_id: UUID, fields: dict) -> None:
+        """Sets subscription fields from what Stripe reports now (SUB-D-02). Nothing outside SUBSCRIPTION_FIELDS,
+        so an event can never touch the trial, a break, or a case."""
+        if not set(fields) <= SUBSCRIPTION_FIELDS:
+            raise denied()
+        self._c("users").update_one({"_id": user_id}, {"$set": fields})

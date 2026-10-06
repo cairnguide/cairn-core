@@ -114,6 +114,15 @@
       },
       "when_unknown": "ask",
       "qualifying_question": "Was your loved one working, or did they have a pension or retirement plan from a job?",
+      "answer_facts": {
+        "yes": {
+          "was_employed": true
+        },
+        "no": {
+          "was_employed": false,
+          "had_employer_plan": false
+        }
+      },
       "add_steps": [
         {
           "step_id": "S-W4-EMPLOYER",

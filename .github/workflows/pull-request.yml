@@ -55,8 +55,9 @@ jobs:
           CAIRN_TEST_MONGODB_URI: mongodb://admin:admin@localhost:27017/?replicaSet=rs0  # throwaway CI container
         # Fails if any database test is skipped, so a broken database
         # connection can't produce a green run with nothing actually tested.
+        # Coverage of cairn_api, with the floor in api/pyproject.toml ([tool.coverage.report] fail_under).
         run: |
-          pytest -ra --junitxml=results.xml
+          pytest -ra --junitxml=results.xml --cov --cov-report=term
           python - <<'PY'
           import sys, xml.etree.ElementTree as ET
           suite = ET.parse("results.xml").getroot().iter("testsuite")

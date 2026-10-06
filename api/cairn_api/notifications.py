@@ -1,172 +1,102 @@
-"""How and when Cairn keeps in touch (UC-CASE-19, UC-CASE-20).
+"""How Cairn keeps in touch, for the whole account (account D-13, UC-REG-15, UC-REG-17, case UC-CASE-19).
 
-Spec: database/docs/cairn-case-creation-use-cases-2026-09-25.json. Stored in the
-notification_preferences collection, one document per journey (database/db/schema.py).
-
-Rules this module keeps:
-- No choice, or skipping, means in_app_only. Nothing is sent outside the app (D-2026-09-25-N2).
-- The user decides the channel, the reasons, the timing, and the pace. Nothing else is sent except
-  confirmations of what the user just did (UC-CASE-21).
+Stored in the notification_preferences collection, one document per account
+(database/db/schema.py). Rules this module keeps:
+- Channels and frequency are chosen at setup. Email and in-app are pre-selected (OPEN-11), and in-app is always
+  on. Browser notifications only after the user chose them and the browser said yes.
+- Due date lead time and inactivity notices are confirmed with the first journey (UC-CASE-19), with the OPEN-03
+  defaults (3 days before, no inactivity notices) when skipped.
+- Nothing outside the user's choices except service notices (D-14): sign-in links, confirmations of things the
+  user did, the trial-ending note, an opted-in check-in, and the break-ending notice.
+- Quiet hours (21:00 to 08:00 in the browser's time zone by default) hold everything but service notices.
 - Changing preferences is always free, including on a read-only account (D-2026-09-25-F1).
-- Preferences are never used for marketing or advertising (UC-REG-07).
-- SMS is not offered: it is an open question for the MVP and needs legal review (card 50).
+- Never used for marketing or advertising (D-07). No phone number and no text messages (D-12, OPEN-05).
 """
 from __future__ import annotations
 
-from uuid import UUID
+from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
-from . import account as acct
 from .copy_store import Copy
 from .db import Session
-from .schemas import (
-    NotificationChannel,
-    NotificationChoice,
-    NotificationFrequency,
-    NotificationPreferencesOut,
-    NotificationQuestion,
-    NotificationReason,
-    Option,
-)
+from .schemas import NotificationChannelsIn, NotificationPreferencesOut
+from .store import DEFAULT_NOTIFICATIONS
 
-# The shortcut in UC-CASE-19. Draft values, open question on card 50.
-KEEP_IT_SIMPLE = NotificationChoice(channels=[NotificationChannel.email],
-                                    reasons=[NotificationReason.due_date_upcoming],
-                                    due_date_lead_days=3, frequency=NotificationFrequency.daily_max)
-IN_APP_ONLY = NotificationChoice(channels=[NotificationChannel.in_app_only])
-
-CHANNEL_ORDER = [NotificationChannel.email, NotificationChannel.push, NotificationChannel.in_app_only]
-REASON_ORDER = [NotificationReason.due_date_upcoming, NotificationReason.inactivity]
-
-# ------------------------------------------------------------------ reads
-
-def load(s: Session, case_id: UUID) -> dict | None:
-    return s.notification_preferences(case_id)
+# The days each choice stands for.
+LEAD_DAYS = {"day_before": 1, "three_days": 3, "one_week": 7}
+INACTIVITY_DAYS = {"off": None, "three_days": 3, "one_week": 7, "two_weeks": 14}
 
 
-def choice_of(row: dict | None) -> NotificationChoice:
-    if row is None:
-        return IN_APP_ONLY
-    return NotificationChoice(channels=row["channels"], reasons=row["reasons"],
-                              due_date_lead_days=row["due_date_lead_days"], inactivity_days=row["inactivity_days"],
-                              frequency=row["frequency"])
+def load(s: Session) -> dict | None:
+    return s.notification_preferences()
 
 
-def any_email_choice(s: Session) -> bool:
-    """Whether the user chose email for any of their journeys. The trial reminder follows this."""
-    return s.any_email_choice()
+def channels_from(req: NotificationChannelsIn) -> tuple[list[str], str | None]:
+    """The channels the user chose, and the push endpoint. Browser stays only when the browser said yes. Denied
+    or unsupported takes it off (UC-REG-15 alternate flows)."""
+    browser = req.browser and req.browser_permission not in ("denied", "unsupported")
+    channels = [c for c, on in (("email", req.email), ("in_app", True), ("browser", browser)) if on]
+    return channels, req.browser_push_endpoint if browser else None
 
 
-# ------------------------------------------------------------------ plain language
-
-def _join(parts: list[str], copy: Copy) -> str:
-    if len(parts) <= 1:
-        return "".join(parts)
-    return f"{', '.join(parts[:-1])} {copy['readback_and']} {parts[-1]}"
+def _join(parts: list[str]) -> str:
+    return parts[0] if len(parts) == 1 else f"{', '.join(parts[:-1])} and {parts[-1]}"
 
 
-def readback(copy: Copy, choice: NotificationChoice) -> str:
-    """One sentence that says the choice back (UC-CASE-19 step 6, UC-CASE-20)."""
-    if NotificationChannel.in_app_only in choice.channels:
-        return copy["readback_in_app_only"]
-    channels = [copy[f"readback_channel_{c.value}"] for c in CHANNEL_ORDER if c in choice.channels]
-    reasons = []
-    if NotificationReason.due_date_upcoming in choice.reasons:
-        days = choice.due_date_lead_days
-        reasons.append(copy["readback_due_date_upcoming_1"] if days == 1
-                       else copy["readback_due_date_upcoming"].format(days=days))
-    if NotificationReason.inactivity in choice.reasons:
-        reasons.append(copy["readback_inactivity"].format(days=choice.inactivity_days))
-    return copy["readback_choice"].format(channels=_join(channels, copy), reasons=_join(reasons, copy),
-                                          frequency=copy[f"readback_frequency_{choice.frequency.value}"])
+def readback(copy: Copy, prefs: dict) -> str:
+    """The choices in one line (UC-REG-17), from the account copy."""
+    if prefs["frequency"] == "none":
+        return copy["notify_readback_none"]
+    labels = {"email": copy["notify_channel_email_label"], "browser": copy["notify_channel_browser_label"],
+              "in_app": copy["notify_channel_inapp_label"]}
+    by = _join([f"by {labels[c]}" if c != "in_app" else labels[c] for c in ("email", "browser", "in_app")
+                if c in prefs["channels"]])
+    return copy["notify_readback"].format(channels=by, frequency=copy[f"notify_frequency_{prefs['frequency']}_label"],
+                                          quiet_start=_clock(prefs["quiet_hours_start"]),
+                                          quiet_end=_clock(prefs["quiet_hours_end"]))
 
 
-def out(case_id: UUID, row: dict | None, copy: Copy,
-        choice: NotificationChoice | None = None) -> NotificationPreferencesOut:
-    """The stored row, or a proposed choice that isn't stored yet."""
-    ch = choice or choice_of(row)
+def _clock(hhmm: str) -> str:
+    h, m = (int(x) for x in hhmm.split(":"))
+    suffix = "AM" if h < 12 else "PM"
+    return f"{(h % 12) or 12}:{m:02d} {suffix}" if m else f"{(h % 12) or 12} {suffix}"
+
+
+def out(row: dict | None, copy: Copy) -> NotificationPreferencesOut:
+    prefs = row or {**DEFAULT_NOTIFICATIONS, "channels": ["in_app"], "frequency": "none"}
     return NotificationPreferencesOut(
-        case_id=case_id, stored=row is not None and choice is None, channels=ch.channels, reasons=ch.reasons,
-        due_date_lead_days=ch.due_date_lead_days, inactivity_days=ch.inactivity_days, frequency=ch.frequency,
-        push_permission_granted=bool(row and row["push_permission_granted"]
-                                     and NotificationChannel.push in ch.channels),
-        readback=readback(copy, ch), updated_at=row["updated_at"] if row and choice is None else None)
+        stored=row is not None, channels=prefs["channels"], frequency=prefs["frequency"],
+        quiet_hours_start=prefs["quiet_hours_start"], quiet_hours_end=prefs["quiet_hours_end"],
+        browser_notifications_on="browser" in prefs["channels"] and bool(prefs["browser_push_endpoint"]),
+        due_date_lead=prefs["due_date_lead"], inactivity_after=prefs["inactivity_after"],
+        journey_confirmed=bool(prefs.get("journey_confirmed_at")), readback=readback(copy, prefs),
+        updated_at=row["updated_at"] if row else None)
 
 
-def questions(copy: Copy, masked_email: str) -> list[NotificationQuestion]:
-    """UC-CASE-19 steps 2 to 5, in order. The client asks one at a time."""
-    return [
-        NotificationQuestion(
-            id="channels", prompt=copy["notifications_question_channels"], multi_select=True,
-            asked_when="always",
-            options=[Option(value="email", label=copy["channel_email"].format(masked_email=masked_email)),
-                     Option(value="push", label=copy["channel_push"]),
-                     Option(value="in_app_only", label=copy["channel_in_app_only"])]),
-        NotificationQuestion(
-            id="reasons", prompt=copy["notifications_question_reasons"], multi_select=True,
-            asked_when="a channel other than in_app_only was chosen",
-            options=[Option(value=r.value, label=copy[f"reason_{r.value}"]) for r in REASON_ORDER]),
-        NotificationQuestion(
-            id="due_date_lead_days", prompt=copy["notifications_question_due_date_lead_days"], multi_select=False,
-            asked_when="due_date_upcoming was chosen",
-            options=[Option(value=str(d), label=copy[f"lead_days_{d}"]) for d in (1, 3, 7)]),
-        NotificationQuestion(
-            id="inactivity_days", prompt=copy["notifications_question_inactivity_days"], multi_select=False,
-            asked_when="inactivity was chosen",
-            options=[Option(value=str(d), label=copy[f"inactivity_days_{d}"]) for d in (3, 7, 14)]),
-        NotificationQuestion(
-            id="frequency", prompt=copy["notifications_question_frequency"], multi_select=False,
-            asked_when="a channel other than in_app_only was chosen",
-            options=[Option(value=f.value, label=copy[f"frequency_{f.value}"]) for f in NotificationFrequency]),
-    ]
+# ------------------------------------------------------------------ quiet hours
+
+def _local(now: datetime, tz: str | None) -> datetime:
+    return now.astimezone(ZoneInfo(tz or "UTC"))
 
 
-def display_names(s: Session, copy: Copy) -> dict[UUID, str]:
-    """What to call the person for each of the user's cases. Conversation only, never a legal name."""
-    rows = s.display_names()
-    return {r["id"]: r["display_name"] or copy[r["name_fallback"]] for r in rows}
+def in_quiet_hours(now: datetime, tz: str | None, prefs: dict | None) -> bool:
+    """Quiet hours can wrap past midnight (21:00 to 08:00)."""
+    p = prefs or DEFAULT_NOTIFICATIONS
+    start, end = (time.fromisoformat(p[k]) for k in ("quiet_hours_start", "quiet_hours_end"))
+    t = _local(now, tz).time()
+    if start == end:
+        return False
+    return start <= t or t < end if start > end else start <= t < end
 
 
-def same_as_candidate(s: Session, case_id: UUID) -> UUID | None:
-    """UC-CASE-18 change. The user's first other journey that has a choice, offered first."""
-    return s.same_as_candidate(case_id)
-
-
-def shortcuts(s: Session, copy: Copy, case_id: UUID, names: dict[UUID, str]) -> list[Option]:
-    options = []
-    other = same_as_candidate(s, case_id)
-    if other is not None:
-        options.append(Option(value=f"same_as:{other}",
-                              label=copy["use_the_same_as"].format(display_name=names.get(other, ""))))
-    options += [Option(value="keep_it_simple", label=copy["keep_it_simple"]),
-                Option(value="set_up", label=copy["notifications_set_up"]),
-                Option(value="skip", label=copy["notifications_skip"])]
-    return options
-
-
-# ------------------------------------------------------------------ writes
-
-def save(s: Session, case_id: UUID, choice: NotificationChoice, *, push_granted: bool | None = None) -> dict:
-    """Upsert one journey's choice. Push permission is kept only while push is chosen."""
-    wants_push = NotificationChannel.push in choice.channels
-    row = load(s, case_id)
-    granted = push_granted if push_granted is not None else bool(row and row["push_permission_granted"])
-    values = {"channels": [c.value for c in choice.channels], "reasons": [r.value for r in choice.reasons],
-              "due_date_lead_days": choice.due_date_lead_days, "inactivity_days": choice.inactivity_days,
-              "frequency": choice.frequency.value, "push_permission_granted": granted and wants_push}
-    s.save_notification_preferences(case_id, values)
-    # Opaque ids only. Never the choice or the address.
-    s.audit("notification_preferences_saved", case_id, "case", case_id)
-    return load(s, case_id)
-
-
-def ensure_default(s: Session, case_id: UUID) -> None:
-    """Every started journey has a row. Skipped or never asked means in_app_only (UC-CASE-19 postconditions)."""
-    s.ensure_default_preferences(case_id)
-
-
-def owned_cases(s: Session) -> list[dict]:
-    return s.owned_cases()
-
-
-def masked_account_email(account: dict) -> str:
-    return acct.mask_email(account["email"])
+def after_quiet_hours(when: datetime, tz: str | None, prefs: dict | None) -> datetime:
+    """The same time, or the end of quiet hours if it falls inside them (UC-BRK-09)."""
+    if not in_quiet_hours(when, tz, prefs):
+        return when
+    p = prefs or DEFAULT_NOTIFICATIONS
+    end = time.fromisoformat(p["quiet_hours_end"])
+    local = _local(when, tz)
+    candidate = local.replace(hour=end.hour, minute=end.minute, second=0, microsecond=0)
+    if candidate <= local:
+        candidate += timedelta(days=1)
+    return candidate.astimezone(when.tzinfo)

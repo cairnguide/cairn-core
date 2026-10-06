@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Request
 
 from .. import account as acct
 from .. import intake, journey, journey_selection, messages
+from ..account import CareLevel
 from ..auth import Identity, get_identity
 from ..db import Session
 from ..errors import ApiError, case_access_denied
@@ -63,6 +64,13 @@ def _set_status(s: Session, case_id: UUID, task_id: UUID, status: TaskStatus) ->
     s.audit("task_status_changed", case_id, "case_task", task_id)
 
 
+def _end_break_on_edit(s: Session, case_id: UUID) -> None:
+    """UC-BRK-08. Looking at tasks keeps the break. Editing one ends it first (UC-BRK-10)."""
+    if s.load_account()["break_started_at"] is not None:
+        s.end_rest(case_id)
+        s.audit("break_ended", case_id, "case", case_id)
+
+
 def _require_kind(row: dict, kind: TaskKind) -> None:
     if journey.TASK_KINDS.get(row["task_key"]) != kind:
         raise ApiError(409, "wrong_task_kind", "This kind of record doesn't belong to this task.")
@@ -72,7 +80,7 @@ def _require_kind(row: dict, kind: TaskKind) -> None:
             description="Guidance, citations to the issuing authority, and anything already recorded for it.",
             responses=_DENIED)
 def get_task(case_id: UUID, task_id: UUID, request: Request,
-             identity: Identity = Depends(get_identity)) -> TaskResponse:
+             identity: Identity = Depends(get_identity), care_level: CareLevel = 1) -> TaskResponse:
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
         ready = acct.require_ready(s, request, write=False)
@@ -87,6 +95,7 @@ def update_task(case_id: UUID, task_id: UUID, req: TaskUpdateRequest, request: R
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
         acct.require_ready(s, request, write=True)
+        _end_break_on_edit(s, case_id)
         if req.status is not None:
             _set_status(s, case_id, task_id, req.status)
         if "snoozed_until" in req.model_fields_set:
@@ -109,6 +118,7 @@ def record_certificate_order(case_id: UUID, task_id: UUID, req: CertificateOrder
         s.require_user()
         acct.require_ready(s, request, write=True)
         _require_kind(_load(s, case_id, task_id), TaskKind.certificate_order)
+        _end_break_on_edit(s, case_id)
         journey.write_context(s, case_id, journey.CERT_ORDER, req.model_dump(mode="json"))
         s.audit("certificate_order_recorded", case_id, "case_task", task_id)
         _set_status(s, case_id, task_id, TaskStatus.done)
@@ -131,6 +141,7 @@ def record_institution_notice(case_id: UUID, task_id: UUID, req: InstitutionNoti
         s.require_user()
         acct.require_ready(s, request, write=True)
         _require_kind(_load(s, case_id, task_id), TaskKind.institution_notice)
+        _end_break_on_edit(s, case_id)
         payload = journey.lock_context(s, case_id, journey.BANK_NOTICES, {"institutions": []})
         notices = [n for n in payload.get("institutions", [])
                    if n["institution_name"].casefold() != req.institution_name.casefold()]

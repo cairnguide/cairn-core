@@ -68,11 +68,18 @@ def _case(c: intake.Ctx, case_id) -> ExportCase:
         if person else None,
         tasks=[ExportTask(title=r["title"], plain_summary=r["plain_summary"], journey_week=r["journey_week"],
                           status=r["status"], due_on=r["due_on"], completed_at=r["completed_at"]) for r in rows],
-        notification_preferences=nt.out(case_id, nt.load(s, case_id), c.copy),
         notifications_sent=[ExportNotificationSent.model_validate(r) for r in sent],
         conversation=[_clean({"item_key": r["item_key"], "payload": r["payload"],
                               "updated_at": r["updated_at"].isoformat()}) for r in conversation],
     )
+
+
+def _subscription(a: dict) -> dict:
+    """Status and dates only. Stripe ids stay out: they mean nothing outside Cairn. Never a card, bank, or address."""
+    iso = lambda v: v.isoformat() if v else None  # noqa: E731
+    return {"subscription_status": a["subscription_status"], "subscribed_at": iso(a["subscribed_at"]),
+            "current_period_end": iso(a["current_period_end"]), "cancel_at_period_end": a["cancel_at_period_end"],
+            "cancel_requested_at": iso(a["cancel_requested_at"])}
 
 
 def build(c: intake.Ctx) -> DataExport:
@@ -82,7 +89,9 @@ def build(c: intake.Ctx) -> DataExport:
         "email": a["email"], "sign_in_method": a["sign_in_method"],
         "linked_sign_in_methods": a.get("linked_sign_in_methods") or None, "preferred_name": a["preferred_name"],
         "name_pronunciation": a["name_pronunciation"], "voice": a["voice"], "time_zone": a["time_zone"],
-        "status": a["status"], "onboarding_step": a["onboarding_step"],
+        "status": a["status"], "access": a["access"], "onboarding_step": a["onboarding_step"],
+        "adult_attested": a["adult_attested"],
+        "adult_attested_at": a["adult_attested_at"].isoformat() if a["adult_attested_at"] else None,
         "trial_started_at": a["trial_started_at"].isoformat() if a["trial_started_at"] else None,
         "trial_ends_at": a["trial_ends_at"].isoformat() if a["trial_ends_at"] else None,
         "created_at": a["created_at"].isoformat(),
@@ -94,5 +103,7 @@ def build(c: intake.Ctx) -> DataExport:
         format="cairn-data-export", format_version=1, generated_at=datetime.now(timezone.utc), profile=profile,
         acknowledgments=[ExportConsent.model_validate(r) for r in consents],
         trial_reminders=[ExportReminder.model_validate(r) for r in reminders],
+        notification_preferences=nt.out(nt.load(s), c.request.app.state.copy),
+        subscription=_subscription(a),
         cases=[_case(c, case_id) for case_id in case_ids],
     )

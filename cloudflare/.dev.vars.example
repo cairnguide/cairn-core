@@ -15,3 +15,8 @@ CAIRN_JOBS_MONGODB_URI=mongodb://cairn_jobs:CHANGE_ME@host.docker.internal:27017
 # CAIRN_APPLE_TEAM_ID=
 # CAIRN_APPLE_KEY_ID=
 # CAIRN_APPLE_PRIVATE_KEY=
+# Stripe test mode (README.md "Stripe"). The webhook secret comes from `stripe listen`.
+# CAIRN_STRIPE_SECRET_KEY=
+# CAIRN_STRIPE_WEBHOOK_SECRET=
+# Browser notifications: the private key for the jobs container (PEM, P-256).
+# CAIRN_VAPID_PRIVATE_KEY=

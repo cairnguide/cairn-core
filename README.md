@@ -38,14 +38,15 @@ Cairn walks a family through the logistics of a death, one step at a time. The d
   │                          │                app user only)      │    (cairnApp role only,
   │                          │                                    │     validators on)
   │   Cron Triggers ──▶ scheduled() ──▶ CairnJobs container ──────┼──▶ MongoDB as cairn_jobs
-  │                                     (private, never public)   │    Twilio, Auth0, Apple
+  │                                     (private, never public)   │    Twilio, Auth0, Apple, Stripe
   └──────────────────────────────────────────────────────────────┘
 ```
 
 - The API is unchanged Python. It runs in a [Cloudflare Container](https://developers.cloudflare.com/containers/), built from the `Dockerfile` in this repository. A small Worker in `cloudflare/` is the front door. It receives every request and forwards it to the container.
-- Scheduled jobs (outbound email through Twilio, identity cleanup, held case deletion, draft cleanup, unfinished sign-up cleanup, trial status) run in a second container from the same image. [Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/) call the Worker, and the Worker calls that container. It holds the jobs user's connection string and provider secrets. The API container never sees them, and no public request can reach the jobs container.
+- Scheduled jobs (outbound email through Twilio and browser notifications, identity cleanup, held case deletion, draft cleanup, unfinished sign-up cleanup, access after the free days, and Stripe retries) run in a second container from the same image. [Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/) call the Worker, and the Worker calls that container. It holds the jobs user's connection string and provider secrets. The API container never sees them, and no public request can reach the jobs container.
 - MongoDB is not on Cloudflare. Use [MongoDB Atlas](https://www.mongodb.com/docs/atlas/) (M10 or larger), or any MongoDB 7.0 or newer replica set reachable over the internet with TLS. Every request is one multi-document transaction, which needs a replica set.
-- Sign-in is Auth0 ([auth0/README.md](auth0/README.md)). The API only verifies Auth0's signed tokens.
+- Sign-in is Auth0 ([auth0/README.md](auth0/README.md)). The API only verifies Auth0's signed tokens, and signs a session out after 5 minutes with no activity (D-20).
+- Subscriptions are Stripe ([Stripe](#stripe-subscriptions)). Payment details are entered on Stripe's own pages, and the API changes access only from Stripe's signed webhook events.
 
 The same image runs anywhere Docker does. `CAIRN_PROCESS=api` (the default) serves the API, and `CAIRN_PROCESS=jobs` serves the jobs.
 
@@ -318,6 +319,12 @@ Edit the `vars` block in [`cloudflare/wrangler.jsonc`](cloudflare/wrangler.jsonc
 | `CAIRN_PENDING_ACCOUNT_RETENTION_DAYS` | Days before an unfinished sign-up is deleted. `90`, the decided period (D-2026-10-05-R1). Leave it out to use 90 |
 | `CAIRN_NO_CASE_ACCOUNT_RETENTION_DAYS` | Leave out. The period for finished accounts with no case isn't decided [LEGAL REVIEW REQUIRED] |
 | `CAIRN_CORS_ORIGINS` | Only for a web client served from another origin: its origins, comma-separated, for example `https://app.cairn.example`. Leave it out for native apps |
+| `CAIRN_APP_URL` | The web app's address. Stripe sends the user back here after Checkout and the customer portal |
+| `CAIRN_SUBSCRIPTION_PRICE_CENTS` | `1499`. The one price, shown and charged (D-04). Every price in the copy must match it, or the API refuses to start |
+| `CAIRN_STRIPE_PRODUCT_ID` | The Cairn subscription product in Stripe, for example `prod_...` |
+| `CAIRN_VAPID_PUBLIC_KEY` | The public half of the browser notification key. Leave it out to hide browser notifications |
+| `CAIRN_VAPID_SUBJECT` | A `mailto:` or `https:` contact the browser push services can reach |
+| `CAIRN_PRICE_CHANGE_EFFECTIVE_DATE`, `CAIRN_PRICE_CHANGE_NEW_PRICE` | Only while a price change is scheduled (UC-SUB-18), for example `2027-03-01` and `$16.99` |
 
 Optional settings from [api/README.md](api/README.md), such as `CAIRN_OVERWHELM_SKIP_THRESHOLD`, can be added here too. Every name the containers receive is listed in `API_KEYS` and `JOBS_KEYS` in [`cloudflare/src/index.ts`](cloudflare/src/index.ts).
 
@@ -388,6 +395,16 @@ npx wrangler secret put CAIRN_APPLE_PRIVATE_KEY < AuthKey_XXXXXXXXXX.p8
 ```
 
 Until these are set, those two jobs log "skipped" and do nothing. Deletion confirmation emails wait in the queue until the Twilio SendGrid key is set.
+
+Stripe and browser notifications (see [Stripe](#stripe-subscriptions)):
+
+```bash
+npx wrangler secret put CAIRN_STRIPE_SECRET_KEY        # the restricted or secret key, sk_live_... in production
+npx wrangler secret put CAIRN_STRIPE_WEBHOOK_SECRET    # whsec_..., from the webhook endpoint
+npx wrangler secret put CAIRN_VAPID_PRIVATE_KEY < vapid-private.pem   # the browser notification key (P-256, PEM)
+```
+
+The API container gets the Stripe key and the webhook secret. The jobs container gets the Stripe key and the VAPID private key. Without the Stripe key, the subscription routes answer that payments aren't available and nothing is charged.
 
 `wrangler secret put` before the first deploy creates the Worker with only the secret. That's expected. The deploy in the next step fills in the rest.
 
@@ -466,10 +483,10 @@ The cron schedule and its jobs:
 
 | Cron (UTC) | Jobs | What it does |
 |---|---|---|
-| `*/5 * * * *` | `outbound` | Deletion confirmations, trial reminders, and chosen notifications by email, through Twilio SendGrid |
-| `*/15 * * * *` | `identity_cleanup` | Deletes Auth0 users and revokes Apple tokens after account deletion |
-| `7 * * * *` | `purge_held_cases` | Deletes cases whose 7-day hold has ended (UC-END-13) |
-| `30 3 * * *` | `purge_inactive_drafts`, `expire_trials`, `purge_stale_accounts` | Deletes idle drafts (DEC-07). Trial status, for reporting. Deletes sign-ups still unfinished after 90 days (UC-REG-10) |
+| `*/5 * * * *` | `outbound` | Confirmations, the trial-ending note, the reminders users chose, check-ins, break-ending notices, and the yearly subscription reminder, by email through Twilio SendGrid and by browser notification |
+| `*/15 * * * *` | `identity_cleanup`, `process_stripe_events`, `retry_cancellations` | Deletes Auth0 users and revokes Apple tokens after account deletion. Finishes Stripe events and cancellations that couldn't be finished at the time |
+| `7 * * * *` | `purge_held_cases`, `settle_trial_clocks`, `sync_early_subscriptions` | Deletes cases whose 7-day hold has ended (UC-END-13). Starts the free days again after a care rest ends on its own (DEC-26-01). Keeps an early subscriber's first charge at the free days' end (UC-SUB-06) |
+| `30 3 * * *` | `purge_inactive_drafts`, `expire_trials`, `purge_stale_accounts`, `price_change_notices` | Deletes idle drafts (DEC-07). Keeps `users.access` current (D-19). Deletes sign-ups still unfinished after 90 days (UC-REG-10). Price change notices, only when one is scheduled (UC-SUB-18) |
 
 To change a schedule, edit `triggers.crons` in `wrangler.jsonc` and `JOBS_BY_CRON` in `src/index.ts` together, then deploy.
 
@@ -487,13 +504,23 @@ make cf-dev
 
 Then open http://localhost:8787/docs. `cloudflare/.dev.vars` is gitignored.
 
+## Stripe (subscriptions)
+
+Cairn is free for 28 days from the first journey, then $14.99 a month for the whole account (D-04). The subscription spec is `database/docs/cairn-subscription-use-cases-v33.json`. The code is [`api/cairn_api/stripe_client.py`](api/cairn_api/stripe_client.py) (the Stripe calls, through `httpx`, so there's no Stripe SDK), [`subscription.py`](api/cairn_api/subscription.py) (status mapping and event handling), and [`routers/subscription.py`](api/cairn_api/routers/subscription.py).
+
+- **Checkout.** Subscriptions start on Stripe Checkout, Stripe's hosted page. Cairn sends Stripe the account id and the sign-in email only (SUB-D-10), and never receives a card, bank account, or billing address (SUB-D-01). The price is sent with each session from `CAIRN_SUBSCRIPTION_PRICE_CENTS`, tax inclusive, with automatic tax on (SUB-D-12).
+- **Access follows Stripe's events, never the browser.** Register a webhook endpoint at `https://<your host>/v1/stripe/webhook` for these events: `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, `invoice.payment_failed`, `invoice.payment_action_required`, `customer.updated`, `charge.refunded`, and `charge.dispute.created`. Put its signing secret in `CAIRN_STRIPE_WEBHOOK_SECRET`. Each event is verified, recorded once by id (ids, type, and times only, never the payload), and applied from the subscription's current state in Stripe (UC-SUB-22).
+- **In the Stripe Dashboard before launch:** create the product (its tax code chosen with an accountant), turn on Stripe Tax and register where needed, configure the customer portal for payment methods and invoices with no retention offers or coupons (SUB-D-04), and turn on Stripe's failed-payment emails (SUB-D-08). Cairn sends no failed-payment email of its own.
+- **Owner alerts.** A dispute, a reversed charge, an event for an unknown customer, or a subscription that can't be cancelled before an account is deleted logs an `owner alert` line at ERROR from `cairn_api.subscription` or `cairn_api.account`, with ids only. Route those to whoever owns billing (`npx wrangler tail` shows them, and a log drain can page on them).
+- **Testing.** Tests use a mocked Stripe client and fixture events signed with a test secret. For end-to-end checks, use a Stripe sandbox with test clocks and `stripe listen --forward-to localhost:8000/v1/stripe/webhook`.
+
 ## Twilio (email and text messages)
 
 Every email and text message Cairn sends goes through Twilio. The code is [`api/cairn_api/twilio_client.py`](api/cairn_api/twilio_client.py). It calls Twilio's REST APIs with `httpx`, so there's no Twilio SDK to install.
 
 | What | Twilio product | Credentials | Status |
 |---|---|---|---|
-| Deletion confirmations (UC-REG-15, UC-CASE-21), trial reminders (UC-REG-08), the notifications a user chose (UC-CASE-19), and the opted-in check-in | Twilio SendGrid, v3 Mail Send | `TWILIO_SENDGRID_API_KEY` | Live. The `outbound` job, every 5 minutes |
+| Confirmations of things the user did (UC-CASE-21), the trial-ending note (D-14), the reminders a user chose (UC-REG-15), the opted-in check-in, the break-ending notice (UC-BRK-09), and the yearly subscription reminder (UC-SUB-17) | Twilio SendGrid, v3 Mail Send | `TWILIO_SENDGRID_API_KEY` | Live. The `outbound` job, every 5 minutes |
 | The sign-in magic link (UC-REG-04) | Twilio SendGrid, through Auth0's email provider | The same SendGrid key, entered in Auth0 | Tenant setting, see [auth0/README.md](auth0/README.md) |
 | Text messages | Twilio Programmable Messaging | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` | Built and tested. Not in the MVP (OPEN-05, decided 2026-10-05). Turning it on later needs legal review of the consent wording |
 | Verifying a phone number by code | Twilio Verify | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID` | Built and tested. For after the MVP, if text messages are added |

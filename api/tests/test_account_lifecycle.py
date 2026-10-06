@@ -1,12 +1,11 @@
-"""UC-REG-15, UC-REG-16, and UC-CASE-19 to UC-CASE-21 against a real MongoDB database, as the cairnApp user.
+"""Account deletion (UC-ACCT-01), the download (UC-REG-16), keeping in touch (account D-13, UC-REG-17, case
+UC-CASE-19), and confirmations (UC-CASE-21) against a real MongoDB database, as the cairnApp user.
 
-Specs: database/docs/cairn-account-use-cases-2026-09-25.json and
-database/docs/cairn-case-creation-use-cases-2026-09-25.json. Case deletion with a
-7-day hold is UC-END-13, which those specs rely on. Each test names what it covers.
-Rules that need no database are in test_account_lifecycle_rules.py.
+Specs: database/docs/cairn-account-use-cases-v32.json and database/docs/cairn-case-creation-use-cases-v32.json.
+Case deletion with a 7-day hold is UC-END-13, which those specs rely on. Each test names what it covers. Rules
+that need no database are in test_account_lifecycle_rules.py.
 
-Skipped unless CAIRN_TEST_MONGODB_URI points at a scratch MongoDB replica set.
-Fake data only.
+Skipped unless CAIRN_TEST_MONGODB_URI points at a scratch MongoDB replica set. Fake data only.
 """
 from __future__ import annotations
 
@@ -17,34 +16,34 @@ from uuid import UUID
 import pytest
 
 from cairn_api import maintenance, outbound
-from cairn_api.copy_store import load_case_copy, load_copy
+from cairn_api.copy_store import load_break_copy, load_case_copy, load_copy, load_subscription_copy
 
 from .conftest import active_case, answer, as_user, expire_trial, new_draft, register, start_journey, user_id
 
 COPY = load_copy()
 CASE_COPY = load_case_copy()
-KEEP_IT_SIMPLE = {"preset": "keep_it_simple"}
-EMAIL_WEEKLY = {"choice": {"channels": ["email"], "reasons": ["inactivity"], "inactivity_days": 7,
-                           "frequency": "weekly_max"}}
+BREAK_COPY = load_break_copy()
+SUB_COPY = load_subscription_copy()
+# Choices with no quiet hours, so a test never depends on the time of day it runs.
+ALWAYS = {"quiet_hours_start": "00:00", "quiet_hours_end": "00:00"}
 
 
-def prefs_row(api, case_id):
-    row = api.db.notification_preferences.find_one({"_id": UUID(case_id)})
-    if row is None:
-        return None
-    return (row["channels"], row["reasons"], row["due_date_lead_days"], row["inactivity_days"], row["frequency"],
-            row["push_permission_granted"])
+def prefs_row(api, subject):
+    row = api.db.notification_preferences.find_one({"_id": user_id(api, subject)})
+    return None if row is None else (row["channels"], row["frequency"], row["due_date_lead"], row["inactivity_after"])
 
 
-def set_prefs(api, subject, case_id, body):
-    r = api.put(f"/v1/cases/{case_id}/notification-preferences", json=body, headers=as_user(subject))
+def set_prefs(api, subject, body):
+    r = api.patch("/v1/me/notification-preferences", json=body, headers=as_user(subject))
     assert r.status_code == 200, r.text
     return r.json()
 
 
-def outbox(api, email):
+def outbox(api, email, *, with_service: bool = False):
+    """Queued confirmations. The setup welcome and Settings changes are left out unless asked for."""
     return [(r["action_type"], r["user_id"])
-            for r in api.db.action_confirmation_outbox.find({"email": email}, sort=[("queued_at", 1)])]
+            for r in api.db.action_confirmation_outbox.find({"email": email}, sort=[("queued_at", 1)])
+            if with_service or r["action_type"] not in ("setup_complete", "settings_changed")]
 
 
 class FakeMailer:
@@ -61,8 +60,9 @@ class FakeMailer:
         return [(s, b) for t, s, b in self.sent if t == email]
 
 
-def send_outbound(api, mailer):
-    return outbound.run_once(api.jobs_db, mailer, COPY, CASE_COPY)
+def send_outbound(api, mailer, push=None):
+    return outbound.run_once(api.jobs_db, mailer, COPY, CASE_COPY, break_copy=BREAK_COPY, sub_copy=SUB_COPY,
+                             push=push)
 
 
 def due_tomorrow(api, case_id):
@@ -79,285 +79,166 @@ def named_case(api, subject, name="Dan", **answers):
     return active_case(api, subject, {"display_name": name, "place_of_death": {"jurisdiction": "NH"}, **answers})
 
 
-# ------------------------------------------------------------------ UC-CASE-19 choose how Cairn keeps in touch
+# ------------------------------------------------------------------ UC-CASE-19 confirm how Cairn keeps in touch
 
-def test_uc19_setup_explains_then_offers_shortcuts_and_questions_in_order(api):
+def test_uc19_reads_back_the_account_choices_and_asks_only_lead_time_and_inactivity(api):
     register(api, "nt01")
     cid = new_draft(api, "nt01")["case"]["id"]
-    setup = api.get(f"/v1/cases/{cid}/notification-preferences", headers=as_user("nt01")).json()
-    assert setup["explanation"] == CASE_COPY["notifications_intro"]
-    assert "change this any time" in setup["explanation"]
-    assert [q["id"] for q in setup["questions"]] == ["channels", "reasons", "due_date_lead_days", "inactivity_days",
-                                                     "frequency"]
-    channels = setup["questions"][0]
-    assert channels["multi_select"] and [o["value"] for o in channels["options"]] == ["email", "push", "in_app_only"]
-    assert "sms" not in json.dumps(setup)  # open question card 50, not offered
-    assert setup["masked_email"] == "n•••1@example.test" and setup["masked_email"] in channels["options"][0]["label"]
-    assert [o["value"] for o in setup["shortcuts"]] == ["keep_it_simple", "set_up", "skip"]
-    assert setup["shortcuts"][0]["label"] == "Keep it simple for me"
-    # Nothing chosen yet: effectively in_app_only, and nothing is stored.
-    assert setup["preferences"]["stored"] is False and setup["preferences"]["channels"] == ["in_app_only"]
-    assert prefs_row(api, cid) is None
+    body = api.get(f"/v1/cases/{cid}/keep-in-touch", headers=as_user("nt01")).json()
+    assert body["opening"] == CASE_COPY["notifications_intro"].format(
+        channels="email and inside Cairn", frequency="only when something is due")
+    assert [q["id"] for q in body["questions"]] == ["due_date_lead", "inactivity_after"]
+    assert body["questions"][0]["prompt"] == CASE_COPY["lead_time_question"]
+    assert body["questions"][1]["prompt"] == CASE_COPY["inactivity_question"]
+    assert [o["value"] for o in body["questions"][0]["options"]] == ["day_before", "three_days", "one_week"]
+    assert [o["value"] for o in body["questions"][1]["options"]] == ["off", "three_days", "one_week", "two_weeks"]
+    assert body["change_link"]["label"] == CASE_COPY["change_how_you_hear"]
+    # Channels and frequency are never asked here (account D-13).
+    assert "channels" not in [q["id"] for q in body["questions"]]
 
 
-def test_uc19_readback_before_saving_stores_nothing(api):
+def test_uc19_saves_lead_time_and_inactivity_on_the_account(api):
     register(api, "nt02")
     cid = new_draft(api, "nt02")["case"]["id"]
-    body = {"choice": {"channels": ["email"], "reasons": ["due_date_upcoming", "inactivity"],
-                       "due_date_lead_days": 1, "inactivity_days": 14, "frequency": "weekly_max"}}
-    r = api.post(f"/v1/cases/{cid}/notification-preferences/readback", json=body, headers=as_user("nt02")).json()
-    assert r["preferences"]["readback"] == ("Cairn will reach you by email the day before a step is due and when you "
-                                            "haven't been in Cairn for 14 days, no more than once a week.")
-    assert r["next_step"]["prompt"].endswith("Does that sound right?")
-    assert prefs_row(api, cid) is None
-    saved = set_prefs(api, "nt02", cid, body)
-    assert saved["preferences"]["stored"] is True
-    assert prefs_row(api, cid) == (["email"], ["due_date_upcoming", "inactivity"], 1, 14, "weekly_max", False)
-    assert saved["next_step"]["action"] == "preview_journey"  # a draft goes back to Start journey
+    r = api.put(f"/v1/cases/{cid}/keep-in-touch", json={"due_date_lead": "one_week", "inactivity_after": "one_week"},
+                headers=as_user("nt02"))
+    assert r.status_code == 200 and r.json()["next_step"]["action"] == "preview_journey"
+    assert prefs_row(api, "nt02") == (["email", "in_app"], "due_only", "one_week", "one_week")
+    assert r.json()["preferences"]["journey_confirmed"] is True
 
 
-def test_uc19_keep_it_simple_uses_the_draft_preset(api):
+def test_uc19_skip_keeps_the_open_03_defaults(api):
     register(api, "nt03")
     cid = new_draft(api, "nt03")["case"]["id"]
-    set_prefs(api, "nt03", cid, KEEP_IT_SIMPLE)
-    assert prefs_row(api, cid) == (["email"], ["due_date_upcoming"], 3, None, "daily_max", False)
+    api.put(f"/v1/cases/{cid}/keep-in-touch", json={"skip": True}, headers=as_user("nt03"))
+    assert prefs_row(api, "nt03") == (["email", "in_app"], "due_only", "three_days", "off")
 
 
-def test_uc19_skipped_or_never_asked_is_in_app_only_and_nothing_is_sent(api):
-    """D-2026-09-25-N2 and the skipped_or_in_app_only flow."""
+def test_uc19_with_no_reminders_both_questions_are_skipped(api):
     register(api, "nt04")
+    set_prefs(api, "nt04", {"stop_all_reminders": True})
     cid = new_draft(api, "nt04")["case"]["id"]
-    set_prefs(api, "nt04", cid, {"preset": "skip"})
-    assert prefs_row(api, cid)[0] == ["in_app_only"]
-    # Starting a journey with no choice at all stores in_app_only too.
-    cid2, _ = named_case(api, "nt04")
-    assert prefs_row(api, cid2) == (["in_app_only"], [], None, None, "daily_max", False)
-    due_tomorrow(api, cid2)
-    mailer = FakeMailer()
-    send_outbound(api, mailer)
-    assert mailer.to("nt04@example.test") == []
+    body = api.get(f"/v1/cases/{cid}/keep-in-touch", headers=as_user("nt04")).json()
+    assert body["questions"] == [] and body["next_step"]["prompt"] == CASE_COPY["keep_in_touch_none"]
 
 
-def test_uc19_invalid_choices_are_refused(api):
+def test_uc19_another_user_cannot_read_or_set_it_through_someone_elses_case(api):
     register(api, "nt05")
+    register(api, "nt05x")
     cid = new_draft(api, "nt05")["case"]["id"]
-    for choice in ({"channels": ["in_app_only", "email"]},
-                   {"channels": ["email"]},                                       # no reason
-                   {"channels": ["sms"], "reasons": ["inactivity"], "inactivity_days": 7},
-                   {"channels": ["email"], "reasons": ["due_date_upcoming"]},     # no lead time
-                   {"channels": ["email"], "reasons": ["inactivity"], "inactivity_days": 7, "due_date_lead_days": 3},
-                   {"channels": ["email"], "reasons": ["inactivity"], "inactivity_days": 5},
-                   {"channels": ["email", "email"], "reasons": ["inactivity"], "inactivity_days": 7}):
-        r = api.put(f"/v1/cases/{cid}/notification-preferences", json={"choice": choice}, headers=as_user("nt05"))
-        assert r.status_code == 422, choice
-    assert prefs_row(api, cid) is None
+    assert api.get(f"/v1/cases/{cid}/keep-in-touch", headers=as_user("nt05x")).status_code == 403
+    assert api.put(f"/v1/cases/{cid}/keep-in-touch", json={"skip": True},
+                   headers=as_user("nt05x")).status_code == 403
 
 
-def test_uc19_push_prompt_only_after_push_is_chosen_and_never_required(api):
+def test_uc18_a_second_journey_uses_the_same_account_choices(api):
+    """UC-CASE-18 v3: no per-case choices. The read-back shows the account's."""
     register(api, "nt06")
-    cid = new_draft(api, "nt06")["case"]["id"]
-    r = set_prefs(api, "nt06", cid, KEEP_IT_SIMPLE)
-    assert r["next_step"]["action"] != "request_push_permission"
-    body = {"choice": {"channels": ["email", "push"], "reasons": ["inactivity"], "inactivity_days": 3}}
-    r = set_prefs(api, "nt06", cid, body)
-    assert r["next_step"]["action"] == "request_push_permission"
-    # Declined: push comes off, email stays, and the readback no longer mentions the phone.
-    r = api.post(f"/v1/cases/{cid}/notification-preferences/push-permission", json={"granted": False},
-                 headers=as_user("nt06")).json()
-    assert r["preferences"]["channels"] == ["email"] and "phone" not in r["preferences"]["readback"]
-    assert r["acknowledgment"] == CASE_COPY["notifications_push_declined"]
-    # Push only, declined: nothing outside the app.
-    set_prefs(api, "nt06", cid, {"choice": {**body["choice"], "channels": ["push"]}})
-    r = api.post(f"/v1/cases/{cid}/notification-preferences/push-permission", json={"granted": False},
-                 headers=as_user("nt06")).json()
-    assert r["preferences"]["channels"] == ["in_app_only"] and r["preferences"]["reasons"] == []
-    # Granted is recorded.
-    set_prefs(api, "nt06", cid, {"choice": {**body["choice"], "channels": ["push"]}})
-    r = api.post(f"/v1/cases/{cid}/notification-preferences/push-permission", json={"granted": True},
-                 headers=as_user("nt06")).json()
-    assert r["preferences"]["push_permission_granted"] is True
-    assert r["next_step"]["action"] == "preview_journey"
+    named_case(api, "nt06")
+    set_prefs(api, "nt06", {"frequency": "weekly"})
+    second = new_draft(api, "nt06")["case"]["id"]
+    body = api.get(f"/v1/cases/{second}/keep-in-touch", headers=as_user("nt06")).json()
+    assert "a short weekly summary" in body["opening"]
 
 
-def test_uc19_email_is_shown_masked_and_works_with_apple_private_relay(api):
-    subject = "apple|nt07"
-    relay = "x7k2mq9zp4@privaterelay.appleid.com"
-    r = api.post("/v1/registrations", json={}, headers=as_user(subject, relay, method="apple"))
-    assert r.status_code in (200, 201), r.text
-    from .conftest import onboard
-    onboard(api, subject, method="apple")
-    h = as_user(subject, relay, method="apple")
-    cid = api.post("/v1/cases", headers=h).json()["case"]["id"]
-    setup = api.get(f"/v1/cases/{cid}/notification-preferences", headers=h).json()
-    assert setup["masked_email"] == "x•••4@privaterelay.appleid.com"
-    assert relay not in json.dumps(setup)
+# ------------------------------------------------------------------ UC-REG-17 change setup choices later
+
+def test_reg17_each_choice_is_read_back_saved_and_confirmed(api):
+    register(api, "st01")
+    r = set_prefs(api, "st01", {"frequency": "daily", "quiet_hours_start": "22:00", "quiet_hours_end": "07:30"})
+    assert r["preferences"]["frequency"] == "daily"
+    assert r["acknowledgment"].startswith("Saved. A confirmation is on its way to s•••1@example.test.")
+    assert "10 PM" in r["preferences"]["readback"] and "7:30 AM" in r["preferences"]["readback"]
+    assert outbox(api, "st01@example.test", with_service=True)[-1][0] == "settings_changed"
 
 
-def test_uc12_confirmation_says_the_reminder_goes_the_way_the_user_chose(api):
-    """UC-CASE-12 change: the reminder always shows in Cairn, and outside it only by the chosen channel."""
-    register(api, "nt08")
-    cid = new_draft(api, "nt08")["case"]["id"]
-    set_prefs(api, "nt08", cid, KEEP_IT_SIMPLE)
-    started = start_journey(api, "nt08", cid)
-    assert started["confirmation"].endswith(
-        "a few days before your free time ends, and we'll also send it by email.")
-    assert "They keep counting if you pause" in CASE_COPY["pre_button_notice"]
+def test_reg17_stop_all_reminders_is_one_step_with_no_persuasion(api):
+    register(api, "st02")
+    r = set_prefs(api, "st02", {"stop_all_reminders": True})
+    assert r["acknowledgment"] == COPY["notify_stopped"]
+    assert prefs_row(api, "st02")[1] == "none"
+    for word in ("sure", "miss", "why"):
+        assert word not in r["acknowledgment"].lower()
 
 
-def test_uc12_confirmation_without_an_outside_channel_only_mentions_cairn(api):
-    """UC-CASE-12: with in-Cairn only, the clause is empty and nothing promises an email."""
-    register(api, "nt08b")
-    cid = new_draft(api, "nt08b")["case"]["id"]
-    started = start_journey(api, "nt08b", cid)
-    assert started["confirmation"].endswith("a reminder here in Cairn a few days before your free time ends.")
-    assert "email" not in started["confirmation"]
+def test_reg17_always_free_on_a_read_only_account(api):
+    register(api, "st03")
+    named_case(api, "st03")
+    expire_trial(api, "st03")
+    assert set_prefs(api, "st03", {"inactivity_after": "two_weeks"})["preferences"]["inactivity_after"] == "two_weeks"
 
 
-def test_uc19_trial_reminder_email_only_with_an_email_choice(api):
-    register(api, "nt09")
-    in_app, _ = named_case(api, "nt09")
-    api.db.trial_reminders.update_one({"user_id": user_id(api, "nt09"), "kind": "trial_day_21"},
+def test_reg17_by_chat_stop_texting_me_and_email_me_instead(api):
+    register(api, "st04")
+    h = as_user("st04")
+    r = api.post("/v1/me/messages", json={"text": "Stop texting me"}, headers=h).json()
+    assert r["intent"] == "stop_notifications" and prefs_row(api, "st04")[1] == "none"
+    r = api.post("/v1/me/messages", json={"text": "Email me instead"}, headers=h).json()
+    assert r["intent"] == "change_notifications" and r["proposal"]["email"] is True
+    assert r["next_step"]["action"] == "confirm_notification_change"  # read back, nothing saved yet
+    r = api.post("/v1/me/messages", json={"text": "Can you text me?"}, headers=h).json()
+    assert r["intent"] == "sms_not_available"
+
+
+# ------------------------------------------------------------------ what goes out (account D-13, D-14)
+
+def test_the_trial_note_is_emailed_whatever_the_reminder_choices(api):
+    """Account D-14: a service notice, emailed a week before, and shown in Cairn."""
+    register(api, "tn01")
+    set_prefs(api, "tn01", {"stop_all_reminders": True})
+    named_case(api, "tn01")
+    api.db.trial_reminders.update_one({"user_id": user_id(api, "tn01")},
                                       {"$set": {"due_at": datetime.now(timezone.utc) - timedelta(minutes=1)}})
     mailer = FakeMailer()
     send_outbound(api, mailer)
-    assert mailer.to("nt09@example.test") == []
-    # Still shown in Cairn.
-    me = api.get("/v1/me", headers=as_user("nt09")).json()
-    assert me["notes"] and me["notes"][0]["kind"] == "reminder"
-    set_prefs(api, "nt09", in_app, KEEP_IT_SIMPLE)
-    send_outbound(api, mailer)
-    [body] = [b for s, b in mailer.to("nt09@example.test") if s == COPY["email_subject_trial"]]
-    assert "free time" in body
+    [(subject, body)] = [m for m in mailer.to("tn01@example.test") if m[0] == COPY["email_subject_trial"]]
+    assert body.startswith("Your free time with Cairn ends in a week, on ")
 
 
-def test_uc19_notifications_are_short_private_and_at_the_chosen_pace(api):
+def test_uc12_confirmation_says_the_note_goes_to_the_sign_in_email(api):
+    register(api, "tn02")
+    cid = new_draft(api, "tn02")["case"]["id"]
+    answer(api, "tn02", cid, "place_of_death", {"jurisdiction": "NH"})
+    started = start_journey(api, "tn02", cid)
+    assert "tn02@example.test" in started["confirmation"]
+    assert "Taking a break doesn't pause a subscription." in started["confirmation"]
+
+
+def test_reminders_are_short_private_and_at_the_chosen_pace(api):
     register(api, "nt10")
-    cid, _ = named_case(api, "nt10", name="Zebulon", veteran_status="yes", circumstance="accident_or_unexpected")
-    set_prefs(api, "nt10", cid, KEEP_IT_SIMPLE)
+    cid, _ = named_case(api, "nt10", name="Zebulon")
+    set_prefs(api, "nt10", {**ALWAYS, "frequency": "daily"})
     due_tomorrow(api, cid)
     mailer = FakeMailer()
     send_outbound(api, mailer)
-    [(subject, body)] = mailer.to("nt10@example.test")  # one message for the journey, not one per task
-    assert body == "You have a step coming up in Cairn."
-    for private in ("Zebulon", "accident", "veteran", "certificate", "Social Security"):
-        assert private.lower() not in (subject + body).lower()
-    send_outbound(api, mailer)  # daily_max
-    assert len(mailer.to("nt10@example.test")) == 1
-    sent = [(r["reason"], r["channel"]) for r in api.db.notification_log.find({"case_id": UUID(cid)})]
-    assert sent == [("due_date_upcoming", "email")]
+    send_outbound(api, mailer)
+    sent = [m for m in mailer.to("nt10@example.test") if m[0] == COPY["email_subject_notification"]]
+    assert sent == [(COPY["email_subject_notification"], CASE_COPY["notification_example"])]
+    assert "Zebulon" not in json.dumps(mailer.sent)
 
 
-def test_uc18_offers_the_same_as_the_first_case_first_and_each_journey_keeps_its_own(api):
+def test_browser_notifications_are_empty_and_a_gone_subscription_is_dropped(api):
+    """UC-REG-15 browser channel: the push carries no text. A 410 takes browser off (permission revoked)."""
+    from cairn_api.webpush import PushError
     register(api, "nt11")
-    first, _ = named_case(api, "nt11", name="Dan")
-    set_prefs(api, "nt11", first, EMAIL_WEEKLY)
-    second = new_draft(api, "nt11")["case"]["id"]
-    setup = api.get(f"/v1/cases/{second}/notification-preferences", headers=as_user("nt11")).json()
-    assert setup["shortcuts"][0] == {"value": f"same_as:{first}", "label": "Use the same as Dan",
-                                     "available": True, "unavailable_reason": None}
-    set_prefs(api, "nt11", second, {"preset": "same_as", "same_as_case_id": first})
-    assert prefs_row(api, second) == prefs_row(api, first)
-    set_prefs(api, "nt11", second, {"preset": "skip"})
-    assert prefs_row(api, first)[0] == ["email"]
+    cid, _ = named_case(api, "nt11")
+    set_prefs(api, "nt11", {**ALWAYS, "channels": {"email": False, "browser": True, "browser_permission": "granted",
+                                                   "browser_push_endpoint": "https://push.example.test/sub/nt11"}})
+    due_tomorrow(api, cid)
 
+    class GonePush:
+        def __init__(self):
+            self.sent = []
 
-def test_uc19_another_user_cannot_read_set_or_copy_preferences(api):
-    register(api, "nt12a")
-    register(api, "nt12b")
-    theirs = new_draft(api, "nt12a")["case"]["id"]
-    set_prefs(api, "nt12a", theirs, EMAIL_WEEKLY)
-    mine = new_draft(api, "nt12b")["case"]["id"]
-    h = as_user("nt12b")
-    assert api.get(f"/v1/cases/{theirs}/notification-preferences", headers=h).status_code == 403
-    assert api.put(f"/v1/cases/{theirs}/notification-preferences", json=KEEP_IT_SIMPLE, headers=h).status_code == 403
-    r = api.put(f"/v1/cases/{mine}/notification-preferences", json={"preset": "same_as", "same_as_case_id": theirs},
-                headers=h)
-    assert r.status_code == 403
-    assert prefs_row(api, theirs)[0] == ["email"]
+        def send(self, endpoint):
+            self.sent.append(endpoint)
+            raise PushError("gone", 410)
 
-
-# ------------------------------------------------------------------ UC-CASE-20 change how Cairn keeps in touch
-
-def test_uc20_stop_everything_is_one_step_on_every_journey(api):
-    register(api, "nt20")
-    a, _ = named_case(api, "nt20", name="Dan")
-    b, _ = named_case(api, "nt20", name="Rosa")
-    set_prefs(api, "nt20", a, KEEP_IT_SIMPLE)
-    set_prefs(api, "nt20", b, EMAIL_WEEKLY)
-    r = api.post("/v1/me/notification-preferences/changes", json={"stop_everything": True},
-                 headers=as_user("nt20")).json()
-    assert r["applied"] is True and r["acknowledgment"] == CASE_COPY["notifications_stopped"]
-    assert r["next_step"]["action"] == "done" and not r["next_step"].get("options")  # no follow-up question
-    assert "?" not in r["acknowledgment"]
-    assert prefs_row(api, a)[0] == prefs_row(api, b)[0] == ["in_app_only"]
-
-
-def test_uc20_a_change_is_read_back_in_one_line_and_applied_on_yes(api):
-    register(api, "nt21")
-    cid, journey_before = named_case(api, "nt21")
-    body = {"choice": {"channels": ["email"], "reasons": ["inactivity"], "inactivity_days": 3,
-                       "frequency": "as_it_happens"}}
-    r = api.post("/v1/me/notification-preferences/changes", json=body, headers=as_user("nt21")).json()
-    assert r["applied"] is False and r["readback"].count(".") == 1
-    assert r["next_step"]["prompt"] == f"{r['readback']} Should I make this change?"
-    assert prefs_row(api, cid)[0] == ["in_app_only"]
-    r = api.post("/v1/me/notification-preferences/changes", json={**body, "confirm": True},
-                 headers=as_user("nt21")).json()
-    assert r["applied"] is True and prefs_row(api, cid)[:2] == (["email"], ["inactivity"])
-    # Turning notifications on or off never changes the journey itself.
-    api.post("/v1/me/notification-preferences/changes", json={"stop_everything": True}, headers=as_user("nt21"))
-    after = api.get(f"/v1/cases/{cid}/journey", headers=as_user("nt21")).json()
-    assert after["weeks"] == journey_before["weeks"]
-
-
-def test_uc20_with_several_journeys_asks_which_by_name_and_offers_all(api):
-    register(api, "nt22")
-    a, _ = named_case(api, "nt22", name="Dan")
-    b, _ = named_case(api, "nt22", name="Rosa")
-    r = api.post("/v1/me/notification-preferences/changes", json={"choice": EMAIL_WEEKLY["choice"]},
-                 headers=as_user("nt22")).json()
-    assert r["applied"] is False and r["next_step"]["action"] == "choose_journeys"
-    assert [o["label"] for o in r["next_step"]["options"]] == ["Dan", "Rosa", "All of them"]
-    r = api.post("/v1/me/notification-preferences/changes",
-                 json={"choice": EMAIL_WEEKLY["choice"], "scope": [b], "confirm": True}, headers=as_user("nt22")).json()
-    assert r["applied"] and [j["display_name"] for j in r["journeys"]] == ["Rosa"]
-    assert prefs_row(api, a)[0] == ["in_app_only"] and prefs_row(api, b)[0] == ["email"]
-    listing = api.get("/v1/me/notification-preferences", headers=as_user("nt22")).json()
-    assert [j["display_name"] for j in listing["journeys"]] == ["Dan", "Rosa"]
-
-
-def test_uc20_always_free_on_a_read_only_account(api):
-    register(api, "nt23")
-    cid, _ = named_case(api, "nt23")
-    set_prefs(api, "nt23", cid, KEEP_IT_SIMPLE)
-    expire_trial(api, "nt23")
-    assert api.get("/v1/me", headers=as_user("nt23")).json()["account"]["status"] == "read_only"
-    r = api.post("/v1/me/notification-preferences/changes", json={"stop_everything": True}, headers=as_user("nt23"))
-    assert r.status_code == 200 and prefs_row(api, cid)[0] == ["in_app_only"]
-    set_prefs(api, "nt23", cid, EMAIL_WEEKLY)
-    assert prefs_row(api, cid)[0] == ["email"]
-
-
-def test_uc20_by_chat_stop_texting_me_and_email_me_instead(api):
-    register(api, "nt24")
-    cid, _ = named_case(api, "nt24")
-    set_prefs(api, "nt24", cid, EMAIL_WEEKLY)
-    h = as_user("nt24")
-    r = api.post("/v1/me/messages", json={"text": "Stop texting me"}, headers=h).json()
-    assert r["intent"] == "stop_notifications" and prefs_row(api, cid)[0] == ["in_app_only"]
-    r = api.post("/v1/me/messages", json={"text": "Email me instead"}, headers=h).json()
-    assert r["intent"] == "change_notifications" and prefs_row(api, cid)[0] == ["in_app_only"]  # not yet
-    assert r["next_step"]["action"] == "confirm_notification_change"
-    assert r["proposal"]["channels"] == ["email"]
-    r = api.post("/v1/me/notification-preferences/changes", json={"choice": r["proposal"], "confirm": True},
-                 headers=h).json()
-    assert r["applied"] and prefs_row(api, cid)[0] == ["email"]
-    r = api.post("/v1/me/messages", json={"text": "Can you text me instead?"}, headers=h).json()
-    assert r["intent"] == "sms_not_available"
-    # With two journeys, the switch asks which one first.
-    named_case(api, "nt24", name="Rosa")
-    r = api.post("/v1/me/messages", json={"text": "Email me instead"}, headers=h).json()
-    assert r["next_step"]["action"] == "choose_journeys" and r["next_step"]["options"][-1]["label"] == "All of them"
+    push = GonePush()
+    send_outbound(api, FakeMailer(), push)
+    assert push.sent == ["https://push.example.test/sub/nt11"]
+    row = api.db.notification_preferences.find_one({"_id": user_id(api, "nt11")})
+    assert row["channels"] == ["in_app"] and row["browser_push_endpoint"] is None
 
 
 # ------------------------------------------------------------------ UC-END-13 and UC-CASE-21 deleting a case
@@ -384,9 +265,9 @@ def test_uc21_delete_now_sends_exactly_one_private_confirmation_then_purges_the_
     mailer = FakeMailer()
     send_outbound(api, mailer)
     send_outbound(api, mailer)
-    [(subject, body)] = mailer.to("dc02@example.test")
-    assert body == COPY["email_case_deleted_now"] and "Zebulon" not in subject + body
-    assert outbox(api, "dc02@example.test") == []  # the address is purged once sent
+    [(subject, body)] = [m for m in mailer.to("dc02@example.test") if m[1] == COPY["email_case_deleted_now"]]
+    assert "Zebulon" not in subject + body
+    assert outbox(api, "dc02@example.test", with_service=True) == []  # every address is purged once sent
     after = api.db.action_confirmation_log.count_documents({"action_type": "case_deleted_now"})
     assert after > before
 
@@ -402,7 +283,8 @@ def test_uc21_a_failed_send_is_retried_and_still_sent_only_once(api):
     up = FakeMailer()
     send_outbound(api, up)
     send_outbound(api, up)
-    assert len(up.to("dc03@example.test")) == 1 and outbox(api, "dc03@example.test") == []
+    sent = [m for m in up.to("dc03@example.test") if m[1] == COPY["email_case_deleted_now"]]
+    assert len(sent) == 1 and outbox(api, "dc03@example.test") == []
 
 
 def test_hold_keeps_the_case_for_7_days_can_be_cancelled_and_confirms_when_deleted(api):
@@ -447,7 +329,7 @@ def test_case_deletion_is_free_on_drafts_and_read_only_accounts_and_owner_only(a
     assert api.post(f"/v1/cases/{cid}/deletion", json={"mode": "now"}, headers=as_user("dc05")).status_code == 200
 
 
-# ------------------------------------------------------------------ UC-REG-15 delete my account
+# ------------------------------------------------------------------ UC-ACCT-01 delete my account (UC-REG-15 before)
 
 def test_reg15_explains_everything_shows_where_the_confirmation_goes_and_offers_one_button(api):
     register(api, "da01")
@@ -465,13 +347,12 @@ def test_reg15_explains_everything_shows_where_the_confirmation_goes_and_offers_
         assert persuasion not in text
 
 
-def test_reg15_a_store_subscription_is_information_only(api):
+def test_reg15_a_subscription_is_cancelled_right_away_with_no_refund_said_first(api):
+    """UC-SUB-16 and SUB-D-05. The note is information, not a question."""
     register(api, "da02")
-    api.db.users.update_one({"idp_subject": "da02"}, {"$set": {"status": "subscribed"}})
+    api.db.users.update_one({"idp_subject": "da02"}, {"$set": {"subscription_status": "active"}})
     note = api.get("/v1/me/deletion", headers=as_user("da02")).json()["subscription_note"]
-    assert note["text"] == COPY["deletion_store_subscription"] and "?" not in note["text"]
-    assert note["source_urls"] == ["https://support.apple.com/en-us/HT202039",
-                                   "https://support.google.com/googleplay/answer/7018481"]
+    assert note["text"] == SUB_COPY["delete_account_with_subscription"] and "?" not in note["text"]
 
 
 def test_reg15_deletes_everything_now_including_held_cases_and_sends_one_confirmation(api):
@@ -486,7 +367,7 @@ def test_reg15_deletes_everything_now_including_held_cases_and_sends_one_confirm
     active = api.post("/v1/cases", headers=h).json()["case"]["id"]
     answer(api, subject, active, "display_name", "Dan")
     start_journey(api, subject, active)
-    api.put(f"/v1/cases/{active}/notification-preferences", json=KEEP_IT_SIMPLE, headers=h)
+    api.patch("/v1/me/notification-preferences", json={"frequency": "daily"}, headers=h)
     add_conversation(api, active, "fake conversation")
     held = api.post("/v1/cases", headers=h).json()["case"]["id"]
     api.post(f"/v1/cases/{held}/deletion", json={"mode": "hold"}, headers=h)
@@ -499,15 +380,15 @@ def test_reg15_deletes_everything_now_including_held_cases_and_sends_one_confirm
     assert body["signed_out"] is True and body["next_step"]["action"] == "signed_out"
     assert api.get("/v1/me", headers=h).json()["code"] == "registration_required"
     ids = [UUID(c) for c in (active, held, draft)]
-    for collection in ("cases", "notification_preferences", "case_intake_answers", "case_tasks", "notification_log",
-                       "context_items", "deceased"):
-        field = "_id" if collection in ("cases", "notification_preferences") else "case_id"
+    for collection in ("cases", "case_intake_answers", "case_tasks", "notification_log", "context_items",
+                       "deceased"):
+        field = "_id" if collection == "cases" else "case_id"
         assert api.db[collection].count_documents({field: {"$in": ids}}) == 0, collection
-    for collection in ("users", "consents", "trial_reminders"):
-        field = "_id" if collection == "users" else "user_id"
+    for collection in ("users", "notification_preferences", "consents", "trial_reminders"):
+        field = "_id" if collection in ("users", "notification_preferences") else "user_id"
         assert api.db[collection].count_documents({field: uid}) == 0, collection
     # Exactly one confirmation, with nothing that links it to the account, then the address is purged.
-    assert outbox(api, email) == [("account_deleted", None)]
+    assert outbox(api, email, with_service=True) == [("account_deleted", None)]
     # Apple token revocation (TN3194) is queued.
     assert [r["provider"] for r in api.db.identity_deletion_requests.find({"idp_subject": subject})] == ["apple"]
     mailer = FakeMailer()
@@ -588,7 +469,7 @@ def test_reg16_explains_in_one_sentence(api):
 def test_reg16_the_download_has_everything_and_never_a_sensitive_number(api):
     register(api, "dx02")
     cid, _ = named_case(api, "dx02", name="Dan", veteran_status="yes")
-    set_prefs(api, "dx02", cid, KEEP_IT_SIMPLE)
+    set_prefs(api, "dx02", {"frequency": "daily"})
     api.patch(f"/v1/cases/{cid}/deceased", json={"legal_first_name": "Daniel", "legal_last_name": "Fakerton"},
               headers=as_user("dx02"))
     api.db.deceased.update_one({"case_id": UUID(cid)}, {"$set": {"ssn_last4": "4821"}})
@@ -607,7 +488,9 @@ def test_reg16_the_download_has_everything_and_never_a_sensitive_number(api):
     assert {a["field"] for a in case["answers"]} >= {"display_name", "veteran_status", "place_of_death"}
     assert case["tasks"] and {"title", "status", "due_on"} <= set(case["tasks"][0])
     assert case["summary"]["tasks_by_status"] and case["summary"]["next_step"]
-    assert case["notification_preferences"]["channels"] == ["email"]
+    assert data["notification_preferences"]["channels"] == ["email", "in_app"]
+    assert data["subscription"]["subscription_status"] == "none" and "stripe" not in json.dumps(data["subscription"])
+    assert data["profile"]["adult_attested"] is True
     assert case["conversation"][0]["payload"]["text"].startswith("We talked about the bank.")
     assert "4821" not in json.dumps(case["person_who_died"])
     assert "ssn_last4" not in r.text
@@ -624,7 +507,7 @@ def test_reg16_is_free_on_a_read_only_account_and_never_includes_another_users_d
     r = api.get("/v1/me/data-export/file", headers=as_user("dx03"))
     assert r.status_code == 200 and "Theirs" not in r.text and "dx03x" not in r.text
     assert [c["display_name"] for c in r.json()["cases"]] == ["Mine"]
-    assert r.json()["profile"]["status"] == "read_only"
+    assert (r.json()["profile"]["status"], r.json()["profile"]["access"]) == ("setup_complete", "read_only")
 
 
 def test_reg16_asked_in_chat(api):
@@ -635,7 +518,7 @@ def test_reg16_asked_in_chat(api):
     assert r["next_step"]["prompt"] == COPY["export_explanation"]
 
 
-# ------------------------------------------------------------------ pausing (D-2026-09-25-P1, UC-END-08 hook)
+# ------------------------------------------------------------------ pausing (DEC-07, UC-BRK-05)
 
 def test_pausing_says_the_free_days_keep_counting_and_offers_to_change_notifications(api):
     register(api, "pz01")
@@ -643,7 +526,9 @@ def test_pausing_says_the_free_days_keep_counting_and_offers_to_change_notificat
     before = api.db.users.find_one({"idp_subject": "pz01"})["trial_ends_at"]
     r = api.post(f"/v1/cases/{cid}/journey/pause", json={"pause_days": 14}, headers=as_user("pz01")).json()
     texts = [n["text"] for n in r["notes"]]
-    assert CASE_COPY["pause_trial_note"] in texts and CASE_COPY["pause_notifications_offer"] in texts
+    assert any(t.startswith("Your free days keep counting while you rest.") for t in texts)
+    assert CASE_COPY["pause_notifications_offer"] in texts
+    assert api.db.users.find_one({"idp_subject": "pz01"})["break_started_at"] is not None  # a break on the account
     assert api.db.users.find_one({"idp_subject": "pz01"})["trial_ends_at"] == before
 
 

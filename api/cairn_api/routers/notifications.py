@@ -1,8 +1,9 @@
-"""UC-CASE-19 and UC-CASE-20: choose, and change, how and when Cairn keeps in touch.
+"""How Cairn keeps in touch: Settings (account UC-REG-17) and the journey confirmation (case UC-CASE-19).
 
-Always free, on every account status, and never gated on acknowledgments: a
-request to stop messages must always work (D-2026-09-25-F1). Turning
-notifications off never changes the journey itself.
+One set of choices for the whole account (account D-13). Changing them is always
+free, on every account status, and never gated on acknowledgments: a request to
+stop reminders must always work (D-2026-09-25-F1). At care level 4 no Settings
+change is made in the same turn (AC-26-11).
 """
 from uuid import UUID
 
@@ -12,34 +13,107 @@ from .. import account as acct
 from .. import intake
 from .. import notifications as nt
 from ..auth import Identity, get_identity
+from ..copy_store import Copy
 from ..db import Session
 from ..errors import ApiError, case_access_denied
 from ..schemas import (
-    AccountNotificationsResponse,
-    JourneyNotifications,
+    KeepInTouchIn,
+    KeepInTouchQuestion,
+    KeepInTouchResponse,
     NextStep,
-    NotificationChangeIn,
-    NotificationChangeResponse,
-    NotificationChannel,
-    NotificationChoice,
-    NotificationPreset,
-    NotificationReadbackResponse,
-    NotificationSavedResponse,
-    NotificationSetIn,
-    NotificationSetupResponse,
+    NotificationSettingsPatch,
+    NotificationSettingsResponse,
     Option,
-    PushPermissionIn,
     ReadAloud,
 )
 
 router = APIRouter(tags=["Keeping in touch"])
 
 _DENIED = {403: {"description": "Not a member of this case, or the case does not exist."}}
+# Before any choice was made (accounts set up before account D-13), nothing goes outside Cairn.
+NOTHING_OUTSIDE = {"channels": ["in_app"], "frequency": "none"}
 
 
-def _ctx(s: Session, request: Request) -> intake.Ctx:
-    return intake.ctx(s, request, acct.load_account(s))
+def settings_saved(s: Session, request: Request, account: dict) -> str:
+    """UC-REG-17. Saved, and where the confirmation was sent. Queues one confirmation, replacing one not yet sent,
+    so several changes in a row send one message (UC-CASE-21)."""
+    copy: Copy = request.app.state.copy
+    s.queue_confirmation("settings_changed", replace_unsent=True)
+    destination = copy["settings_confirmation_destination"].format(masked_email=acct.mask_email(account["email"]))
+    return copy["settings_saved"].format(confirmation_destination=destination)
 
+
+def apply_settings(s: Session, request: Request, req: NotificationSettingsPatch) -> NotificationSettingsResponse:
+    """Shared by Settings and chat. Each choice saves on its own and is read back in one line."""
+    copy: Copy = request.app.state.copy
+    account = acct.load_account(s)
+    if req.care_level == 4:
+        # AC-26-11. Nothing changes in this turn. The same request works when the user asks again.
+        return NotificationSettingsResponse(preferences=nt.out(nt.load(s), copy), acknowledgment=None,
+                                            next_step=NextStep(action="not_now", prompt=copy["settings_not_now"]))
+    values: dict = {}
+    if req.stop_all_reminders:
+        values["frequency"] = "none"  # one step, no persuasion
+    else:
+        if req.channels is not None:
+            values["channels"], values["browser_push_endpoint"] = nt.channels_from(req.channels)
+        for f in ("frequency", "due_date_lead", "inactivity_after"):
+            if getattr(req, f) is not None:
+                values[f] = getattr(req, f).value
+        for f in ("quiet_hours_start", "quiet_hours_end"):
+            if getattr(req, f) is not None:
+                values[f] = getattr(req, f)
+    if nt.load(s) is None:
+        values = {**NOTHING_OUTSIDE, **values}
+    row = s.save_notification_preferences(values)
+    s.audit("notification_preferences_saved", object_type="user", object_id=account["id"])
+    prefs = nt.out(row, copy)
+    saved = settings_saved(s, request, account)
+    ack = copy["notify_stopped"] if req.stop_all_reminders else saved
+    notes_step = NextStep(action="done", prompt=f"{prefs.readback} {ack}")
+    if req.channels is not None and req.channels.browser and req.channels.browser_permission == "denied":
+        notes_step = NextStep(action="done", prompt=copy["notify_browser_denied"])
+    return NotificationSettingsResponse(preferences=prefs, acknowledgment=ack, next_step=notes_step)
+
+
+@router.get(
+    "/v1/me/notification-preferences",
+    response_model=NotificationSettingsResponse,
+    summary="How Cairn keeps in touch",
+    description="UC-REG-17. Channels, frequency, due date lead time, inactivity notices, and quiet hours, each "
+                "editable on its own, with Stop all reminders. Available on a read-only account too.",
+)
+def get_preferences(request: Request, identity: Identity = Depends(get_identity)) -> NotificationSettingsResponse:
+    copy: Copy = request.app.state.copy
+    with request.app.state.db.session(identity.subject) as s:
+        s.require_user()
+        prefs = nt.out(nt.load(s), copy)
+        return NotificationSettingsResponse(preferences=prefs, acknowledgment=None, next_step=NextStep(
+            action="change_notifications", prompt=prefs.readback,
+            options=[Option(value="stop_all_reminders", label=copy["notify_stop_all"])]),
+            push_public_key=request.app.state.settings.vapid_public_key)
+
+
+@router.patch(
+    "/v1/me/notification-preferences",
+    response_model=NotificationSettingsResponse,
+    summary="Change how Cairn keeps in touch",
+    description=(
+        "UC-REG-17. Send only the choice being changed. Each is read back in one line and saved separately, with "
+        "copy.settings_saved saying where the confirmation went. stop_all_reminders sets frequency none in one "
+        "step, with no persuasion. Turning browser off clears the push endpoint. Browser permission denied takes "
+        "browser off. Same validation and data boundary as setup. Always free, on a read-only account too. At "
+        "care level 4 nothing changes in that turn (AC-26-11)."
+    ),
+)
+def change_preferences(req: NotificationSettingsPatch, request: Request,
+                       identity: Identity = Depends(get_identity)) -> NotificationSettingsResponse:
+    with request.app.state.db.session(identity.subject) as s:
+        s.require_user()
+        return apply_settings(s, request, req)
+
+
+# ------------------------------------------------------------------ the journey confirmation (UC-CASE-19)
 
 def _owned_case(c: intake.Ctx, case_id: UUID) -> dict:
     case = intake.load_case(c.s, case_id)
@@ -48,229 +122,92 @@ def _owned_case(c: intake.Ctx, case_id: UUID) -> dict:
     return case
 
 
-def _resolve(c: intake.Ctx, case_id: UUID, req: NotificationSetIn) -> NotificationChoice:
-    if req.choice is not None:
-        return req.choice
-    if req.preset == NotificationPreset.keep_it_simple:
-        return nt.KEEP_IT_SIMPLE
-    if req.preset == NotificationPreset.skip:
-        return nt.IN_APP_ONLY
-    # same_as: another of this user's journeys. The case boundary hides anyone else's.
-    if req.same_as_case_id == case_id:
-        raise ApiError(422, "validation_failed", "Choose a different journey to copy.")
-    row = nt.load(c.s, req.same_as_case_id)
-    if row is None:
-        raise case_access_denied()
-    return nt.choice_of(row)
+def _questions(copy: Copy) -> list[KeepInTouchQuestion]:
+    return [
+        KeepInTouchQuestion(id="due_date_lead", prompt=copy["lead_time_question"], options=[
+            Option(value=v, label=copy[f"lead_{v}"]) for v in ("day_before", "three_days", "one_week")]),
+        KeepInTouchQuestion(id="inactivity_after", prompt=copy["inactivity_question"], options=[
+            Option(value=v, label=copy[f"inactivity_{v}"]) for v in ("off", "three_days", "one_week", "two_weeks")]),
+    ]
 
 
-def _after_save(c: intake.Ctx, case: dict, row: dict) -> NextStep:
-    if NotificationChannel.push.value in row["channels"] and not row["push_permission_granted"]:
-        # The OS prompt is shown only now, after the user chose push.
-        return NextStep(action="request_push_permission", prompt=c.copy["notifications_push_permission"])
-    if case["status"] == "draft":
-        return NextStep(action="preview_journey", prompt=c.copy["journey_preview_intro"])
-    return NextStep(action="done", prompt=c.copy["notifications_saved"])
+def _opening(c: intake.Ctx, row: dict | None) -> str:
+    """Reads back the account choices in one line: channels and how often (UC-REG-15)."""
+    reg: Copy = c.request.app.state.copy
+    prefs = row or {**NOTHING_OUTSIDE}
+    labels = {"email": reg["notify_channel_email_label"], "browser": reg["notify_channel_browser_label"],
+              "in_app": reg["notify_channel_inapp_label"]}
+    names = [labels[ch] for ch in ("email", "browser", "in_app") if ch in prefs["channels"]]
+    channels = names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+    return c.copy["notifications_intro"].format(channels=channels,
+                                                frequency=reg[f"notify_frequency_{prefs['frequency']}_label"])
 
 
 @router.get(
-    "/v1/cases/{case_id}/notification-preferences",
-    response_model=NotificationSetupResponse,
-    summary="How Cairn keeps in touch for this journey",
+    "/v1/cases/{case_id}/keep-in-touch",
+    response_model=KeepInTouchResponse,
+    summary="Confirm how Cairn keeps in touch",
     description=(
-        "UC-CASE-19. Explains that the user decides and can change it any time, then offers shortcuts (the same "
-        "as another journey first, then Keep it simple for me) and the questions in order: channel, reasons, "
-        "timing, frequency. With no choice stored, the effective choice is in_app_only."
+        "UC-CASE-19. Reads back the account's channels and frequency in one line, then asks only how early to hear "
+        "about due dates and whether to check in after a while, one per screen. Channels and frequency are never "
+        "asked from scratch here (account D-13). With No reminders, both questions are skipped and it says plainly "
+        "that nothing is sent outside Cairn except confirmations."
     ),
     responses=_DENIED,
 )
-def get_setup(case_id: UUID, request: Request, identity: Identity = Depends(get_identity)) -> NotificationSetupResponse:
+def get_keep_in_touch(case_id: UUID, request: Request,
+                      identity: Identity = Depends(get_identity)) -> KeepInTouchResponse:
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
-        c = _ctx(s, request)
+        c = intake.ctx(s, request, acct.load_account(s))
         _owned_case(c, case_id)
-        names = nt.display_names(s, c.copy)
-        masked = nt.masked_account_email(c.account)
-        row = nt.load(s, case_id)
-        # UC-CASE-19 voice samples: how to keep in touch, asked in the user's voice.
-        step = NextStep(action="choose_notifications", prompt=c.copy[f"notifications_question_{c.voice}"])
-        explanation = c.copy["notifications_intro"]
-        return NotificationSetupResponse(
-            case_id=case_id, display_name=names.get(case_id, c.copy["your_loved_one"]), explanation=explanation,
-            preferences=nt.out(case_id, row, c.copy), masked_email=masked,
-            shortcuts=nt.shortcuts(s, c.copy, case_id, names), questions=nt.questions(c.copy, masked),
-            next_step=step, read_aloud=ReadAloud(label=c.copy["read_this_to_me"], text=f"{explanation} {step.prompt}"))
-
-
-@router.post(
-    "/v1/cases/{case_id}/notification-preferences/readback",
-    response_model=NotificationReadbackResponse,
-    summary="Read a choice back before saving it",
-    description="UC-CASE-19 step 6. Says the choice in plain language and asks to confirm. Nothing is stored.",
-    responses=_DENIED,
-)
-def readback(case_id: UUID, req: NotificationSetIn, request: Request,
-             identity: Identity = Depends(get_identity)) -> NotificationReadbackResponse:
-    with request.app.state.db.session(identity.subject) as s:
-        s.require_user()
-        c = _ctx(s, request)
-        _owned_case(c, case_id)
-        choice = _resolve(c, case_id, req)
-        prefs = nt.out(case_id, None, c.copy, choice)
-        return NotificationReadbackResponse(preferences=prefs, next_step=NextStep(
-            action="confirm_notifications", prompt=f"{prefs.readback} {c.copy['notifications_readback_question']}",
-            options=[Option(value="yes", label=c.copy["notifications_yes"]),
-                     Option(value="change", label=c.copy["notifications_change"])]))
+        row = nt.load(s)
+        opening = _opening(c, row)
+        none = (row or NOTHING_OUTSIDE)["frequency"] == "none"
+        questions = [] if none else _questions(c.copy)
+        prompt = c.copy["keep_in_touch_none"] if none else questions[0].prompt
+        step = NextStep(action="confirm_keep_in_touch", prompt=prompt,
+                        options=questions[0].options if questions else [
+                            Option(value="ok", label=request.app.state.copy["continue"])])
+        return KeepInTouchResponse(
+            opening=opening, preferences=nt.out(row, request.app.state.copy), questions=questions,
+            change_link=Option(value="change_settings", label=c.copy["change_how_you_hear"]), next_step=step,
+            read_aloud=ReadAloud(label=c.copy["read_this_to_me"], text=f"{opening} {prompt}"))
 
 
 @router.put(
-    "/v1/cases/{case_id}/notification-preferences",
-    response_model=NotificationSavedResponse,
-    summary="Save how Cairn keeps in touch for this journey",
+    "/v1/cases/{case_id}/keep-in-touch",
+    response_model=NotificationSettingsResponse,
+    summary="Save due date lead time and inactivity notices",
     description=(
-        "UC-CASE-19 and UC-CASE-20. Send the confirmed choice or a shortcut: keep_it_simple, skip (in_app_only), "
-        "or same_as another journey. Each journey keeps its own choice. Works on drafts, active, paused, closed, "
-        "and read-only cases, always free."
+        "UC-CASE-19. Saves due_date_lead and inactivity_after on the account's notification choices. skip keeps the "
+        "account choices and the OPEN-03 defaults (3 days before, no inactivity notices). Skippable, and always "
+        "free, on drafts and read-only accounts too."
     ),
     responses=_DENIED,
 )
-def save(case_id: UUID, req: NotificationSetIn, request: Request,
-         identity: Identity = Depends(get_identity)) -> NotificationSavedResponse:
+def save_keep_in_touch(case_id: UUID, req: KeepInTouchIn, request: Request,
+                       identity: Identity = Depends(get_identity)) -> NotificationSettingsResponse:
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
-        c = _ctx(s, request)
+        c = intake.ctx(s, request, acct.load_account(s))
         case = _owned_case(c, case_id)
-        row = nt.save(s, case_id, _resolve(c, case_id, req))
-        return NotificationSavedResponse(preferences=nt.out(case_id, row, c.copy),
-                                         acknowledgment=c.copy["notifications_saved"],
-                                         next_step=_after_save(c, case, row))
+        values: dict = {"journey_confirmed_at": s.now}
+        if not req.skip:
+            if req.due_date_lead is not None:
+                values["due_date_lead"] = req.due_date_lead.value
+            if req.inactivity_after is not None:
+                values["inactivity_after"] = req.inactivity_after.value
+        if nt.load(s) is None:
+            values = {**NOTHING_OUTSIDE, **values}
+        row = s.save_notification_preferences(values)
+        s.audit("notification_preferences_saved", case_id, "case", case_id)
+        step = (NextStep(action="preview_journey", prompt=c.copy["journey_preview_intro"]) if case["status"] == "draft"
+                else NextStep(action="done", prompt=c.copy["keep_in_touch_saved"]))
+        return NotificationSettingsResponse(preferences=nt.out(row, request.app.state.copy),
+                                            acknowledgment=c.copy["keep_in_touch_saved"], next_step=step)
 
 
-@router.post(
-    "/v1/cases/{case_id}/notification-preferences/push-permission",
-    response_model=NotificationSavedResponse,
-    summary="What the OS said to the push permission prompt",
-    description=(
-        "UC-CASE-19. Push is never required. If the user declines, push is taken off this journey's channels "
-        "(and in_app_only is used when nothing else is left), so the readback never promises a message that "
-        "can't arrive."
-    ),
-    responses=_DENIED,
-)
-def push_permission(case_id: UUID, req: PushPermissionIn, request: Request,
-                    identity: Identity = Depends(get_identity)) -> NotificationSavedResponse:
-    with request.app.state.db.session(identity.subject) as s:
-        s.require_user()
-        c = _ctx(s, request)
-        case = _owned_case(c, case_id)
-        choice = nt.choice_of(nt.load(s, case_id))
-        if NotificationChannel.push not in choice.channels:
-            raise ApiError(409, "push_not_chosen", "Notifications on this phone aren't chosen for this journey.")
-        if req.granted:
-            row = nt.save(s, case_id, choice, push_granted=True)
-            ack = c.copy["notifications_saved"]
-        else:
-            rest = [ch for ch in choice.channels if ch != NotificationChannel.push]
-            choice = choice.model_copy(update={"channels": rest}) if rest else nt.IN_APP_ONLY
-            row = nt.save(s, case_id, choice, push_granted=False)
-            ack = c.copy["notifications_push_declined"]
-        return NotificationSavedResponse(preferences=nt.out(case_id, row, c.copy), acknowledgment=ack,
-                                         next_step=_after_save(c, case, row))
-
-
-# ------------------------------------------------------------------ account-wide (UC-CASE-20)
-
-def _journeys(c: intake.Ctx, ids: list[UUID] | None = None) -> list[JourneyNotifications]:
-    names = nt.display_names(c.s, c.copy)
-    out = []
-    for case in nt.owned_cases(c.s):
-        if ids is not None and case["id"] not in ids:
-            continue
-        status = intake.effective_status(case)
-        out.append(JourneyNotifications(case_id=case["id"], display_name=names[case["id"]], status=status,
-                                        preferences=nt.out(case["id"], nt.load(c.s, case["id"]), c.copy)))
-    return out
-
-
-def _which_journey(c: intake.Ctx, journeys: list[JourneyNotifications]) -> NextStep:
-    """Ask which journey by the display name of each person, and offer All of them."""
-    return NextStep(action="choose_journeys", prompt=c.copy["notifications_which_journey"],
-                    options=[*(Option(value=str(j.case_id), label=j.display_name) for j in journeys),
-                             Option(value="all", label=c.copy["all_of_them"])])
-
-
-@router.get(
-    "/v1/me/notification-preferences",
-    response_model=AccountNotificationsResponse,
-    summary="How Cairn keeps in touch, for every journey",
-    description="UC-CASE-20 from Settings. One entry per journey, named by the person's display name.",
-)
-def list_all(request: Request, identity: Identity = Depends(get_identity)) -> AccountNotificationsResponse:
-    with request.app.state.db.session(identity.subject) as s:
-        s.require_user()
-        c = _ctx(s, request)
-        journeys = _journeys(c)
-        step = (_which_journey(c, journeys) if len(journeys) > 1
-                else NextStep(action="change_notifications", prompt=c.copy["notifications_intro"]))
-        return AccountNotificationsResponse(journeys=journeys, next_step=step)
-
-
-def apply_change(c: intake.Ctx, req: NotificationChangeIn) -> NotificationChangeResponse:
-    """Shared by Settings and chat. stop_everything is one step. A choice is read back, then applied on yes."""
-    owned = [r["id"] for r in nt.owned_cases(c.s)]
-    if not owned:
-        return NotificationChangeResponse(applied=False, acknowledgment=c.copy["notifications_no_journey"],
-                                          readback=None, journeys=[],
-                                          next_step=NextStep(action="done", prompt=c.copy["notifications_no_journey"]))
-    if req.scope == "all" or (req.scope is None and (req.stop_everything or len(owned) == 1)):
-        targets = owned
-    elif req.scope is None:
-        return NotificationChangeResponse(applied=False, acknowledgment=None, readback=None,
-                                          journeys=_journeys(c), next_step=_which_journey(c, _journeys(c)))
-    else:
-        if not set(req.scope) <= set(owned):
-            raise case_access_denied()
-        targets = list(dict.fromkeys(req.scope))
-
-    if req.stop_everything:
-        # No persuasion and no follow-up question.
-        for case_id in targets:
-            nt.save(c.s, case_id, nt.IN_APP_ONLY, push_granted=False)
-        return NotificationChangeResponse(
-            applied=True, acknowledgment=c.copy["notifications_stopped"], readback=c.copy["readback_in_app_only"],
-            journeys=_journeys(c, targets), next_step=NextStep(action="done", prompt=c.copy["notifications_stopped"]))
-
-    line = nt.readback(c.copy, req.choice)
-    if not req.confirm:
-        return NotificationChangeResponse(
-            applied=False, acknowledgment=None, readback=line, journeys=_journeys(c, targets),
-            next_step=NextStep(action="confirm_notification_change",
-                               prompt=f"{line} {c.copy['notifications_change_question']}",
-                               options=[Option(value="yes", label=c.copy["notifications_change_yes"]),
-                                        Option(value="no", label=c.copy["notifications_change_no"])]))
-    for case_id in targets:
-        nt.save(c.s, case_id, req.choice)
-    needs_push = NotificationChannel.push in req.choice.channels and not all(
-        (nt.load(c.s, t) or {}).get("push_permission_granted") for t in targets)
-    step = (NextStep(action="request_push_permission", prompt=c.copy["notifications_push_permission"]) if needs_push
-            else NextStep(action="done", prompt=c.copy["notifications_changed"]))
-    return NotificationChangeResponse(applied=True, acknowledgment=c.copy["notifications_changed"], readback=line,
-                                      journeys=_journeys(c, targets), next_step=step)
-
-
-@router.post(
-    "/v1/me/notification-preferences/changes",
-    response_model=NotificationChangeResponse,
-    summary="Change how Cairn keeps in touch",
-    description=(
-        "UC-CASE-20. stop_everything sets in_app_only in one step, on every journey unless a scope is given. "
-        "Any other change is read back in one line and applied only with confirm=true. With more than one "
-        "journey and no scope, asks which journey by the person's display name and offers All of them."
-    ),
-    responses={403: {"description": "A journey in scope isn't one of the user's."}},
-)
-def change(req: NotificationChangeIn, request: Request,
-           identity: Identity = Depends(get_identity)) -> NotificationChangeResponse:
-    with request.app.state.db.session(identity.subject) as s:
-        s.require_user()
-        return apply_change(_ctx(s, request), req)
+def require_not_level_4(care_level: int, request: Request) -> None:
+    if care_level == 4:
+        raise ApiError(409, "not_now", request.app.state.copy["settings_not_now"])

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Cairn API",
-    "description": "\nCairn walks a family through the logistics of a death, one step at a time.\n\nEvery response that moves a conversation forward carries a `next_step` with a\nsingle prompt, so clients can ask one question at a time. Errors use RFC 9457\nproblem details (`application/problem+json`) and never echo submitted values.\n\nAuthentication is an Auth0 access token. Accounts can be created with Google,\nApple, or an email magic link (see GET /v1/welcome). Onboarding follows\nUC-REG-01 to UC-REG-14, one question per screen. Case creation follows\nUC-CASE-01 to UC-CASE-18: a case starts as a draft, and the free period of 28\ndays starts only when the user starts their first journey. After\nit ends the account is read-only until subscribed. No payment information is\nasked for anywhere in case creation. Free text is redacted as it is received\nand never stored. The case is the security boundary. It is enforced in one\ndata-access layer that every request goes through, with MongoDB validators and\nleast-privilege roles as the backstop.\n\nThe user decides how and how often Cairn keeps in touch, per journey\n(UC-CASE-19). With no choice, nothing is sent outside the app. Apart from that,\nCairn sends only one confirmation for a deletion the user asked for\n(UC-CASE-21). Deleting a case or the account, downloading all data, and\nchanging notifications are always free, including on a read-only account.\n",
+    "description": "\nCairn walks a family through the logistics of a death, one step at a time.\n\nEvery response that moves a conversation forward carries a `next_step` with a\nsingle prompt, so clients can ask one question at a time. Errors use RFC 9457\nproblem details (`application/problem+json`) and never echo submitted values.\n\nAuthentication is an Auth0 access token. Accounts can be created with Google,\nApple, or an email magic link (see GET /v1/welcome). Account setup follows the\naccount spec 3.2.0 (UC-REG-01 to UC-REG-20), one question per screen, from\nthe adult question to the notification choices. Case creation follows the case\ncreation spec 3.2.0 (UC-CASE-01 to UC-CASE-25): a case starts as a draft, and\nthe free period of 28 days starts only when the user starts their first\njourney. After it ends the account is read-only until subscribed, through\nStripe (UC-SUB-01 to UC-SUB-23). No payment information is asked for anywhere\nin case creation, and Cairn never sees a card number. Free text is redacted as\nit is received and never stored. The case is the security boundary. It is\nenforced in one data-access layer that every request goes through, with\nMongoDB validators and least-privilege roles as the backstop.\n\nTake a break is on every screen and covers the person, not one case\n(UC-BRK-01 to UC-BRK-12). The Support resources page works signed out. Users\nare signed out after 5 minutes with no activity (D-20).\n\nThe user decides how and how often Cairn keeps in touch, once for the whole\naccount (account D-13). Apart from that, Cairn sends only service notices:\nsign-in links, confirmations of things the user did (UC-CASE-21), the\ntrial-ending note (D-14), an opted-in check-in, and the break-ending notice.\nDeleting a case or the account, downloading all data, and changing\nnotifications are always free, including on a read-only account.\n",
     "version": "0.1.0"
   },
   "paths": {
@@ -12,7 +12,7 @@
           "Registration"
         ],
         "summary": "The welcome screen",
-        "description": "UC-REG-01. Acknowledgment first, then three equally weighted ways to continue, a sign-in link, and a link to the public journey map, plus the copy around the email link (UC-REG-04). Asks for nothing. After a cancelled Google or Apple sign-in, call with oauth_cancelled=true to add the reassurance note (UC-REG-02, UC-REG-03).",
+        "description": "UC-REG-01. Acknowledgment first, then three equally weighted ways to continue, a sign-in link, a link to the public journey map, and the Support resources link, which works signed out (AC-26-10). Also the copy around the email link and its landing page (UC-REG-04), and the session policy (D-20). Asks for nothing. After a cancelled Google or Apple sign-in, call with oauth_cancelled=true to add the reassurance note (UC-REG-02, UC-REG-03).",
         "operationId": "welcome_v1_welcome_get",
         "parameters": [
           {
@@ -43,6 +43,100 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/support-resources": {
+      "get": {
+        "tags": [
+          "Registration"
+        ],
+        "summary": "Support resources",
+        "description": "The crisis plan's Support resources page: 988 (call, text, chat), the Veterans Crisis Line, the Crisis Text Line, and 911 for immediate danger. No sign-in needed, so it works from the welcome screen and every setup screen (AC-26-10). Opening it never changes the care level, never starts a rest, and is never logged with a user or case id. AFSP loss survivor support is added on a case that has it (GET /v1/cases/{id}).",
+        "operationId": "support_resources_v1_support_resources_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportResourcesPage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sign-in-help": {
+      "get": {
+        "tags": [
+          "Registration"
+        ],
+        "summary": "I can't get into my email",
+        "description": "UC-REG-20 (proposed). For email accounts, opens a support request: support checks it's really the person with a documented process before changing the sign-in email, and tells the old address first if it still works. For Google or Apple, access follows that account, so this points to the provider's recovery page. No sign-in needed. Nothing is stored. [LEGAL REVIEW REQUIRED] security review of the identity check.",
+        "operationId": "sign_in_help_v1_sign_in_help_get",
+        "parameters": [
+          {
+            "name": "method",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/SignInMethod"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Method"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInHelpResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/break": {
+      "get": {
+        "tags": [
+          "Registration"
+        ],
+        "summary": "Take a break before signing in",
+        "description": "UC-BRK-02 (screen S-01). Nothing is saved and nothing is sent. A magic link already sent stays valid for its 15 minutes. Signed-in screens use /v1/me/break.",
+        "operationId": "pre_sign_in_break_v1_break_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BreakResponse"
                 }
               }
             }
@@ -99,7 +193,7 @@
           "Registration"
         ],
         "summary": "Create the account, or sign in and resume onboarding",
-        "description": "UC-REG-02 to UC-REG-05 and UC-REG-13. Call after every Auth0 sign-in. Auth0 has already verified the Google or Apple identity token, or the email magic link, and this API verifies Auth0's signed token. Email and sign-in method come from the token, never from the body. A new account starts in pending_onboarding and the response is the Privacy Policy and Terms acknowledgment. There is no age question. A returning user gets 200 and the first incomplete step, with a welcome-back note.",
+        "description": "UC-REG-02 to UC-REG-05 and UC-REG-13. Call after every Auth0 sign-in. Auth0 has already verified the Google or Apple identity token, or the email magic link, and this API verifies Auth0's signed token. Email and sign-in method come from the token, never from the body. A new account starts in pending_onboarding and the response is the adult question (UC-REG-06). A returning user gets 200 and the first incomplete step, with a welcome-back note. Setup progress follows the account, not the browser, so it continues on any device (UC-REG-04).",
         "operationId": "register_v1_registrations_post",
         "requestBody": {
           "content": {
@@ -155,8 +249,25 @@
           "Onboarding"
         ],
         "summary": "Where the user is in onboarding",
-        "description": "UC-REG-13. Returns the first incomplete step, or a changed acknowledgment to re-read.",
+        "description": "UC-REG-13. Returns the first incomplete step, or a question to answer again (a changed acknowledgment, or the adult question for an account made before it). After a level 3 or 4 moment during setup, send offer_check_in=true once the user is ready to go on, and the follow-up is offered once before setup continues (DEC-26-04).",
         "operationId": "get_onboarding_v1_onboarding_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "offer_check_in",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Offer Check In"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -164,6 +275,61 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OnboardingResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/onboarding/adult": {
+      "post": {
+        "tags": [
+          "Onboarding"
+        ],
+        "summary": "Are you 18 or older?",
+        "description": "UC-REG-06. Yes records adult_attested with the time and goes on to the Privacy Policy and Terms. No stops onboarding: the under-18 message and the 988 line, links to the journey map and Support resources, and nothing more is collected. The account is deleted after the pending-account period (UC-REG-10). No birthdate or age is asked for or stored. [LEGAL REVIEW REQUIRED] the age gate approach (OPEN-09).",
+        "operationId": "answer_adult_v1_onboarding_adult_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdultAnswerIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An earlier step isn't finished yet. next_step says which one."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -182,7 +348,7 @@
           "Onboarding"
         ],
         "summary": "Agree to, or say \"I'm not sure\" about, an acknowledgment",
-        "description": "UC-REG-07 (privacy_terms), UC-REG-08 (trial_terms), UC-REG-09 (ai_notice), and UC-REG-10. Agreeing requires the document_version shown with the checkbox and appends a consent record with the version, time, sign-in method, and client. agreed=false records nothing and offers ways forward. Also used to re-acknowledge a changed version (UC-REG-13). The trial clock does not start here.",
+        "description": "UC-REG-07 (privacy_terms), UC-REG-08 (trial_terms), UC-REG-09 (ai_notice), and UC-REG-10. Agreeing requires the document_version shown with the checkbox and appends a consent record with the version, time, sign-in method, and client. agreed=false records nothing and offers ways forward. Also used to re-acknowledge a changed version (UC-REG-13). The trial clock does not start here. Agreeing to the AI notice counts as that day's session-start AI reminder (UC-CASE-23).",
         "operationId": "acknowledge_v1_onboarding_acknowledgments__consent_type__post",
         "security": [
           {
@@ -235,7 +401,7 @@
           "Onboarding"
         ],
         "summary": "Save what Cairn should call the user",
-        "description": "UC-REG-11. A name pre-filled from Google or Apple is only saved when the user sends it here. Legal names are not collected. If the text shows signs of distress, nothing is saved and sign-up pauses (UC-REG-14).",
+        "description": "UC-REG-11. The field is never pre-filled from a provider. At most 50 characters and no 5 or more digits, so a number can't be stored as a name: anything else gets preferred_name_invalid and is neither saved nor logged. Legal names are not collected. If the text shows signs of distress, nothing is saved and setup pauses (UC-REG-14, crisis plan context account_setup).",
         "operationId": "save_preferred_name_v1_onboarding_preferred_name_put",
         "requestBody": {
           "content": {
@@ -262,6 +428,46 @@
             "description": "An earlier step isn't finished yet. next_step says which one."
           },
           "422": {
+            "description": "preferred_name_invalid: the copy to show. The text isn't kept."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/onboarding/check-in": {
+      "post": {
+        "tags": [
+          "Onboarding"
+        ],
+        "summary": "May Cairn check in tomorrow? (during setup)",
+        "description": "DEC-26-04 and AC-26-12. Only on a yes: account.check_in_at, with no case id. It shows in Cairn the next time the user signs in, and goes through the channels chosen at UC-REG-15. Before that step there are no channels, so yes_email also sends it to the sign-in email and yes_in_cairn keeps it in Cairn only. A no stores nothing. Then setup resumes where it was.",
+        "operationId": "setup_check_in_v1_onboarding_check_in_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupCheckInIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingResponse"
+                }
+              }
+            }
+          },
+          "422": {
             "description": "Validation Error",
             "content": {
               "application/json": {
@@ -285,7 +491,7 @@
           "Onboarding"
         ],
         "summary": "Choose how Cairn talks with the user",
-        "description": "UC-REG-12. Saves the chosen voice on the account. choose_for_me selects the default voice. The voice changes tone only, never the crisis protocol, AI disclosure, attorney referrals, or citations. Finishes onboarding (status active_no_case) and hands off to case creation with a confirmation in the chosen voice.",
+        "description": "UC-REG-12. Saves the chosen voice on the account. choose_for_me selects Steady and Direct. The voice changes tone only, never the crisis protocol, AI disclosure, attorney referrals, or citations. Then notification channels (UC-REG-15), with copy.voice_confirm first.",
         "operationId": "choose_voice_v1_onboarding_personality_put",
         "requestBody": {
           "content": {
@@ -329,26 +535,104 @@
         ]
       }
     },
-    "/v1/onboarding/need-a-moment": {
-      "get": {
+    "/v1/onboarding/notification-channels": {
+      "put": {
         "tags": [
           "Onboarding"
         ],
-        "summary": "I need a moment",
-        "description": "UC-REG-14. Stops the task flow. Returns an acknowledgment and the 988 resource, and nothing else. Nothing is stored, no timers or reminders are set, and progress already saved stays saved. No sign-in needed, so it works from the welcome screen too. The same for every voice.",
-        "operationId": "need_a_moment_v1_onboarding_need_a_moment_get",
+        "summary": "How should Cairn let the user know?",
+        "description": "UC-REG-15, first screen. Email and in-app are pre-selected, and in-app is always on. Ask the browser for permission only after the user chose browser, in direct response to their select, then send what it said. Denied or unsupported takes browser off and shows notify_browser_denied. No phone number is asked for and text messages aren't offered (D-12).",
+        "operationId": "notification_channels_v1_onboarding_notification_channels_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationChannelsIn"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PauseResponse"
+                  "$ref": "#/components/schemas/OnboardingResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An earlier step isn't finished yet. next_step says which one."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/onboarding/notification-frequency": {
+      "put": {
+        "tags": [
+          "Onboarding"
+        ],
+        "summary": "How often would the user like to hear from Cairn?",
+        "description": "UC-REG-15, second screen, then UC-REG-16. Due only is the default. No reminders saves none, and service notices still go to email (D-14). Quiet hours use the browser's time zone and aren't asked. Finishes setup (status setup_complete) and queues one welcome confirmation to the sign-in email, with no personal details beyond the preferred name (UC-CASE-21). The free days don't start here.",
+        "operationId": "notification_frequency_v1_onboarding_notification_frequency_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationFrequencyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An earlier step isn't finished yet. next_step says which one."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/v1/onboarding/case-handoff": {
@@ -357,7 +641,7 @@
           "Onboarding"
         ],
         "summary": "Start toward case creation",
-        "description": "After UC-REG-12. The relationship shapes the wording of case creation. A power of attorney is told that authority generally ends at death. Not stored here. Send user_role to POST /v1/cases to save it.",
+        "description": "After UC-REG-16, Start a case. The relationship shapes the wording of case creation. A power of attorney is told that authority generally ends at death. Not stored here. Send user_role to POST /v1/cases to save it.",
         "operationId": "case_handoff_v1_onboarding_case_handoff_post",
         "requestBody": {
           "content": {
@@ -381,7 +665,7 @@
             }
           },
           "409": {
-            "description": "Onboarding isn't finished, or an acknowledgment changed."
+            "description": "Setup isn't finished, or an acknowledgment changed."
           },
           "422": {
             "description": "Validation Error",
@@ -409,41 +693,27 @@
         "summary": "The signed-in account",
         "description": "Includes the effective status (read_only after the trial), the trial end date in the account's time zone, the AI guide label, and any banner or reminder to show.",
         "operationId": "me_v1_me_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AccountResponse"
-                }
-              }
-            }
-          }
-        },
         "security": [
           {
             "HTTPBearer": []
           }
-        ]
-      },
-      "patch": {
-        "tags": [
-          "Account"
         ],
-        "summary": "Change Settings",
-        "description": "Preferred name, pronunciation, voice, and time zone. The voice changes tone only. It never changes the crisis protocol, AI disclosure, referrals, or citations.",
-        "operationId": "update_me_v1_me_patch",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AccountPatch"
-              }
-            }
-          },
-          "required": true
-        },
+        "parameters": [
+          {
+            "name": "care_level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 4,
+              "minimum": 1,
+              "description": "The session's care level. At levels 2 to 4, no read-only banner or billing notice (UC-SUB-01, UC-SUB-21).",
+              "default": 1,
+              "title": "Care Level"
+            },
+            "description": "The session's care level. At levels 2 to 4, no read-only banner or billing notice (UC-SUB-01, UC-SUB-21)."
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -465,12 +735,96 @@
               }
             }
           }
-        },
+        }
+      },
+      "patch": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Change Settings",
+        "description": "UC-REG-17. Preferred name, pronunciation, voice, and time zone, each on its own. Each change is read back in one line, saved, and confirmed to the sign-in email (copy.settings_saved says where). Same validation and data boundary as setup: a name of at most 50 characters with no 5 or more digits, and distress language is never saved as a name. The voice changes tone only. Works on a read-only account. At care level 4 nothing changes in that turn (AC-26-11).",
+        "operationId": "update_me_v1_me_patch",
         "security": [
           {
             "HTTPBearer": []
           }
-        ]
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "preferred_name_invalid. The text isn't kept."
+          }
+        }
+      }
+    },
+    "/v1/me/sign-out": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Sign out",
+        "description": "UC-REG-19. The token used here stops working, everything is saved, and the response is copy.signed_out. A break is never ended or changed by signing out (UC-BRK-12). At care levels 3 and 4 the response also carries the crisis resource and the Support resources link. The client also clears its Auth0 session and anything cached, so the back button shows no case data.",
+        "operationId": "sign_out_v1_me_sign_out_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "care_level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 4,
+              "minimum": 1,
+              "default": 1,
+              "title": "Care Level"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignOutResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/me/sign-in-methods": {
@@ -582,7 +936,7 @@
           "Account"
         ],
         "summary": "What deleting the account removes",
-        "description": "UC-REG-15. Says in plain words what will be deleted, says a store subscription is cancelled in the store (information only), shows the masked address the one confirmation goes to, and offers one button. No reason is asked and nothing is offered to keep the user. Available in every status.",
+        "description": "UC-ACCT-01. Says in plain words what will be deleted, says a subscription is cancelled right away with no refund (UC-SUB-16), shows the masked address the one confirmation goes to, and offers one button. No reason is asked and nothing is offered to keep the user. Available in every status.",
         "operationId": "deletion_info_v1_me_deletion_get",
         "responses": {
           "200": {
@@ -607,7 +961,7 @@
           "Account"
         ],
         "summary": "Delete the account and everything in it",
-        "description": "UC-REG-15. Deletes now, in one transaction: the account, every case in any status (including cases in a 7-day hold), tasks, answers, conversation text, notification preferences, consents, and reminders. This is deletion, not deactivation. One confirmation email is queued, then its address is purged once it is sent. The Auth0 user is deleted and Apple tokens are revoked (TN3194) by the identity cleanup job. The response says the user is signed out: clear the session. Works in every status, always free.",
+        "description": "UC-ACCT-01. A Stripe subscription is cancelled first, right away, so no further charge can happen. If that fails, nothing is deleted and the user is told plainly (UC-SUB-16). Then everything goes now, in one transaction: the account, every case in any status (including cases in a 7-day hold), tasks, answers, conversation text, notification choices and the browser push endpoint, a scheduled check-in, scheduled reminders and notices, consents, and the account. This is deletion, not deactivation. One confirmation email is queued, then its address is purged once it is sent. The Auth0 user is deleted and Apple tokens are revoked (TN3194) by the identity cleanup job. The response says the user is signed out: clear the session. Works in every status, always free. At care level 4 nothing is deleted in that turn, and it works when the user asks again (AC-26-11).",
         "operationId": "delete_me_v1_me_deletion_post",
         "requestBody": {
           "content": {
@@ -629,6 +983,12 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "not_now: care level 4."
+          },
+          "503": {
+            "description": "The subscription couldn't be cancelled. Nothing was deleted."
           },
           "422": {
             "description": "Validation Error",
@@ -749,6 +1109,661 @@
         ]
       }
     },
+    "/v1/home": {
+      "get": {
+        "tags": [
+          "Home"
+        ],
+        "summary": "The home screen",
+        "description": "UC-CASE-25 and UC-REG-18. route says where to go: resume_setup (UC-REG-13), resting (the S-06 break screen first, UC-BRK-08), resume_draft (UC-BRK-04), or home. The home screen greets by the preferred name, shows one Start a case action when there are no cases, a draft's card with the 28-day draft notice, and an active journey's card with its next task and, on the free days, their end date (never at care levels 3 and 4). A read-only account gets the banner and, at level 1 only, the subscribe prompt once a session and once a day (UC-SUB-01). A check-in the user said yes to shows here once (DEC-26-04). With session_start, the session-start AI reminder shows when due (UC-CASE-23).",
+        "operationId": "home_v1_home_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "care_level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 4,
+              "minimum": 1,
+              "default": 1,
+              "title": "Care Level"
+            }
+          },
+          {
+            "name": "session_start",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Session Start"
+            }
+          },
+          {
+            "name": "subscribe_prompt_seen",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Subscribe Prompt Seen"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HomeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/break": {
+      "get": {
+        "tags": [
+          "Take a break"
+        ],
+        "summary": "The break screen for where the user is",
+        "description": "During a break, the resting screen S-06, shown first whenever Cairn is opened (UC-BRK-08). Otherwise the screen Take a break opens: S-02 in setup, S-02b with no case, S-03 in a draft, S-04 on an active journey.",
+        "operationId": "get_break_v1_me_break_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "care_level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "title": "Care Level"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BreakResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Take a break"
+        ],
+        "summary": "Take a break",
+        "description": "UC-BRK-03 to UC-BRK-07. Without choice, opens the screen for where the user is: S-02 during setup (progress is already saved), S-02b after setup with no case, S-03 for a draft (use the case's take-a-break to save where they left off), or S-04's four rest choices on an active journey. With a choice on an active journey, starts the break on the account and every active journey (BRK-D-06): the rest of today ends at 11:59 PM local time, a few days after 3 days, a week after 7, and Until I come back has no end (BRK-D-07). A break longer than 24 hours at care level 1 gets one break-ending notice 24 hours before (UC-BRK-09). At care levels 2 to 4 it is a care rest: the free days stop while they are running (DEC-26-01) and no notice goes outside Cairn (BRK-D-03). Never touches a subscription.",
+        "operationId": "take_a_break_v1_me_break_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/BreakIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Req"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BreakResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Take a break"
+        ],
+        "summary": "Change how long",
+        "description": "UC-BRK-11. A few days and a week count from the break's original start, the rest of today from now. The notice is moved or cancelled, and a changed break never sends two notices.",
+        "operationId": "change_break_v1_me_break_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BreakChangeIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BreakResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "There is no break to change."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Take a break"
+        ],
+        "summary": "I'm back",
+        "description": "UC-BRK-10. Clears the break on the account and every journey and cancels an unsent notice. If a care rest stopped the free days, they start again and trial_ends_at moves later by exactly the paused time (AC-26-04), said once on S-07 at care level 1. An early subscriber's first charge moves with it (UC-SUB-06). Never asks the user to explain the gap. Reminders held during the break resume on their normal schedule, with no catch-up burst.",
+        "operationId": "end_break_v1_me_break_delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "care_level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "title": "Care Level"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BreakResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/subscription": {
+      "get": {
+        "tags": [
+          "Subscription"
+        ],
+        "summary": "Settings, Subscription",
+        "description": "UC-SUB-23. One status line from Cairn's stored fields, without calling Stripe, the note that a break doesn't pause a subscription, and only the actions that apply. Dates are in the user's time zone. At care levels 3 and 4, only the cancel action and no price wording.",
+        "operationId": "get_subscription_v1_me_subscription_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "care_level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 4,
+              "minimum": 1,
+              "default": 1,
+              "title": "Care Level"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/subscription/terms": {
+      "get": {
+        "tags": [
+          "Subscription"
+        ],
+        "summary": "Review the price and renewal terms",
+        "description": "UC-SUB-02. One Cairn screen with the price, that tax is included, that it renews monthly until cancelled and when charges happen (from the free days' end for an early subscriber), how to cancel, that there are no refunds, what's included, that breaks don't pause it, and that Stripe takes the payment details. The checkbox is never pre-checked and the renewal terms sit next to the button. Care level 1 only.",
+        "operationId": "terms_v1_me_subscription_terms_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "care_level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 4,
+              "minimum": 1,
+              "default": 1,
+              "title": "Care Level"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionTermsResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "not_now (care levels 2 to 4), or already subscribed."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/subscription/checkout": {
+      "post": {
+        "tags": [
+          "Subscription"
+        ],
+        "summary": "Continue to payment",
+        "description": "UC-SUB-02 and UC-SUB-03. Records the subscription_terms consent with the copy version, the price shown, the time, and the client, then creates a Stripe Checkout Session: subscription mode, the configured price (tax inclusive, automatic tax, billing address on Stripe's page), the account id as client_reference_id and the only metadata, the sign-in email, and the renewal terms next to Stripe's pay button. During the free days the first charge is on their end (UC-SUB-06). One open session per account. Creating one never changes access. Redirect to checkout_url right away.",
+        "operationId": "checkout_v1_me_subscription_checkout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "not_now, already_subscribed, terms_outdated, or no journey started yet."
+          },
+          "503": {
+            "description": "payments_unavailable. Nothing was charged."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/me/subscription/checkout-result": {
+      "get": {
+        "tags": [
+          "Subscription"
+        ],
+        "summary": "Back from Stripe Checkout",
+        "description": "UC-SUB-04 and UC-SUB-05. From Cairn's own status, never from the redirect: visiting the success page grants nothing. finishing until the verified event arrives, finishing_slow after 30 seconds (never asks to pay again), then success with the next or first payment date and where the confirmation goes. outcome=cancelled says nothing was charged and changes nothing. No reminder is ever sent about an abandoned checkout.",
+        "operationId": "checkout_result_v1_me_subscription_checkout_result_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "outcome",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^(success|cancelled)$",
+              "title": "Outcome"
+            }
+          },
+          {
+            "name": "waited_seconds",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 3600,
+              "minimum": 0,
+              "default": 0,
+              "title": "Waited Seconds"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutResultResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/subscription/portal": {
+      "post": {
+        "tags": [
+          "Subscription"
+        ],
+        "summary": "Update payment details or see past payments",
+        "description": "UC-SUB-12. A Stripe customer portal session, created on demand and never stored or emailed. The portal is configured in Stripe without retention offers. It comes back to Settings, Subscription.",
+        "operationId": "portal_v1_me_subscription_portal_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortalIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No Stripe customer yet."
+          },
+          "503": {
+            "description": "payments_unavailable"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/me/subscription/confirm-payment": {
+      "post": {
+        "tags": [
+          "Subscription"
+        ],
+        "summary": "Confirm a payment the bank asked about",
+        "description": "UC-SUB-10. Stripe's hosted page for the invoice waiting on the bank, fetched when the user asks and never stored. Access stays full meanwhile.",
+        "operationId": "confirm_payment_v1_me_subscription_confirm_payment_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Nothing is waiting on the bank."
+          },
+          "503": {
+            "description": "payments_unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/me/subscription/cancel": {
+      "post": {
+        "tags": [
+          "Subscription"
+        ],
+        "summary": "Cancel my subscription",
+        "description": "UC-SUB-13. confirm=false returns the explainer with the period end date and two buttons, Cancel my subscription and Keep my subscription. No reason is asked and nothing is offered to keep the user. confirm=true records the request time first, then asks Stripe to cancel at the end of the paid month, and queues the cancellation confirmation. Access stays full until then. No refund. If Stripe can't be reached, it says so plainly and the job tries again from the recorded request. Works on a read-only account and during a normal break. At care level 4 nothing changes in that turn (AC-26-11).",
+        "operationId": "cancel_v1_me_subscription_cancel_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelSubscriptionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelSubscriptionResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No active subscription, or already cancelled."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/me/subscription/undo-cancel": {
+      "post": {
+        "tags": [
+          "Subscription"
+        ],
+        "summary": "Keep my subscription after all",
+        "description": "UC-SUB-14. Before the paid month ends, removes the scheduled cancellation in Stripe. No new consent is needed because the terms are unchanged, and nothing is charged before the next normal renewal.",
+        "operationId": "undo_cancel_v1_me_subscription_undo_cancel_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelSubscriptionResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Nothing to undo."
+          },
+          "503": {
+            "description": "payments_unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/v1/cases": {
       "get": {
         "tags": [
@@ -856,6 +1871,20 @@
               "format": "uuid",
               "title": "Case Id"
             }
+          },
+          {
+            "name": "care_level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 4,
+              "minimum": 1,
+              "description": "The session's care level. At levels 2 to 4, no read-only banner or billing notice (UC-SUB-01, UC-SUB-21).",
+              "default": 1,
+              "title": "Care Level"
+            },
+            "description": "The session's care level. At levels 2 to 4, no read-only banner or billing notice (UC-SUB-01, UC-SUB-21)."
           }
         ],
         "responses": {
@@ -1517,7 +2546,7 @@
           "Case creation"
         ],
         "summary": "May Cairn check in tomorrow?",
-        "description": "DEC-26-04. Only on a yes, one private check-in tomorrow: by email if the user chose email for this journey, otherwise the next time they open Cairn (OPEN-08 for drafts). It never names the person who died, the circumstance, or any crisis, and it is cancelled if the case is deleted. A no stores nothing.",
+        "description": "DEC-26-04. Only on a yes, one private check-in tomorrow, stored on the account with this case's id: through the account's notification channels (account D-13, which resolves OPEN-08), and in Cairn the next time the user opens it. It ignores the frequency setting and respects quiet hours. It never names the person who died, the circumstance, or any crisis, and it is cancelled if this case or the account is deleted. A no stores nothing.",
         "operationId": "check_in_v1_cases__case_id__intake_check_in_post",
         "security": [
           {
@@ -2148,6 +3177,20 @@
               "format": "uuid",
               "title": "Case Id"
             }
+          },
+          {
+            "name": "care_level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 4,
+              "minimum": 1,
+              "description": "The session's care level. At levels 2 to 4, no read-only banner or billing notice (UC-SUB-01, UC-SUB-21).",
+              "default": 1,
+              "title": "Care Level"
+            },
+            "description": "The session's care level. At levels 2 to 4, no read-only banner or billing notice (UC-SUB-01, UC-SUB-21)."
           }
         ],
         "responses": {
@@ -2183,7 +3226,7 @@
           "Journey"
         ],
         "summary": "Step back from tasks for a while",
-        "description": "UC-12. Holds all progress exactly as it is. Stores only the time the pause ends. No reason or feeling is collected or stored. Pausing doesn't stop or extend the 28 free days, and the response says so (D-2026-09-25-P1). It also offers to change how Cairn keeps in touch (UC-CASE-20).",
+        "description": "UC-12, kept for older clients. A normal break on the account for pause_days (UC-BRK-05), covering every journey (BRK-D-06). Stores only when it ends. No reason or feeling is collected or stored. The free days keep counting, and the response says so (DEC-07). A subscriber hears that the subscription keeps going as normal (BRK-D-08). Prefer POST /v1/me/break.",
         "operationId": "pause_journey_v1_cases__case_id__journey_pause_post",
         "security": [
           {
@@ -2252,7 +3295,7 @@
           "Journey"
         ],
         "summary": "Pick the tasks back up",
-        "description": "UC-12. Returns the journey with the same single next action as before the pause.",
+        "description": "UC-12 and UC-BRK-10. Ends the break on the account and returns the journey with the same single next action as before.",
         "operationId": "resume_journey_v1_cases__case_id__journey_resume_post",
         "security": [
           {
@@ -2303,8 +3346,8 @@
         "tags": [
           "Journey"
         ],
-        "summary": "Take a break",
-        "description": "Global rule take_a_break: one select, no confirmation. In a draft it saves and shows the pause message (UC-CASE-10). On a journey, without rest_choice it offers the rest choices, and with one it sets the tasks aside until then. A rest chosen at level 2 or above is a care rest and pauses the free days (DEC-26-01). A rest in normal mode keeps them counting, and Cairn says so before pausing. Never needs a writable account.",
+        "summary": "Take a break from this case",
+        "description": "UC-BRK-04 and UC-BRK-05 from inside a case conversation. One select, no confirmation. In a draft it saves where the user left off and shows the draft pause (S-03), with the 28-day draft notice. On a journey, without rest_choice it offers the four rest choices (S-04), and with one it starts a break on the account for every journey (BRK-D-06). At care level 2 or above it is a care rest and pauses the free days while they run (DEC-26-01). A normal rest keeps them counting, and Cairn says so first. Never needs a writable account, and never touches a subscription (BRK-D-08).",
         "operationId": "take_a_break_v1_cases__case_id__take_a_break_post",
         "security": [
           {
@@ -2390,6 +3433,20 @@
               "format": "uuid",
               "title": "Case Id"
             }
+          },
+          {
+            "name": "care_level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 4,
+              "minimum": 1,
+              "description": "The session's care level. At levels 2 to 4, no read-only banner or billing notice (UC-SUB-01, UC-SUB-21).",
+              "default": 1,
+              "title": "Care Level"
+            },
+            "description": "The session's care level. At levels 2 to 4, no read-only banner or billing notice (UC-SUB-01, UC-SUB-21)."
           }
         ],
         "responses": {
@@ -2419,14 +3476,86 @@
         }
       }
     },
-    "/v1/cases/{case_id}/notification-preferences": {
+    "/v1/me/notification-preferences": {
       "get": {
         "tags": [
           "Keeping in touch"
         ],
-        "summary": "How Cairn keeps in touch for this journey",
-        "description": "UC-CASE-19. Explains that the user decides and can change it any time, then offers shortcuts (the same as another journey first, then Keep it simple for me) and the questions in order: channel, reasons, timing, frequency. With no choice stored, the effective choice is in_app_only.",
-        "operationId": "get_setup_v1_cases__case_id__notification_preferences_get",
+        "summary": "How Cairn keeps in touch",
+        "description": "UC-REG-17. Channels, frequency, due date lead time, inactivity notices, and quiet hours, each editable on its own, with Stop all reminders. Available on a read-only account too.",
+        "operationId": "get_preferences_v1_me_notification_preferences_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationSettingsResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "Keeping in touch"
+        ],
+        "summary": "Change how Cairn keeps in touch",
+        "description": "UC-REG-17. Send only the choice being changed. Each is read back in one line and saved separately, with copy.settings_saved saying where the confirmation went. stop_all_reminders sets frequency none in one step, with no persuasion. Turning browser off clears the push endpoint. Browser permission denied takes browser off. Same validation and data boundary as setup. Always free, on a read-only account too. At care level 4 nothing changes in that turn (AC-26-11).",
+        "operationId": "change_preferences_v1_me_notification_preferences_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationSettingsPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationSettingsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/cases/{case_id}/keep-in-touch": {
+      "get": {
+        "tags": [
+          "Keeping in touch"
+        ],
+        "summary": "Confirm how Cairn keeps in touch",
+        "description": "UC-CASE-19. Reads back the account's channels and frequency in one line, then asks only how early to hear about due dates and whether to check in after a while, one per screen. Channels and frequency are never asked from scratch here (account D-13). With No reminders, both questions are skipped and it says plainly that nothing is sent outside Cairn except confirmations.",
+        "operationId": "get_keep_in_touch_v1_cases__case_id__keep_in_touch_get",
         "security": [
           {
             "HTTPBearer": []
@@ -2450,7 +3579,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NotificationSetupResponse"
+                  "$ref": "#/components/schemas/KeepInTouchResponse"
                 }
               }
             }
@@ -2474,9 +3603,9 @@
         "tags": [
           "Keeping in touch"
         ],
-        "summary": "Save how Cairn keeps in touch for this journey",
-        "description": "UC-CASE-19 and UC-CASE-20. Send the confirmed choice or a shortcut: keep_it_simple, skip (in_app_only), or same_as another journey. Each journey keeps its own choice. Works on drafts, active, paused, closed, and read-only cases, always free.",
-        "operationId": "save_v1_cases__case_id__notification_preferences_put",
+        "summary": "Save due date lead time and inactivity notices",
+        "description": "UC-CASE-19. Saves due_date_lead and inactivity_after on the account's notification choices. skip keeps the account choices and the OPEN-03 defaults (3 days before, no inactivity notices). Skippable, and always free, on drafts and read-only accounts too.",
+        "operationId": "save_keep_in_touch_v1_cases__case_id__keep_in_touch_put",
         "security": [
           {
             "HTTPBearer": []
@@ -2499,7 +3628,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NotificationSetIn"
+                "$ref": "#/components/schemas/KeepInTouchIn"
               }
             }
           }
@@ -2510,7 +3639,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NotificationSavedResponse"
+                  "$ref": "#/components/schemas/NotificationSettingsResponse"
                 }
               }
             }
@@ -2529,207 +3658,6 @@
             }
           }
         }
-      }
-    },
-    "/v1/cases/{case_id}/notification-preferences/readback": {
-      "post": {
-        "tags": [
-          "Keeping in touch"
-        ],
-        "summary": "Read a choice back before saving it",
-        "description": "UC-CASE-19 step 6. Says the choice in plain language and asks to confirm. Nothing is stored.",
-        "operationId": "readback_v1_cases__case_id__notification_preferences_readback_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "case_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Case Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NotificationSetIn"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NotificationReadbackResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Not a member of this case, or the case does not exist."
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/cases/{case_id}/notification-preferences/push-permission": {
-      "post": {
-        "tags": [
-          "Keeping in touch"
-        ],
-        "summary": "What the OS said to the push permission prompt",
-        "description": "UC-CASE-19. Push is never required. If the user declines, push is taken off this journey's channels (and in_app_only is used when nothing else is left), so the readback never promises a message that can't arrive.",
-        "operationId": "push_permission_v1_cases__case_id__notification_preferences_push_permission_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "case_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Case Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PushPermissionIn"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NotificationSavedResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Not a member of this case, or the case does not exist."
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/me/notification-preferences": {
-      "get": {
-        "tags": [
-          "Keeping in touch"
-        ],
-        "summary": "How Cairn keeps in touch, for every journey",
-        "description": "UC-CASE-20 from Settings. One entry per journey, named by the person's display name.",
-        "operationId": "list_all_v1_me_notification_preferences_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AccountNotificationsResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/v1/me/notification-preferences/changes": {
-      "post": {
-        "tags": [
-          "Keeping in touch"
-        ],
-        "summary": "Change how Cairn keeps in touch",
-        "description": "UC-CASE-20. stop_everything sets in_app_only in one step, on every journey unless a scope is given. Any other change is read back in one line and applied only with confirm=true. With more than one journey and no scope, asks which journey by the person's display name and offers All of them.",
-        "operationId": "change_v1_me_notification_preferences_changes_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NotificationChangeIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NotificationChangeResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "A journey in scope isn't one of the user's."
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
       }
     },
     "/v1/cases/{case_id}/tasks/{task_id}": {
@@ -2765,6 +3693,20 @@
               "format": "uuid",
               "title": "Task Id"
             }
+          },
+          {
+            "name": "care_level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 4,
+              "minimum": 1,
+              "description": "The session's care level. At levels 2 to 4, no read-only banner or billing notice (UC-SUB-01, UC-SUB-21).",
+              "default": 1,
+              "title": "Care Level"
+            },
+            "description": "The session's care level. At levels 2 to 4, no read-only banner or billing notice (UC-SUB-01, UC-SUB-21)."
           }
         ],
         "responses": {
@@ -3047,7 +3989,7 @@
                 "type": "null"
               }
             ],
-            "description": "Only when there is a subscription. Information, not a question: store subscriptions are cancelled in the store."
+            "description": "Only with an active subscription: deleting cancels it right away, with no refund (UC-SUB-16, SUB-D-05)."
           },
           "masked_email": {
             "type": "string",
@@ -3081,6 +4023,14 @@
             "const": true,
             "title": "Confirm",
             "description": "Must be true. Sent only after the user taps the one button."
+          },
+          "care_level": {
+            "type": "integer",
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Care Level",
+            "description": "At level 4 nothing is deleted in the same turn (AC-26-11).",
+            "default": 1
           }
         },
         "additionalProperties": false,
@@ -3187,13 +4137,13 @@
           "proposal": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/NotificationChoice"
+                "$ref": "#/components/schemas/NotificationChannelsIn"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "A notification change to read back. Nothing is saved until confirmed."
+            "description": "A channel change to read back. Nothing is saved until confirmed."
           },
           "redactions": {
             "items": {
@@ -3232,26 +4182,6 @@
           "read_aloud"
         ],
         "title": "AccountMessageResponse"
-      },
-      "AccountNotificationsResponse": {
-        "properties": {
-          "journeys": {
-            "items": {
-              "$ref": "#/components/schemas/JourneyNotifications"
-            },
-            "type": "array",
-            "title": "Journeys"
-          },
-          "next_step": {
-            "$ref": "#/components/schemas/NextStep"
-          }
-        },
-        "type": "object",
-        "required": [
-          "journeys",
-          "next_step"
-        ],
-        "title": "AccountNotificationsResponse"
       },
       "AccountOut": {
         "properties": {
@@ -3310,7 +4240,37 @@
           },
           "status": {
             "$ref": "#/components/schemas/AccountStatus",
-            "description": "Effective status. read_only once the trial has ended."
+            "description": "D-19. Setup lifecycle only."
+          },
+          "access": {
+            "type": "string",
+            "enum": [
+              "full",
+              "read_only"
+            ],
+            "title": "Access",
+            "description": "read_only once the free days end without an active subscription."
+          },
+          "subscription_status": {
+            "type": "string",
+            "enum": [
+              "none",
+              "active",
+              "lapsed"
+            ],
+            "title": "Subscription Status"
+          },
+          "adult_attested": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adult Attested",
+            "description": "UC-REG-06. Null until asked. Never a birthdate or an age."
           },
           "onboarding_step": {
             "$ref": "#/components/schemas/OnboardingStep"
@@ -3352,6 +4312,15 @@
             "title": "Trial End Date",
             "description": "trial_ends_at as a date in the account's time zone."
           },
+          "free_days_running": {
+            "type": "boolean",
+            "title": "Free Days Running"
+          },
+          "on_break": {
+            "type": "boolean",
+            "title": "On Break",
+            "description": "A break is running (UC-BRK-08). Open GET /v1/me/break first."
+          },
           "time_zone": {
             "anyOf": [
               {
@@ -3385,10 +4354,15 @@
           "name_pronunciation",
           "voice",
           "status",
+          "access",
+          "subscription_status",
+          "adult_attested",
           "onboarding_step",
           "trial_started_at",
           "trial_ends_at",
           "trial_end_date",
+          "free_days_running",
+          "on_break",
           "time_zone",
           "ai_label"
         ],
@@ -3447,12 +4421,20 @@
               }
             ],
             "title": "Time Zone"
+          },
+          "care_level": {
+            "type": "integer",
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Care Level",
+            "description": "At level 4 no Settings change is made in the same turn (AC-26-11).",
+            "default": 1
           }
         },
         "additionalProperties": false,
         "type": "object",
         "title": "AccountPatch",
-        "description": "Settings. The voice can be changed at any time. Omitted fields are unchanged."
+        "description": "Settings (UC-REG-17). The voice can be changed at any time. Omitted fields are unchanged. Each change is read\nback in one line and confirmed to the sign-in email."
       },
       "AccountResponse": {
         "properties": {
@@ -3466,12 +4448,16 @@
             "type": "array",
             "title": "Notes",
             "description": "The read-only banner or a due trial reminder, when there is one."
+          },
+          "session": {
+            "$ref": "#/components/schemas/SessionPolicy"
           }
         },
         "type": "object",
         "required": [
           "account",
-          "notes"
+          "notes",
+          "session"
         ],
         "title": "AccountResponse"
       },
@@ -3479,13 +4465,11 @@
         "type": "string",
         "enum": [
           "pending_onboarding",
-          "active_no_case",
-          "trial_active",
-          "read_only",
-          "subscribed",
+          "setup_complete",
           "pending_deletion"
         ],
-        "title": "AccountStatus"
+        "title": "AccountStatus",
+        "description": "D-19. The setup lifecycle only. Billing state is access and subscription_status."
       },
       "AcknowledgmentIn": {
         "properties": {
@@ -3526,6 +4510,25 @@
         ],
         "title": "AcknowledgmentIn",
         "description": "agreed=false is the \"I'm not sure\" path (UC-REG-10). Nothing is recorded for it."
+      },
+      "AdultAnswerIn": {
+        "properties": {
+          "answer": {
+            "type": "string",
+            "enum": [
+              "yes",
+              "no"
+            ],
+            "title": "Answer"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "answer"
+        ],
+        "title": "AdultAnswerIn",
+        "description": "UC-REG-06. Yes or no. No birthdate or age is asked for or stored."
       },
       "Announcement": {
         "properties": {
@@ -3673,6 +4676,288 @@
           "early_property_disposal"
         ],
         "title": "AttorneyTrigger"
+      },
+      "BreakChangeIn": {
+        "properties": {
+          "choice": {
+            "type": "string",
+            "enum": [
+              "today",
+              "three_days",
+              "week",
+              "until_back"
+            ],
+            "title": "Choice"
+          },
+          "care_level": {
+            "type": "integer",
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Care Level",
+            "default": 1
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "choice"
+        ],
+        "title": "BreakChangeIn",
+        "description": "UC-BRK-11. Change how long."
+      },
+      "BreakIn": {
+        "properties": {
+          "choice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "today",
+                  "three_days",
+                  "week",
+                  "until_back"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Choice"
+          },
+          "care_level": {
+            "type": "integer",
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Care Level",
+            "default": 1
+          },
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntakeSession"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Sets the care level from the conversation."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BreakIn",
+        "description": "Take a break. Without choice, opens the screen for where the user is. On an active journey, choice starts\nthe break (UC-BRK-05). care_level 2 to 4 makes it a care rest (UC-BRK-07)."
+      },
+      "BreakResponse": {
+        "properties": {
+          "screen": {
+            "type": "string",
+            "enum": [
+              "S-01",
+              "S-02",
+              "S-02b",
+              "S-03",
+              "S-04",
+              "S-05",
+              "S-06",
+              "S-07"
+            ],
+            "title": "Screen"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "body": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Body"
+          },
+          "choices": {
+            "items": {
+              "$ref": "#/components/schemas/Option"
+            },
+            "type": "array",
+            "title": "Choices"
+          },
+          "current_choice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "today",
+                  "three_days",
+                  "week",
+                  "until_back"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Choice"
+          },
+          "quiet_988_line": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiet 988 Line",
+            "description": "BRK-D-04. On break screens after sign-in."
+          },
+          "support_resources_label": {
+            "type": "string",
+            "title": "Support Resources Label"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BreakState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
+          }
+        },
+        "type": "object",
+        "required": [
+          "screen",
+          "text",
+          "support_resources_label",
+          "next_step"
+        ],
+        "title": "BreakResponse",
+        "description": "One break screen (S-01 to S-07). Break screens show nothing from a case except the end date (UC-BRK-12)."
+      },
+      "BreakState": {
+        "properties": {
+          "on_break": {
+            "type": "boolean",
+            "title": "On Break"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until",
+            "description": "Null with on_break means Until I come back."
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date",
+            "description": "The end in the user's time zone, in words."
+          },
+          "notice_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notice At",
+            "description": "When the break-ending notice goes (UC-BRK-09). Null when none."
+          },
+          "notice_channels": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationChannel"
+            },
+            "type": "array",
+            "title": "Notice Channels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "on_break",
+          "started_at",
+          "until",
+          "end_date",
+          "notice_at"
+        ],
+        "title": "BreakState"
+      },
+      "CancelSubscriptionIn": {
+        "properties": {
+          "confirm": {
+            "type": "boolean",
+            "title": "Confirm",
+            "description": "false shows the explainer. true cancels at the period end.",
+            "default": false
+          },
+          "care_level": {
+            "type": "integer",
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Care Level",
+            "default": 1
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CancelSubscriptionIn"
+      },
+      "CancelSubscriptionResponse": {
+        "properties": {
+          "canceled": {
+            "type": "boolean",
+            "title": "Canceled"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "subscription": {
+            "$ref": "#/components/schemas/SubscriptionOut"
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
+          }
+        },
+        "type": "object",
+        "required": [
+          "canceled",
+          "message",
+          "subscription",
+          "next_step"
+        ],
+        "title": "CancelSubscriptionResponse"
       },
       "CaseDeletionIn": {
         "properties": {
@@ -4451,6 +5736,91 @@
         ],
         "title": "Checkbox"
       },
+      "CheckoutIn": {
+        "properties": {
+          "agreed": {
+            "type": "boolean",
+            "const": true,
+            "title": "Agreed"
+          },
+          "document_version": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Document Version"
+          },
+          "client": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9 ._/()+-]+$",
+            "title": "Client",
+            "description": "App platform and version, stored on the consent record.",
+            "examples": [
+              "ios/1.0.0"
+            ]
+          },
+          "care_level": {
+            "type": "integer",
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Care Level",
+            "default": 1
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "agreed",
+          "document_version",
+          "client"
+        ],
+        "title": "CheckoutIn",
+        "description": "UC-SUB-02 and UC-SUB-03. Sent when the user checked the box and selected Continue to payment."
+      },
+      "CheckoutResponse": {
+        "properties": {
+          "checkout_url": {
+            "type": "string",
+            "title": "Checkout Url",
+            "description": "Stripe's hosted page. Redirect right away. Never stored."
+          }
+        },
+        "type": "object",
+        "required": [
+          "checkout_url"
+        ],
+        "title": "CheckoutResponse"
+      },
+      "CheckoutResultResponse": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "finishing",
+              "finishing_slow",
+              "success",
+              "left"
+            ],
+            "title": "State"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
+          }
+        },
+        "type": "object",
+        "required": [
+          "state",
+          "message",
+          "next_step"
+        ],
+        "title": "CheckoutResultResponse",
+        "description": "UC-SUB-04 and UC-SUB-05. From Cairn's own status, never from the redirect alone."
+      },
       "Choice": {
         "properties": {
           "value": {
@@ -4603,6 +5973,15 @@
             "type": "array",
             "title": "Trial Reminders"
           },
+          "notification_preferences": {
+            "$ref": "#/components/schemas/NotificationPreferencesOut"
+          },
+          "subscription": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Subscription",
+            "description": "Status and dates only. Never a card, bank, or billing address."
+          },
           "cases": {
             "items": {
               "$ref": "#/components/schemas/ExportCase"
@@ -4619,6 +5998,8 @@
           "profile",
           "acknowledgments",
           "trial_reminders",
+          "notification_preferences",
+          "subscription",
           "cases"
         ],
         "title": "DataExport",
@@ -4800,6 +6181,15 @@
           "date_of_birth"
         ],
         "title": "DeceasedOut"
+      },
+      "DueDateLead": {
+        "type": "string",
+        "enum": [
+          "day_before",
+          "three_days",
+          "one_week"
+        ],
+        "title": "DueDateLead"
       },
       "EmailSignInCopy": {
         "properties": {
@@ -4989,9 +6379,6 @@
             "type": "array",
             "title": "Tasks"
           },
-          "notification_preferences": {
-            "$ref": "#/components/schemas/NotificationPreferencesOut"
-          },
           "notifications_sent": {
             "items": {
               "$ref": "#/components/schemas/ExportNotificationSent"
@@ -5023,7 +6410,6 @@
           "answers",
           "person_who_died",
           "tasks",
-          "notification_preferences",
           "notifications_sent",
           "conversation"
         ],
@@ -5305,6 +6691,203 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "HomeCaseCard": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name",
+            "description": "Shown on the card only. Never in the page title or browser tab."
+          },
+          "where_left_off": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Where Left Off"
+          },
+          "draft_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Notice",
+            "description": "The 28-day draft notice (UC-CASE-10)."
+          },
+          "draft_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Expires At"
+          },
+          "next_task": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Task"
+          },
+          "trial_line": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trial Line",
+            "description": "The free days end date. Never at care levels 3 and 4."
+          },
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/Option"
+            },
+            "type": "array",
+            "title": "Actions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "display_name",
+          "actions"
+        ],
+        "title": "HomeCaseCard"
+      },
+      "HomeResponse": {
+        "properties": {
+          "route": {
+            "type": "string",
+            "enum": [
+              "resume_setup",
+              "resume_draft",
+              "resting",
+              "home"
+            ],
+            "title": "Route",
+            "description": "UC-REG-18. Where a returning sign-in goes first."
+          },
+          "greeting": {
+            "type": "string",
+            "title": "Greeting"
+          },
+          "page_title": {
+            "type": "string",
+            "title": "Page Title",
+            "description": "Never names the person who died."
+          },
+          "resting": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BreakResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "subscribe_prompt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SubscribePrompt"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/HomeCaseCard"
+            },
+            "type": "array",
+            "title": "Cases"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/Note"
+            },
+            "type": "array",
+            "title": "Notes"
+          },
+          "ai_reminder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Reminder",
+            "description": "The session-start AI reminder, when due (UC-CASE-23)."
+          },
+          "always_visible": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Always Visible",
+            "description": "Take a break, Support resources, Settings, Sign out, AI guide, Read this to me."
+          },
+          "support": {
+            "$ref": "#/components/schemas/Support"
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
+          }
+        },
+        "type": "object",
+        "required": [
+          "route",
+          "greeting",
+          "page_title",
+          "cases",
+          "notes",
+          "always_visible",
+          "support",
+          "next_step"
+        ],
+        "title": "HomeResponse"
+      },
+      "InactivityAfter": {
+        "type": "string",
+        "enum": [
+          "off",
+          "three_days",
+          "one_week",
+          "two_weeks"
+        ],
+        "title": "InactivityAfter"
       },
       "InstitutionNotice": {
         "properties": {
@@ -5747,34 +7330,6 @@
         "title": "IntakeTurnResponse",
         "description": "One conversational turn. Acknowledgment first, at most one question, exactly one next action."
       },
-      "JourneyNotifications": {
-        "properties": {
-          "case_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Case Id"
-          },
-          "display_name": {
-            "type": "string",
-            "title": "Display Name"
-          },
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "preferences": {
-            "$ref": "#/components/schemas/NotificationPreferencesOut"
-          }
-        },
-        "type": "object",
-        "required": [
-          "case_id",
-          "display_name",
-          "status",
-          "preferences"
-        ],
-        "title": "JourneyNotifications"
-      },
       "JourneyPreviewResponse": {
         "properties": {
           "case": {
@@ -5976,6 +7531,109 @@
         ],
         "title": "JourneyResponse"
       },
+      "KeepInTouchIn": {
+        "properties": {
+          "due_date_lead": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DueDateLead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "inactivity_after": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InactivityAfter"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "skip": {
+            "type": "boolean",
+            "title": "Skip",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "KeepInTouchIn",
+        "description": "UC-CASE-19. Omit both, or send skip, to keep the defaults (OPEN-03)."
+      },
+      "KeepInTouchQuestion": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "due_date_lead",
+              "inactivity_after"
+            ],
+            "title": "Id"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/Option"
+            },
+            "type": "array",
+            "title": "Options"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "prompt",
+          "options"
+        ],
+        "title": "KeepInTouchQuestion"
+      },
+      "KeepInTouchResponse": {
+        "properties": {
+          "opening": {
+            "type": "string",
+            "title": "Opening"
+          },
+          "preferences": {
+            "$ref": "#/components/schemas/NotificationPreferencesOut"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/KeepInTouchQuestion"
+            },
+            "type": "array",
+            "title": "Questions",
+            "description": "Empty when the account frequency is none."
+          },
+          "change_link": {
+            "$ref": "#/components/schemas/Option",
+            "description": "Change how you hear from me: opens Settings (UC-REG-17)."
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
+          },
+          "read_aloud": {
+            "$ref": "#/components/schemas/ReadAloud"
+          }
+        },
+        "type": "object",
+        "required": [
+          "opening",
+          "preferences",
+          "questions",
+          "change_link",
+          "next_step",
+          "read_aloud"
+        ],
+        "title": "KeepInTouchResponse",
+        "description": "UC-CASE-19. Reads back the account choices, then asks only lead time and inactivity, one per screen."
+      },
       "Level2ChoiceIn": {
         "properties": {
           "choice": {
@@ -6040,6 +7698,36 @@
           "access_token"
         ],
         "title": "LinkSignInMethodRequest"
+      },
+      "MagicLinkCopy": {
+        "properties": {
+          "landing": {
+            "type": "string",
+            "title": "Landing"
+          },
+          "landing_button": {
+            "type": "string",
+            "title": "Landing Button"
+          },
+          "other_device": {
+            "type": "string",
+            "title": "Other Device",
+            "description": "Shown in the original tab when the link was opened somewhere else."
+          },
+          "send_new_link_here": {
+            "type": "string",
+            "title": "Send New Link Here"
+          }
+        },
+        "type": "object",
+        "required": [
+          "landing",
+          "landing_button",
+          "other_device",
+          "send_new_link_here"
+        ],
+        "title": "MagicLinkCopy",
+        "description": "UC-REG-04. The Cairn page the email link opens. The token is used only when the user selects Continue, so an\nemail security scanner that opens the link never uses it up."
       },
       "NextStep": {
         "properties": {
@@ -6127,197 +7815,97 @@
         ],
         "title": "Note"
       },
-      "NotificationChangeIn": {
-        "properties": {
-          "scope": {
-            "anyOf": [
-              {
-                "type": "string",
-                "const": "all"
-              },
-              {
-                "items": {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Scope",
-            "description": "Which journeys. Omit when there is only one. stop_everything with no scope means all of them."
-          },
-          "stop_everything": {
-            "type": "boolean",
-            "title": "Stop Everything",
-            "default": false
-          },
-          "choice": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/NotificationChoice"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "confirm": {
-            "type": "boolean",
-            "title": "Confirm",
-            "description": "true once the user said yes to the readback.",
-            "default": false
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "title": "NotificationChangeIn",
-        "description": "UC-CASE-20. stop_everything applies in one step. A choice is read back first and applied on confirm."
-      },
-      "NotificationChangeResponse": {
-        "properties": {
-          "applied": {
-            "type": "boolean",
-            "title": "Applied"
-          },
-          "acknowledgment": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acknowledgment"
-          },
-          "readback": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Readback"
-          },
-          "journeys": {
-            "items": {
-              "$ref": "#/components/schemas/JourneyNotifications"
-            },
-            "type": "array",
-            "title": "Journeys"
-          },
-          "next_step": {
-            "$ref": "#/components/schemas/NextStep"
-          }
-        },
-        "type": "object",
-        "required": [
-          "applied",
-          "acknowledgment",
-          "readback",
-          "journeys",
-          "next_step"
-        ],
-        "title": "NotificationChangeResponse"
-      },
       "NotificationChannel": {
         "type": "string",
         "enum": [
           "email",
-          "push",
-          "in_app_only"
+          "in_app",
+          "browser"
         ],
         "title": "NotificationChannel"
       },
-      "NotificationChoice": {
+      "NotificationChannelsIn": {
         "properties": {
-          "channels": {
-            "items": {
-              "$ref": "#/components/schemas/NotificationChannel"
-            },
-            "type": "array",
-            "maxItems": 3,
-            "minItems": 1,
-            "title": "Channels"
+          "email": {
+            "type": "boolean",
+            "title": "Email"
           },
-          "reasons": {
-            "items": {
-              "$ref": "#/components/schemas/NotificationReason"
-            },
-            "type": "array",
-            "maxItems": 2,
-            "title": "Reasons"
+          "browser": {
+            "type": "boolean",
+            "title": "Browser",
+            "default": false
           },
-          "due_date_lead_days": {
+          "browser_permission": {
             "anyOf": [
               {
-                "type": "integer",
+                "type": "string",
                 "enum": [
-                  1,
-                  3,
-                  7
+                  "granted",
+                  "denied",
+                  "unsupported"
                 ]
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Due Date Lead Days"
+            "title": "Browser Permission",
+            "description": "What the browser said. denied or unsupported takes browser off the channels."
           },
-          "inactivity_days": {
+          "browser_push_endpoint": {
             "anyOf": [
               {
-                "type": "integer",
-                "enum": [
-                  3,
-                  7,
-                  14
-                ]
+                "type": "string",
+                "maxLength": 2048,
+                "minLength": 12,
+                "pattern": "^https://\\S+$"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Inactivity Days"
-          },
-          "frequency": {
-            "$ref": "#/components/schemas/NotificationFrequency",
-            "default": "daily_max"
+            "title": "Browser Push Endpoint",
+            "description": "The push subscription endpoint, only when permission was granted."
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "channels"
+          "email"
         ],
-        "title": "NotificationChoice",
-        "description": "in_app_only stands alone. Any other channel needs at least one reason, and each reason its timing."
+        "title": "NotificationChannelsIn",
+        "description": "UC-REG-15 first screen, or Settings. in_app is always on and isn't sent. Ask browser permission only after\nthe user chose browser, then send what the browser said."
       },
       "NotificationFrequency": {
         "type": "string",
         "enum": [
-          "as_it_happens",
-          "daily_max",
-          "weekly_max"
+          "due_only",
+          "daily",
+          "weekly",
+          "none"
         ],
         "title": "NotificationFrequency"
       },
+      "NotificationFrequencyIn": {
+        "properties": {
+          "frequency": {
+            "$ref": "#/components/schemas/NotificationFrequency"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "frequency"
+        ],
+        "title": "NotificationFrequencyIn",
+        "description": "UC-REG-15 second screen. One question."
+      },
       "NotificationPreferencesOut": {
         "properties": {
-          "case_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Case Id"
-          },
           "stored": {
             "type": "boolean",
             "title": "Stored",
-            "description": "False when nothing was chosen yet. The effective choice is then in_app_only."
+            "description": "False before UC-REG-15. Then nothing goes outside Cairn except service notices (D-14)."
           },
           "channels": {
             "items": {
@@ -6326,46 +7914,37 @@
             "type": "array",
             "title": "Channels"
           },
-          "reasons": {
-            "items": {
-              "$ref": "#/components/schemas/NotificationReason"
-            },
-            "type": "array",
-            "title": "Reasons"
-          },
-          "due_date_lead_days": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Due Date Lead Days"
-          },
-          "inactivity_days": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Inactivity Days"
-          },
           "frequency": {
             "$ref": "#/components/schemas/NotificationFrequency"
           },
-          "push_permission_granted": {
+          "quiet_hours_start": {
+            "type": "string",
+            "title": "Quiet Hours Start"
+          },
+          "quiet_hours_end": {
+            "type": "string",
+            "title": "Quiet Hours End"
+          },
+          "browser_notifications_on": {
             "type": "boolean",
-            "title": "Push Permission Granted"
+            "title": "Browser Notifications On",
+            "description": "Browser is chosen and a push subscription is stored. The endpoint itself is never sent back."
+          },
+          "due_date_lead": {
+            "$ref": "#/components/schemas/DueDateLead"
+          },
+          "inactivity_after": {
+            "$ref": "#/components/schemas/InactivityAfter"
+          },
+          "journey_confirmed": {
+            "type": "boolean",
+            "title": "Journey Confirmed",
+            "description": "Lead time and inactivity notices were confirmed (UC-CASE-19)."
           },
           "readback": {
             "type": "string",
             "title": "Readback",
-            "description": "The choice in plain language, one sentence."
+            "description": "The choices in plain language, one line."
           },
           "updated_at": {
             "anyOf": [
@@ -6382,109 +7961,141 @@
         },
         "type": "object",
         "required": [
-          "case_id",
           "stored",
           "channels",
-          "reasons",
-          "due_date_lead_days",
-          "inactivity_days",
           "frequency",
-          "push_permission_granted",
+          "quiet_hours_start",
+          "quiet_hours_end",
+          "browser_notifications_on",
+          "due_date_lead",
+          "inactivity_after",
+          "journey_confirmed",
           "readback",
           "updated_at"
         ],
         "title": "NotificationPreferencesOut"
       },
-      "NotificationPreset": {
-        "type": "string",
-        "enum": [
-          "keep_it_simple",
-          "skip",
-          "same_as"
-        ],
-        "title": "NotificationPreset"
-      },
-      "NotificationQuestion": {
+      "NotificationSettingsPatch": {
         "properties": {
-          "id": {
-            "type": "string",
-            "enum": [
-              "channels",
-              "reasons",
-              "due_date_lead_days",
-              "inactivity_days",
-              "frequency"
+          "channels": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotificationChannelsIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "frequency": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotificationFrequency"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quiet_hours_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                "examples": [
+                  "21:00"
+                ]
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Id"
+            "title": "Quiet Hours Start"
           },
-          "prompt": {
-            "type": "string",
-            "title": "Prompt"
+          "quiet_hours_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                "examples": [
+                  "21:00"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiet Hours End"
           },
-          "multi_select": {
+          "due_date_lead": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DueDateLead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "inactivity_after": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InactivityAfter"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stop_all_reminders": {
             "type": "boolean",
-            "title": "Multi Select"
+            "title": "Stop All Reminders",
+            "default": false
           },
-          "options": {
-            "items": {
-              "$ref": "#/components/schemas/Option"
-            },
-            "type": "array",
-            "title": "Options"
-          },
-          "asked_when": {
-            "type": "string",
-            "title": "Asked When",
-            "description": "When the client shows this question."
+          "care_level": {
+            "type": "integer",
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Care Level",
+            "description": "At level 4 no Settings change is made in the same turn (AC-26-11).",
+            "default": 1
           }
         },
+        "additionalProperties": false,
         "type": "object",
-        "required": [
-          "id",
-          "prompt",
-          "multi_select",
-          "options",
-          "asked_when"
-        ],
-        "title": "NotificationQuestion"
+        "title": "NotificationSettingsPatch",
+        "description": "UC-REG-17. Each choice is editable on its own. stop_all_reminders sets frequency none in one step, with no\npersuasion. Always free, on a read-only account too."
       },
-      "NotificationReadbackResponse": {
-        "properties": {
-          "preferences": {
-            "$ref": "#/components/schemas/NotificationPreferencesOut"
-          },
-          "next_step": {
-            "$ref": "#/components/schemas/NextStep"
-          }
-        },
-        "type": "object",
-        "required": [
-          "preferences",
-          "next_step"
-        ],
-        "title": "NotificationReadbackResponse",
-        "description": "Read back before saving. Nothing is stored."
-      },
-      "NotificationReason": {
-        "type": "string",
-        "enum": [
-          "due_date_upcoming",
-          "inactivity"
-        ],
-        "title": "NotificationReason"
-      },
-      "NotificationSavedResponse": {
+      "NotificationSettingsResponse": {
         "properties": {
           "preferences": {
             "$ref": "#/components/schemas/NotificationPreferencesOut"
           },
           "acknowledgment": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Acknowledgment"
           },
           "next_step": {
-            "$ref": "#/components/schemas/NextStep",
-            "description": "request_push_permission when push was chosen and the OS hasn't been asked, so the prompt only ever follows the user's choice."
+            "$ref": "#/components/schemas/NextStep"
+          },
+          "push_public_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Push Public Key",
+            "description": "For subscribing the browser. Null when browser notifications aren't available."
           }
         },
         "type": "object",
@@ -6493,107 +8104,7 @@
           "acknowledgment",
           "next_step"
         ],
-        "title": "NotificationSavedResponse"
-      },
-      "NotificationSetIn": {
-        "properties": {
-          "choice": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/NotificationChoice"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "preset": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/NotificationPreset"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "same_as_case_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Same As Case Id"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "title": "NotificationSetIn",
-        "description": "Send a choice, or a shortcut. same_as copies another journey's choice (UC-CASE-18)."
-      },
-      "NotificationSetupResponse": {
-        "properties": {
-          "case_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Case Id"
-          },
-          "display_name": {
-            "type": "string",
-            "title": "Display Name"
-          },
-          "explanation": {
-            "type": "string",
-            "title": "Explanation"
-          },
-          "preferences": {
-            "$ref": "#/components/schemas/NotificationPreferencesOut"
-          },
-          "masked_email": {
-            "type": "string",
-            "title": "Masked Email",
-            "description": "Where email goes, shown masked. Works with Apple private email relay."
-          },
-          "shortcuts": {
-            "items": {
-              "$ref": "#/components/schemas/Option"
-            },
-            "type": "array",
-            "title": "Shortcuts",
-            "description": "Use the same as another journey (when there is one), Keep it simple for me, Choose for myself, Only in the app."
-          },
-          "questions": {
-            "items": {
-              "$ref": "#/components/schemas/NotificationQuestion"
-            },
-            "type": "array",
-            "title": "Questions"
-          },
-          "next_step": {
-            "$ref": "#/components/schemas/NextStep"
-          },
-          "read_aloud": {
-            "$ref": "#/components/schemas/ReadAloud"
-          }
-        },
-        "type": "object",
-        "required": [
-          "case_id",
-          "display_name",
-          "explanation",
-          "preferences",
-          "masked_email",
-          "shortcuts",
-          "questions",
-          "next_step",
-          "read_aloud"
-        ],
-        "title": "NotificationSetupResponse",
-        "description": "UC-CASE-19. The explanation, the shortcuts (same as another journey first), then one question at a time."
+        "title": "NotificationSettingsResponse"
       },
       "OnboardingResponse": {
         "properties": {
@@ -6631,14 +8142,16 @@
         "type": "string",
         "enum": [
           "account_created",
+          "adult_confirmed",
           "privacy_terms_accepted",
           "trial_terms_accepted",
           "ai_notice_accepted",
           "preferred_name_saved",
+          "voice_saved",
           "complete"
         ],
         "title": "OnboardingStep",
-        "description": "The last completed step."
+        "description": "The last completed step, in the account spec's onboarding_sequence."
       },
       "Option": {
         "properties": {
@@ -6689,26 +8202,6 @@
         "title": "PauseRequest",
         "description": "No reason field, on purpose. Cairn does not store why someone stepped back."
       },
-      "PauseResponse": {
-        "properties": {
-          "screen": {
-            "$ref": "#/components/schemas/Screen"
-          },
-          "support": {
-            "$ref": "#/components/schemas/Support"
-          },
-          "next_step": {
-            "$ref": "#/components/schemas/NextStep"
-          }
-        },
-        "type": "object",
-        "required": [
-          "screen",
-          "support",
-          "next_step"
-        ],
-        "title": "PauseResponse"
-      },
       "PolicyVersions": {
         "properties": {
           "terms_version": {
@@ -6738,6 +8231,38 @@
           "acknowledgments"
         ],
         "title": "PolicyVersions"
+      },
+      "PortalIn": {
+        "properties": {
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "update_payment",
+              "invoices"
+            ],
+            "title": "Purpose"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "purpose"
+        ],
+        "title": "PortalIn"
+      },
+      "PortalResponse": {
+        "properties": {
+          "portal_url": {
+            "type": "string",
+            "title": "Portal Url",
+            "description": "Created on demand. Never stored or emailed."
+          }
+        },
+        "type": "object",
+        "required": [
+          "portal_url"
+        ],
+        "title": "PortalResponse"
       },
       "PreButtonNotice": {
         "properties": {
@@ -6986,21 +8511,6 @@
         ],
         "title": "ProposedAnswerIn"
       },
-      "PushPermissionIn": {
-        "properties": {
-          "granted": {
-            "type": "boolean",
-            "title": "Granted",
-            "description": "What the OS permission prompt returned."
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "granted"
-        ],
-        "title": "PushPermissionIn"
-      },
       "Question": {
         "properties": {
           "field": {
@@ -7131,20 +8641,6 @@
       },
       "RegistrationRequest": {
         "properties": {
-          "name_from_provider": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 100,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name From Provider",
-            "description": "A name Google or Apple shared at sign-in. Kept only to pre-fill the preferred name question. Apple sends it on the first sign-in only, so send it then."
-          },
           "time_zone": {
             "anyOf": [
               {
@@ -7160,12 +8656,13 @@
               }
             ],
             "title": "Time Zone",
-            "description": "Used to show trial dates in local time."
+            "description": "Read from the browser, never asked. Used for quiet hours and to show dates in local time."
           }
         },
         "additionalProperties": false,
         "type": "object",
-        "title": "RegistrationRequest"
+        "title": "RegistrationRequest",
+        "description": "Only what sign-in needs. A name or photo from Google or Apple is never requested, sent, or stored (D-16): Cairn\nasks the user what to call them (UC-REG-11). The setup API refuses any field it doesn't list\n(data_boundary.enforcement)."
       },
       "Relationship": {
         "type": "string",
@@ -7375,6 +8872,18 @@
             "title": "Ai Provider",
             "description": "Third-party AI provider, named before any data is sent to it."
           },
+          "push_public_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Push Public Key",
+            "description": "The VAPID key to subscribe the browser with, after the user chose browser notifications."
+          },
           "legal_review_required": {
             "type": "boolean",
             "title": "Legal Review Required",
@@ -7434,13 +8943,17 @@
         "type": "string",
         "enum": [
           "welcome",
+          "adult",
+          "under_18",
           "privacy_terms",
           "trial_terms",
           "ai_notice",
           "declined",
           "preferred_name",
           "personality",
-          "case_handoff",
+          "notification_channels",
+          "notification_frequency",
+          "setup_complete",
           "ready",
           "paused"
         ],
@@ -7462,6 +8975,102 @@
         "additionalProperties": false,
         "type": "object",
         "title": "SessionIn"
+      },
+      "SessionPolicy": {
+        "properties": {
+          "inactivity_timeout_seconds": {
+            "type": "integer",
+            "title": "Inactivity Timeout Seconds"
+          },
+          "warning_before_timeout_seconds": {
+            "type": "integer",
+            "title": "Warning Before Timeout Seconds",
+            "description": "Show timeout_warning this long before. At least 20."
+          },
+          "overall_session_days": {
+            "type": "integer",
+            "title": "Overall Session Days"
+          },
+          "timeout_warning": {
+            "type": "string",
+            "title": "Timeout Warning"
+          },
+          "timeout_warning_button": {
+            "type": "string",
+            "title": "Timeout Warning Button"
+          },
+          "session_timed_out": {
+            "type": "string",
+            "title": "Session Timed Out",
+            "description": "Shown the next time the page is used after a timeout."
+          },
+          "signed_out": {
+            "type": "string",
+            "title": "Signed Out"
+          }
+        },
+        "type": "object",
+        "required": [
+          "inactivity_timeout_seconds",
+          "warning_before_timeout_seconds",
+          "overall_session_days",
+          "timeout_warning",
+          "timeout_warning_button",
+          "session_timed_out",
+          "signed_out"
+        ],
+        "title": "SessionPolicy",
+        "description": "D-20 and UC-REG-19. Sign out after 5 minutes with no activity, with a warning first."
+      },
+      "SetupCheckInIn": {
+        "properties": {
+          "answer": {
+            "type": "string",
+            "enum": [
+              "yes",
+              "yes_email",
+              "yes_in_cairn",
+              "no"
+            ],
+            "title": "Answer"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "answer"
+        ],
+        "title": "SetupCheckInIn",
+        "description": "DEC-26-04 during setup. yes uses the account's channels. Before UC-REG-15 there are none yet, so the question\nalso asks about email: yes_email sends it to the sign-in email too, yes_in_cairn shows it only in Cairn."
+      },
+      "SignInHelpResponse": {
+        "properties": {
+          "intro": {
+            "type": "string",
+            "title": "Intro"
+          },
+          "provider_recovery": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Link"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For Google or Apple accounts, the provider's own recovery page."
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
+          }
+        },
+        "type": "object",
+        "required": [
+          "intro",
+          "next_step"
+        ],
+        "title": "SignInHelpResponse",
+        "description": "UC-REG-20. Can't get into the sign-in email. Never a dead end."
       },
       "SignInMethod": {
         "type": "string",
@@ -7537,6 +9146,28 @@
           "auth0_connection"
         ],
         "title": "SignInOption"
+      },
+      "SignOutResponse": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "support": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Support",
+            "description": "At care levels 3 and 4, the crisis resource and the Support resources link."
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "SignOutResponse",
+        "description": "UC-REG-19. The token used for this request stops working. Everything is saved."
       },
       "StartCaseRequest": {
         "properties": {
@@ -7691,11 +9322,193 @@
         ],
         "title": "StatusCounts"
       },
+      "SubscribePrompt": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/Option"
+            },
+            "type": "array",
+            "title": "Options"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "body",
+          "options"
+        ],
+        "title": "SubscribePrompt",
+        "description": "UC-SUB-01. At most once a session and once a day. Never at care levels 2 to 4 or during a break."
+      },
+      "SubscriptionOut": {
+        "properties": {
+          "status_line": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Line",
+            "description": "Null at care levels 3 and 4: no price wording there."
+          },
+          "breaks_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Breaks Note"
+          },
+          "subscription_status": {
+            "type": "string",
+            "enum": [
+              "none",
+              "active",
+              "lapsed"
+            ],
+            "title": "Subscription Status"
+          },
+          "access": {
+            "type": "string",
+            "enum": [
+              "full",
+              "read_only"
+            ],
+            "title": "Access"
+          },
+          "billing_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billing Notice"
+          },
+          "cancel_at_period_end": {
+            "type": "boolean",
+            "title": "Cancel At Period End"
+          },
+          "current_period_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Period End"
+          },
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/Option"
+            },
+            "type": "array",
+            "title": "Actions",
+            "description": "Only the actions that apply."
+          },
+          "next_step": {
+            "$ref": "#/components/schemas/NextStep"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status_line",
+          "breaks_note",
+          "subscription_status",
+          "access",
+          "billing_notice",
+          "cancel_at_period_end",
+          "current_period_end",
+          "actions",
+          "next_step"
+        ],
+        "title": "SubscriptionOut",
+        "description": "UC-SUB-23. From Cairn's stored fields. Loads without calling Stripe."
+      },
+      "SubscriptionTermsResponse": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "lines": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "checkbox": {
+            "$ref": "#/components/schemas/Checkbox"
+          },
+          "button": {
+            "type": "string",
+            "title": "Button"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            },
+            "type": "array",
+            "title": "Links"
+          },
+          "price": {
+            "type": "string",
+            "title": "Price"
+          },
+          "legal_review_required": {
+            "type": "boolean",
+            "title": "Legal Review Required",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "lines",
+          "checkbox",
+          "button",
+          "links",
+          "price"
+        ],
+        "title": "SubscriptionTermsResponse",
+        "description": "UC-SUB-02. Everything before any payment detail is asked for. The renewal terms sit next to the button."
+      },
       "Support": {
         "properties": {
-          "need_a_moment_label": {
+          "take_a_break_label": {
             "type": "string",
-            "title": "Need A Moment Label"
+            "title": "Take A Break Label",
+            "description": "Take a break. One select, no confirmation. Opens the break screen for where the user is (UC-BRK-01)."
+          },
+          "support_resources_label": {
+            "type": "string",
+            "title": "Support Resources Label",
+            "description": "Opens GET /v1/support-resources. Works signed out."
+          },
+          "read_this_to_me": {
+            "type": "string",
+            "title": "Read This To Me"
           },
           "crisis_resource": {
             "type": "string",
@@ -7704,11 +9517,13 @@
         },
         "type": "object",
         "required": [
-          "need_a_moment_label",
+          "take_a_break_label",
+          "support_resources_label",
+          "read_this_to_me",
           "crisis_resource"
         ],
         "title": "Support",
-        "description": "Shown on every onboarding screen (UC-REG-14)."
+        "description": "On every screen, before and after sign-in (account available_on_every_screen, UC-BRK-01, AC-26-10)."
       },
       "SupportResource": {
         "properties": {
@@ -7732,6 +9547,28 @@
           "url"
         ],
         "title": "SupportResource"
+      },
+      "SupportResourcesPage": {
+        "properties": {
+          "intro": {
+            "type": "string",
+            "title": "Intro"
+          },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/SupportResource"
+            },
+            "type": "array",
+            "title": "Resources"
+          }
+        },
+        "type": "object",
+        "required": [
+          "intro",
+          "resources"
+        ],
+        "title": "SupportResourcesPage",
+        "description": "The crisis plan's Support resources page. Reachable without signing in. Opening it changes nothing and is\nnever logged with a user or case id."
       },
       "TakeABreakIn": {
         "properties": {
@@ -8515,6 +10352,14 @@
           "email_sign_in": {
             "$ref": "#/components/schemas/EmailSignInCopy"
           },
+          "magic_link": {
+            "$ref": "#/components/schemas/MagicLinkCopy"
+          },
+          "cant_get_into_email": {
+            "type": "string",
+            "title": "Cant Get Into Email",
+            "description": "Opens GET /v1/sign-in-help (UC-REG-20)."
+          },
           "notes": {
             "items": {
               "$ref": "#/components/schemas/Note"
@@ -8524,6 +10369,9 @@
           },
           "support": {
             "$ref": "#/components/schemas/Support"
+          },
+          "session": {
+            "$ref": "#/components/schemas/SessionPolicy"
           }
         },
         "type": "object",
@@ -8533,8 +10381,11 @@
           "sign_in_label",
           "not_ready",
           "email_sign_in",
+          "magic_link",
+          "cant_get_into_email",
           "notes",
-          "support"
+          "support",
+          "session"
         ],
         "title": "WelcomeResponse"
       }
@@ -8550,15 +10401,27 @@
   "tags": [
     {
       "name": "Registration",
-      "description": "UC-REG-01 to UC-REG-05. Welcome, sign-in, and account creation."
+      "description": "UC-REG-01 to UC-REG-05 and UC-REG-20. Welcome, sign-in, account creation, sign-in help, and the Support resources page."
     },
     {
       "name": "Onboarding",
-      "description": "UC-REG-07 to UC-REG-14. Acknowledgments, name, voice."
+      "description": "UC-REG-06 to UC-REG-16. Adult question, acknowledgments, name, voice, notification choices, setup complete."
     },
     {
       "name": "Account",
-      "description": "Settings, deleting the account (UC-REG-15), downloading all data (UC-REG-16), and account requests in chat."
+      "description": "Settings (UC-REG-17), signing out (UC-REG-19), deleting the account (UC-ACCT-01), downloading all data (UC-REG-16), and account requests in chat."
+    },
+    {
+      "name": "Home",
+      "description": "UC-CASE-25 and UC-REG-18. The home screen and where a sign-in goes first."
+    },
+    {
+      "name": "Take a break",
+      "description": "UC-BRK-01 to UC-BRK-12. Breaks on the account, the rest choices, and coming back."
+    },
+    {
+      "name": "Subscription",
+      "description": "UC-SUB-01 to UC-SUB-23. Terms, Stripe Checkout, the customer portal, cancelling, and Stripe events."
     },
     {
       "name": "Case creation",
@@ -8574,7 +10437,7 @@
     },
     {
       "name": "Keeping in touch",
-      "description": "UC-CASE-19 and UC-CASE-20. How and when Cairn reaches the user outside the app, per journey."
+      "description": "UC-REG-17 and UC-CASE-19. How and when Cairn reaches the user outside the app, for the whole account."
     }
   ]
 }

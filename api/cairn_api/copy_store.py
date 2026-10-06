@@ -1,9 +1,11 @@
-"""Versioned user-facing copy for registration (UC-REG-01 to UC-REG-14) and case creation (UC-CASE-01 to UC-CASE-18).
+"""Versioned user-facing copy for account setup (UC-REG), case creation (UC-CASE), Take a break (UC-BRK), and the
+subscription (UC-SUB).
 
-The spec's copy is stored verbatim in content/registration-copy.json and
-content/case-creation-copy.json so it can be replaced after legal review
-without a code change. Point CAIRN_REGISTRATION_COPY or CAIRN_CASE_COPY at
-another file to swap one.
+Each spec's copy is stored verbatim in content/registration-copy.json,
+content/case-creation-copy.json, content/take-a-break-copy.json, and
+content/subscription-copy.json so it can be replaced after legal review without
+a code change. Point CAIRN_REGISTRATION_COPY, CAIRN_CASE_COPY,
+CAIRN_BREAK_COPY, or CAIRN_SUBSCRIPTION_COPY at another file to swap one.
 
 Acknowledgment versions are derived from the exact text shown, so any wording
 change produces a new version and the user is asked to acknowledge it again
@@ -19,6 +21,8 @@ from functools import cached_property
 
 DEFAULT_PATH = pathlib.Path(__file__).parent / "content" / "registration-copy.json"
 CASE_COPY_PATH = pathlib.Path(__file__).parent / "content" / "case-creation-copy.json"
+BREAK_COPY_PATH = pathlib.Path(__file__).parent / "content" / "take-a-break-copy.json"
+SUBSCRIPTION_COPY_PATH = pathlib.Path(__file__).parent / "content" / "subscription-copy.json"
 
 # Which strings make up each acknowledgment. Changing any of them changes the version.
 _CONSENT_TEXT = {
@@ -26,6 +30,9 @@ _CONSENT_TEXT = {
     "trial_terms": ("trial_summary", "trial_checkbox"),
     "ai_notice": ("ai_notice", "ai_notice_legal", "ai_checkbox"),
 }
+# UC-SUB-02. The subscription terms screen, recorded with each subscription_terms consent.
+SUBSCRIPTION_TERMS = ("terms_title", "terms_price", "terms_tax", "terms_renewal", "terms_renewal_early",
+                      "terms_cancel", "terms_includes", "terms_breaks", "terms_secure_note", "terms_checkbox")
 
 
 @dataclass(frozen=True)
@@ -72,6 +79,19 @@ def load_copy(path: str | pathlib.Path | None = None, default: pathlib.Path = DE
 
 def load_case_copy(path: str | pathlib.Path | None = None) -> Copy:
     return load_copy(path, CASE_COPY_PATH)
+
+
+def load_break_copy(path: str | pathlib.Path | None = None) -> Copy:
+    return load_copy(path, BREAK_COPY_PATH)
+
+
+def load_subscription_copy(path: str | pathlib.Path | None = None) -> Copy:
+    return load_copy(path, SUBSCRIPTION_COPY_PATH)
+
+
+def subscription_terms_version(copy: Copy) -> str:
+    """The document_version for subscription_terms: the exact text of the terms screen."""
+    return f"copy={copy.version_of(*SUBSCRIPTION_TERMS)}"
 
 
 def consent_versions(copy: Copy, privacy_version: str, terms_version: str) -> dict[str, str]:

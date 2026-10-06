@@ -1,0 +1,1166 @@
+{
+  "spec": {
+    "id": "cairn-take-a-break",
+    "title": "Cairn Take a break use cases",
+    "version": "3.2.0",
+    "date": "2026-10-06",
+    "status": "Approved for build except items marked proposed. User-facing copy pending clinical and legal review.",
+    "source_of_truth": [
+      "https://trello.com/c/PAA01d2O",
+      "https://trello.com/c/nCJTOytG",
+      "https://trello.com/c/RDV4A5xi"
+    ],
+    "suite": {
+      "name": "Cairn signup through first journey, v3.1 suite",
+      "files": {
+        "cairn-account-use-cases-v32.json": "Owns the account entity (including break fields), sign-in, sessions, setup acknowledgments, preferred name, voice, notification preferences, Settings, and account deletion.",
+        "cairn-case-creation-use-cases-v32.json": "Owns cases, intake, journey selection, Start journey, the home screen, and action confirmations.",
+        "cairn-support-crisis-plan-v32.json": "Owns crisis detection, care levels, care rest triggers and the trial pause, the follow-up check-in, and support resources. Wins on crisis behavior.",
+        "cairn-take-a-break-use-cases-v32.json": "Owns the Take a break control, every break screen, Cairn's rest offers, what is sent or held during a break, the break-ending notice, and coming back.",
+        "cairn-subscription-use-cases-v33.json": "Owns subscribing, Stripe checkout and events, renewal, failed payments, cancelling, and subscription notices."
+      },
+      "rule": "Each decision and each field has exactly one owner file. Other files reference it by ID and do not restate it."
+    },
+    "migrated_in": [
+      {
+        "from": "account UC-REG-14 (I need a moment, v3)",
+        "to": "UC-BRK-03",
+        "note": "The distress part stays with the crisis plan. The break part moved here."
+      },
+      {
+        "from": "account D-17 and crisis plan DEC-26-07",
+        "to": "BRK-D-01, BRK-D-04"
+      },
+      {
+        "from": "case UC-CASE-10 Pause and come back later",
+        "to": "UC-BRK-04",
+        "note": "Draft retention (draft_cleanup_job, DEC-06) stays in the case spec."
+      },
+      {
+        "from": "case UC-CASE-23 rest offer (the AI reminder stays in the case spec)",
+        "to": "UC-BRK-06"
+      },
+      {
+        "from": "case global_rules.take_a_break",
+        "to": "UC-BRK-01"
+      },
+      {
+        "from": "crisis plan DEC-26-02 (when Cairn offers rest)",
+        "to": "BRK-D-05"
+      },
+      {
+        "from": "crisis plan rest section (choices, while resting, on return, copy)",
+        "to": "UC-BRK-05, UC-BRK-08, UC-BRK-10, copy"
+      },
+      {
+        "from": "crisis plan AC-26-05, AC-26-06, AC-26-09, AC-26-13",
+        "to": "AC-BRK-05, AC-BRK-06, AC-BRK-03, AC-BRK-07"
+      },
+      {
+        "from": "crisis plan OPEN-26-01 and case OPEN-12 (one label)",
+        "to": "BRK-D-01"
+      }
+    ],
+    "not_migrated": [
+      "UC-END-08 (rest choices on an active journey) lives in the Ending a journey spec (https://claude.ai/artifact/5x7pjTU2efo2XJwd8bdGBT), which is not part of this suite. It should be changed to point to UC-BRK-05 here.",
+      "Crisis plan DEC-26-01 (a care rest pauses the free days) stays in the crisis plan because it is a crisis and trial rule. This file applies it."
+    ],
+    "instructions_for_claude_code": [
+      "This file owns the Take a break control and every break screen. Remove break behavior from components built from earlier specs and route it through the flows here.",
+      "Build the control once as a shared component and place it through the app layout, so a new view gets it by default. View inventory exceptions must be explicit.",
+      "Implement every acceptance criterion as an automated test. UC-BRK-01 is a test suite over the whole view inventory, run on every release.",
+      "Where this file and the crisis plan differ on crisis behavior, the crisis plan wins. Report the difference.",
+      "User-facing strings in copy are used verbatim and stored in the copy layer so they can be versioned after review.",
+      "Do not use em dashes in any user-facing copy."
+    ],
+    "supersedes": "cairn-take-a-break-use-cases-v31.json",
+    "changelog_v3_2": [
+      "New BRK-D-08: a break never affects a paid subscription. Breaks are only for the user to step back and recover.",
+      "New copy.rest_subscription_note shown to subscribed users on the rest choices and break started screens at care level 1.",
+      "Subscribed users no longer see nothing about billing at level 1. They now see that their subscription keeps going as normal.",
+      "rest_care_clock_note and trial_clock_paused_at apply only while the free days are running.",
+      "Stripe failed-payment emails added as an exception to AC-BRK-06 (subscription SUB-D-08)."
+    ]
+  },
+  "decisions": [
+    {
+      "id": "BRK-D-01",
+      "topic": "One label everywhere",
+      "decision": "The break control is labeled Take a break on every Cairn view, including the welcome screen and every account setup screen. I need a moment is retired.",
+      "status": "Confirmed by Mara 2026-10-06",
+      "resolves": [
+        "crisis plan OPEN-26-01",
+        "case OPEN-12"
+      ]
+    },
+    {
+      "id": "BRK-D-02",
+      "topic": "Break-ending notice",
+      "decision": "For a break with an end time, Cairn sends one notice 24 hours before the break ends, through the user's notification channels (account notification_preferences). In-app shows it too.",
+      "status": "Confirmed by Mara 2026-10-06"
+    },
+    {
+      "id": "BRK-D-03",
+      "topic": "Break-ending notice during a care rest",
+      "decision": "Not sent during a care rest (levels 2 to 4) by default. The crisis plan says Cairn returns to tasks only when the user asks and sends no nudges during a rest. Shown inside Cairn only.",
+      "status": "proposed, confirm with clinical reviewer (OPEN-BRK-01)"
+    },
+    {
+      "id": "BRK-D-04",
+      "topic": "988 line on break screens",
+      "decision": "Break screens after sign-in show the quiet 988 line and the Support resources link. Nothing is asked. Carries over account D-17 and crisis plan DEC-26-07.",
+      "status": "proposed, confirm"
+    },
+    {
+      "id": "BRK-D-05",
+      "topic": "When Cairn offers a break",
+      "decision": "After about 45 minutes of active use in one session, and after a heavy task or heavy question (for example a bank call, a certificate order, funeral research, or case UC-CASE-05). Offered at most once per session per trigger. Declining never brings it back in the same session.",
+      "status": "Confirmed 2026-09-29 as crisis plan DEC-26-02. Moved here.",
+      "former_id": "DEC-26-02"
+    },
+    {
+      "id": "BRK-D-06",
+      "topic": "A break covers the person, not one case",
+      "decision": "A break is stored on the account and applies to every active journey. case.tasks_paused_until is set to the same value on each active case so existing code keeps working.",
+      "status": "proposed, confirm"
+    },
+    {
+      "id": "BRK-D-07",
+      "topic": "Break end times",
+      "decision": "For the rest of today ends at 11:59 PM in the user's time zone. A few days ends 3 days after the break starts. A week ends 7 days after. Until I come back has no end time.",
+      "status": "proposed, confirm"
+    },
+    {
+      "id": "BRK-D-08",
+      "topic": "Breaks and paid subscriptions",
+      "decision": "Taking a break never affects a paid subscription. It does not pause billing, move the renewal date, lower the price, extend the paid month, or earn a refund or credit. Breaks are only for the user to step back from the journey and recover. The only billing effect of any break is that a care rest pauses the free days, and only while the free days are still running.",
+      "status": "Confirmed by Mara 2026-10-06",
+      "shown_where": [
+        "S-04 rest choices and S-05 break started, at care level 1, for subscribed users (copy.rest_subscription_note)",
+        "Subscription terms before purchase (subscription UC-SUB-02)",
+        "Settings, Subscription (subscription UC-SUB-23)",
+        "Yearly renewal reminder (subscription UC-SUB-17)",
+        "Trial acknowledgment at signup (account UC-REG-08)",
+        "Start journey notice (case UC-CASE-12)"
+      ],
+      "not_shown": "At care levels 2, 3, and 4 no billing wording appears (crisis plan). The rule still applies there."
+    }
+  ],
+  "break_types": [
+    {
+      "type": "pre_sign_in",
+      "where": "No account yet or signed out",
+      "saves": "Nothing",
+      "trial_clock": "Not started",
+      "ending_notice": "None"
+    },
+    {
+      "type": "setup_pause",
+      "where": "Account setup",
+      "saves": "Setup progress",
+      "trial_clock": "Not started",
+      "ending_notice": "None, no end time"
+    },
+    {
+      "type": "draft_pause",
+      "where": "A draft case, no active journey",
+      "saves": "Draft answers and last_intake_step",
+      "trial_clock": "Not started",
+      "ending_notice": "None. Drafts get no notifications (case DEC-06)."
+    },
+    {
+      "type": "normal_rest",
+      "where": "Active journey, care level 1",
+      "saves": "Everything",
+      "trial_clock": "Keeps counting, and Cairn says so first (case DEC-07)",
+      "ending_notice": "24 hours before the end, if the break is longer than 24 hours (BRK-D-02)",
+      "subscription": "Unchanged. Billing continues on its normal dates (BRK-D-08)."
+    },
+    {
+      "type": "care_rest",
+      "where": "Active journey, care levels 2 to 4",
+      "saves": "Everything",
+      "trial_clock": "Paused only while the free days are running (crisis plan DEC-26-01)",
+      "ending_notice": "Not sent outside Cairn by default (BRK-D-03)",
+      "subscription": "Unchanged. Billing continues on its normal dates (BRK-D-08)."
+    }
+  ],
+  "view_inventory": [
+    {
+      "view_id": "V-01",
+      "view": "Welcome",
+      "spec": "account UC-REG-01",
+      "context": "pre_sign_in",
+      "take_a_break_visible": true,
+      "expected_screen": "S-01 Break before sign-in (UC-BRK-02)"
+    },
+    {
+      "view_id": "V-02",
+      "view": "Email entry",
+      "spec": "account UC-REG-04",
+      "context": "pre_sign_in",
+      "take_a_break_visible": true,
+      "expected_screen": "S-01 Break before sign-in (UC-BRK-02)"
+    },
+    {
+      "view_id": "V-03",
+      "view": "Check your inbox",
+      "spec": "account UC-REG-04",
+      "context": "pre_sign_in",
+      "take_a_break_visible": true,
+      "expected_screen": "S-01 Break before sign-in (UC-BRK-02)"
+    },
+    {
+      "view_id": "V-04",
+      "view": "Magic link landing",
+      "spec": "account UC-REG-04",
+      "context": "pre_sign_in",
+      "take_a_break_visible": true,
+      "expected_screen": "S-01 Break before sign-in (UC-BRK-02)"
+    },
+    {
+      "view_id": "V-05",
+      "view": "Signed in on another device",
+      "spec": "account UC-REG-04",
+      "context": "pre_sign_in",
+      "take_a_break_visible": true,
+      "expected_screen": "S-01 Break before sign-in (UC-BRK-02)"
+    },
+    {
+      "view_id": "V-06",
+      "view": "Account already exists",
+      "spec": "account UC-REG-05",
+      "context": "pre_sign_in",
+      "take_a_break_visible": true,
+      "expected_screen": "S-01 Break before sign-in (UC-BRK-02)"
+    },
+    {
+      "view_id": "V-07",
+      "view": "Sign in",
+      "spec": "account UC-REG-18",
+      "context": "pre_sign_in",
+      "take_a_break_visible": true,
+      "expected_screen": "S-01 Break before sign-in (UC-BRK-02)"
+    },
+    {
+      "view_id": "V-08",
+      "view": "Signed out or timed out",
+      "spec": "account UC-REG-19",
+      "context": "pre_sign_in",
+      "take_a_break_visible": true,
+      "expected_screen": "S-01 Break before sign-in (UC-BRK-02)"
+    },
+    {
+      "view_id": "V-09",
+      "view": "Can't get into my email",
+      "spec": "account UC-REG-20",
+      "context": "pre_sign_in",
+      "take_a_break_visible": true,
+      "expected_screen": "S-01 Break before sign-in (UC-BRK-02)"
+    },
+    {
+      "view_id": "V-10",
+      "view": "Support resources page",
+      "spec": "crisis plan support_resources",
+      "context": "any",
+      "take_a_break_visible": true,
+      "expected_screen": "Same screen as the context the user came from"
+    },
+    {
+      "view_id": "V-11",
+      "view": "Adult question",
+      "spec": "account UC-REG-06",
+      "context": "account_setup",
+      "take_a_break_visible": true,
+      "expected_screen": "S-02 Setup break (UC-BRK-03)"
+    },
+    {
+      "view_id": "V-12",
+      "view": "Under-18 answer",
+      "spec": "account UC-REG-06",
+      "context": "account_setup",
+      "take_a_break_visible": true,
+      "expected_screen": "S-02 Setup break (UC-BRK-03)"
+    },
+    {
+      "view_id": "V-13",
+      "view": "Privacy Policy and Terms",
+      "spec": "account UC-REG-07",
+      "context": "account_setup",
+      "take_a_break_visible": true,
+      "expected_screen": "S-02 Setup break (UC-BRK-03)"
+    },
+    {
+      "view_id": "V-14",
+      "view": "Free trial acknowledgment",
+      "spec": "account UC-REG-08",
+      "context": "account_setup",
+      "take_a_break_visible": true,
+      "expected_screen": "S-02 Setup break (UC-BRK-03)"
+    },
+    {
+      "view_id": "V-15",
+      "view": "AI guide notice",
+      "spec": "account UC-REG-09",
+      "context": "account_setup",
+      "take_a_break_visible": true,
+      "expected_screen": "S-02 Setup break (UC-BRK-03)"
+    },
+    {
+      "view_id": "V-16",
+      "view": "Declined acknowledgment",
+      "spec": "account UC-REG-10",
+      "context": "account_setup",
+      "take_a_break_visible": true,
+      "expected_screen": "S-02 Setup break (UC-BRK-03)"
+    },
+    {
+      "view_id": "V-17",
+      "view": "Preferred name",
+      "spec": "account UC-REG-11",
+      "context": "account_setup",
+      "take_a_break_visible": true,
+      "expected_screen": "S-02 Setup break (UC-BRK-03)"
+    },
+    {
+      "view_id": "V-18",
+      "view": "Choose a voice",
+      "spec": "account UC-REG-12",
+      "context": "account_setup",
+      "take_a_break_visible": true,
+      "expected_screen": "S-02 Setup break (UC-BRK-03)"
+    },
+    {
+      "view_id": "V-19",
+      "view": "Notification channels",
+      "spec": "account UC-REG-15",
+      "context": "account_setup",
+      "take_a_break_visible": true,
+      "expected_screen": "S-02 Setup break (UC-BRK-03)"
+    },
+    {
+      "view_id": "V-20",
+      "view": "Notification frequency",
+      "spec": "account UC-REG-15",
+      "context": "account_setup",
+      "take_a_break_visible": true,
+      "expected_screen": "S-02 Setup break (UC-BRK-03)"
+    },
+    {
+      "view_id": "V-21",
+      "view": "Setup complete",
+      "spec": "account UC-REG-16",
+      "context": "account_setup",
+      "take_a_break_visible": true,
+      "expected_screen": "S-02 Setup break (UC-BRK-03)"
+    },
+    {
+      "view_id": "V-22",
+      "view": "Resume setup",
+      "spec": "account UC-REG-13",
+      "context": "account_setup",
+      "take_a_break_visible": true,
+      "expected_screen": "S-02 Setup break (UC-BRK-03)"
+    },
+    {
+      "view_id": "V-23",
+      "view": "Home",
+      "spec": "case UC-CASE-25",
+      "context": "signed_in_no_active_journey or active_journey",
+      "take_a_break_visible": true,
+      "expected_screen": "S-04 Rest choices if an active journey exists (UC-BRK-05), otherwise S-03 Draft pause if a draft exists (UC-BRK-04), otherwise S-02b Signed-in break with nothing to pause (UC-BRK-03)"
+    },
+    {
+      "view_id": "V-24",
+      "view": "Settings",
+      "spec": "account UC-REG-17",
+      "context": "signed_in_no_active_journey or active_journey",
+      "take_a_break_visible": true,
+      "expected_screen": "S-04 Rest choices if an active journey exists (UC-BRK-05), otherwise S-03 Draft pause if a draft exists (UC-BRK-04), otherwise S-02b Signed-in break with nothing to pause (UC-BRK-03)"
+    },
+    {
+      "view_id": "V-25",
+      "view": "Delete account confirmation",
+      "spec": "account UC-ACCT-01",
+      "context": "signed_in_no_active_journey or active_journey",
+      "take_a_break_visible": true,
+      "expected_screen": "S-04 Rest choices if an active journey exists (UC-BRK-05), otherwise S-03 Draft pause if a draft exists (UC-BRK-04), otherwise S-02b Signed-in break with nothing to pause (UC-BRK-03)"
+    },
+    {
+      "view_id": "V-26",
+      "view": "New case intro",
+      "spec": "case UC-CASE-01",
+      "context": "draft_case",
+      "take_a_break_visible": true,
+      "expected_screen": "S-03 Draft pause (UC-BRK-04)"
+    },
+    {
+      "view_id": "V-27",
+      "view": "Each intake question (role, name, date and place, circumstance, military service, will, already done)",
+      "spec": "case UC-CASE-02 to UC-CASE-08",
+      "context": "draft_case",
+      "take_a_break_visible": true,
+      "expected_screen": "S-03 Draft pause (UC-BRK-04)"
+    },
+    {
+      "view_id": "V-28",
+      "view": "Own words read-back",
+      "spec": "case UC-CASE-01",
+      "context": "draft_case",
+      "take_a_break_visible": true,
+      "expected_screen": "S-03 Draft pause (UC-BRK-04)"
+    },
+    {
+      "view_id": "V-29",
+      "view": "Listening (speech input)",
+      "spec": "case UC-CASE-22",
+      "context": "draft_case",
+      "take_a_break_visible": true,
+      "expected_screen": "S-03 Draft pause (UC-BRK-04)"
+    },
+    {
+      "view_id": "V-30",
+      "view": "Review what you shared",
+      "spec": "case UC-CASE-11",
+      "context": "draft_case",
+      "take_a_break_visible": true,
+      "expected_screen": "S-03 Draft pause (UC-BRK-04)"
+    },
+    {
+      "view_id": "V-31",
+      "view": "Journey preview, keep in touch, and Start journey",
+      "spec": "case UC-CASE-12 and UC-CASE-19",
+      "context": "draft_case",
+      "take_a_break_visible": true,
+      "expected_screen": "S-03 Draft pause (UC-BRK-04)"
+    },
+    {
+      "view_id": "V-32",
+      "view": "The death hasn't happened yet",
+      "spec": "case UC-CASE-17",
+      "context": "draft_case",
+      "take_a_break_visible": true,
+      "expected_screen": "S-03 Draft pause (UC-BRK-04)"
+    },
+    {
+      "view_id": "V-33",
+      "view": "Under-18 message",
+      "spec": "case UC-CASE-24",
+      "context": "draft_case",
+      "take_a_break_visible": true,
+      "expected_screen": "S-03 Draft pause (UC-BRK-04)"
+    },
+    {
+      "view_id": "V-34",
+      "view": "Delete case confirmation",
+      "spec": "case UC-CASE-10, UC-END-13",
+      "context": "draft_case or active_journey",
+      "take_a_break_visible": true,
+      "expected_screen": "S-04 Rest choices on an active journey (UC-BRK-05), otherwise S-03 Draft pause (UC-BRK-04)"
+    },
+    {
+      "view_id": "V-35",
+      "view": "Journey started confirmation and task list",
+      "spec": "case UC-CASE-12",
+      "context": "active_journey",
+      "take_a_break_visible": true,
+      "expected_screen": "S-04 Rest choices (UC-BRK-05)"
+    },
+    {
+      "view_id": "V-36",
+      "view": "Choose the first task",
+      "spec": "case UC-CASE-13",
+      "context": "active_journey",
+      "take_a_break_visible": true,
+      "expected_screen": "S-04 Rest choices (UC-BRK-05)"
+    },
+    {
+      "view_id": "V-37",
+      "view": "Any task view",
+      "spec": "journey task specs",
+      "context": "active_journey",
+      "take_a_break_visible": true,
+      "expected_screen": "S-04 Rest choices (UC-BRK-05)"
+    },
+    {
+      "view_id": "V-38",
+      "view": "Talk to an attorney",
+      "spec": "case UC-CASE-16",
+      "context": "draft_case or active_journey",
+      "take_a_break_visible": true,
+      "expected_screen": "S-04 Rest choices on an active journey (UC-BRK-05), otherwise S-03 Draft pause (UC-BRK-04)"
+    },
+    {
+      "view_id": "V-39",
+      "view": "Level 2 choices (rest, one small thing, just talk)",
+      "spec": "case UC-CASE-09, crisis plan level 2",
+      "context": "care_level_2",
+      "take_a_break_visible": true,
+      "expected_screen": "S-04 Rest choices as a care rest (UC-BRK-07)"
+    },
+    {
+      "view_id": "V-40",
+      "view": "Level 3 or 4 conversation",
+      "spec": "crisis plan levels 3 and 4",
+      "context": "care_level_3_or_4",
+      "take_a_break_visible": true,
+      "expected_screen": "S-04 Rest choices as a care rest, with no trial or billing wording (UC-BRK-07)"
+    },
+    {
+      "view_id": "V-41",
+      "view": "Rest choices",
+      "spec": "UC-BRK-05",
+      "context": "break_screen",
+      "take_a_break_visible": false,
+      "replaced_by": "Never mind, keep going"
+    },
+    {
+      "view_id": "V-42",
+      "view": "Break started",
+      "spec": "UC-BRK-05",
+      "context": "break_screen",
+      "take_a_break_visible": false,
+      "replaced_by": "Sign out, Support resources"
+    },
+    {
+      "view_id": "V-43",
+      "view": "Resting (opened Cairn during a break)",
+      "spec": "UC-BRK-08",
+      "context": "break_screen",
+      "take_a_break_visible": false,
+      "replaced_by": "Keep resting, I'm back, Change how long"
+    },
+    {
+      "view_id": "V-44",
+      "view": "Welcome back",
+      "spec": "UC-BRK-10",
+      "context": "break_screen",
+      "take_a_break_visible": true
+    },
+    {
+      "view_id": "V-45",
+      "view": "Setup break, draft pause, and break before sign-in screens",
+      "spec": "UC-BRK-02 to UC-BRK-04",
+      "context": "break_screen",
+      "take_a_break_visible": false,
+      "replaced_by": "the resume button on that screen"
+    }
+  ],
+  "outside_cairn_views": [
+    "Google and Apple sign-in screens (third party). Take a break is on the Cairn screen just before the redirect.",
+    "The browser's notification and microphone permission prompts (browser UI).",
+    "The user's email inbox."
+  ],
+  "screens": [
+    {
+      "id": "S-01",
+      "name": "Break before sign-in",
+      "shows": [
+        "copy.presignin_break",
+        "Support resources link",
+        "copy.presignin_break_back"
+      ]
+    },
+    {
+      "id": "S-02",
+      "name": "Setup break",
+      "shows": [
+        "copy.setup_break",
+        "copy.quiet_988_line",
+        "Support resources link",
+        "copy.setup_break_resume",
+        "Sign out"
+      ]
+    },
+    {
+      "id": "S-02b",
+      "name": "Signed-in break with nothing to pause",
+      "shows": [
+        "copy.signed_in_nothing_to_pause",
+        "copy.quiet_988_line",
+        "Support resources link",
+        "Go back",
+        "Sign out"
+      ]
+    },
+    {
+      "id": "S-03",
+      "name": "Draft pause",
+      "shows": [
+        "copy.draft_pause",
+        "copy.quiet_988_line",
+        "Support resources link",
+        "Keep going",
+        "Sign out"
+      ]
+    },
+    {
+      "id": "S-04",
+      "name": "Rest choices",
+      "shows": [
+        "copy.rest_choices_question",
+        "four rest choices",
+        "On the free days: copy.rest_normal_clock_note (level 1) or copy.rest_care_clock_note (level 2). Subscribed: copy.rest_subscription_note (level 1 only). No billing wording at levels 3 and 4.",
+        "copy.rest_keep_going"
+      ]
+    },
+    {
+      "id": "S-05",
+      "name": "Break started",
+      "shows": [
+        "copy.break_started or copy.break_started_open_ended",
+        "copy.break_notice_line when a notice is scheduled",
+        "copy.rest_subscription_note for subscribed users at level 1",
+        "copy.quiet_988_line",
+        "Support resources link",
+        "Sign out"
+      ]
+    },
+    {
+      "id": "S-06",
+      "name": "Resting",
+      "shows": [
+        "copy.resting_screen or copy.resting_screen_open_ended",
+        "copy.resting_keep",
+        "copy.resting_back",
+        "copy.resting_change",
+        "Support resources link"
+      ]
+    },
+    {
+      "id": "S-07",
+      "name": "Welcome back",
+      "shows": [
+        "copy.welcome_back",
+        "copy.trial_resumed_after_care_rest when the free days were paused",
+        "one next action"
+      ]
+    }
+  ],
+  "copy": {
+    "take_a_break_control": "Take a break",
+    "presignin_break": "Take all the time you need. Nothing has been saved yet, so there's nothing to lose. You can come back whenever you're ready.",
+    "presignin_break_back": "Go back",
+    "setup_break": "Of course. Everything you've done so far is saved. Take whatever time you need.",
+    "setup_break_resume": "I'm ready to keep going",
+    "signed_in_nothing_to_pause": "Of course. Take whatever time you need. Everything is saved.",
+    "quiet_988_line": "If you'd like to talk with someone, you can call or text 988, or chat at 988lifeline.org, any time.",
+    "draft_pause": "Everything you've shared is saved. There's no rush. To protect your privacy, if this isn't picked up again within 28 days, it will be deleted automatically.",
+    "draft_resume_question": "Would you like to keep going, or look at something else?",
+    "rest_choices_question": "How long would you like to rest?",
+    "rest_choice_today": "For the rest of today",
+    "rest_choice_3_days": "A few days (3)",
+    "rest_choice_7_days": "A week (7)",
+    "rest_choice_open": "Until I come back",
+    "rest_keep_going": "Never mind, keep going",
+    "rest_normal_clock_note": "Your free days keep counting while you rest. They end on {trial_end_date}.",
+    "rest_care_clock_note": "Your free days will pause while you rest.",
+    "break_started": "You're on a break until {break_end_date}. I won't send any reminders while you rest.",
+    "break_started_open_ended": "You're on a break until you come back. I won't send any reminders while you rest.",
+    "break_notice_line": "I'll send you a short note the day before your break ends, by {channels}.",
+    "resting_screen": "You're on a break until {break_end_date}. There's nothing you need to do.",
+    "resting_screen_open_ended": "You're on a break. There's nothing you need to do.",
+    "resting_keep": "Keep resting",
+    "resting_back": "I'm back",
+    "resting_change": "Change how long",
+    "break_ending_notice_subject": "A note from Cairn",
+    "break_ending_notice_body": "Your break ends tomorrow. There's nothing you need to do. Cairn will be here when you're ready.",
+    "welcome_back": "Welcome back, {preferred_name}. Here's where we left off: {last_step}.",
+    "trial_resumed_after_care_rest": "Your free days were paused while you rested. They now end on {trial_end_date}.",
+    "offer_after_time": "We've covered a lot. Would this be a good place to rest?",
+    "offer_after_task": "That's a hard one, and you did it. Would this be a good place to rest, or would you like to see what's next?",
+    "offer_draft_suffix": "Everything is saved.",
+    "rest_subscription_note": "Your subscription keeps going as normal while you rest. A break doesn't pause it or change what you pay. This time is just for you.",
+    "rest_care_clock_note_condition": "Show only while the free days are running. Never to subscribed users whose free days have ended."
+  },
+  "data_requirements": {
+    "note": "Fields live on the account (owned by cairn-account-use-cases-v32.json). Listed here for reference.",
+    "account": {
+      "break_started_at": "timestamp, nullable",
+      "break_until": "timestamp, nullable. Null with break_started_at set means Until I come back.",
+      "break_notice_at": "timestamp, nullable. break_until minus 24 hours, moved to the end of quiet hours if it falls inside them. Null when no notice is scheduled.",
+      "break_notice_sent_at": "timestamp, nullable",
+      "trial_clock_paused_at": "existing, crisis plan DEC-26-01. Set only for a care rest."
+    },
+    "case": {
+      "tasks_paused_until": "existing. Set to account.break_until on every active case (BRK-D-06)."
+    },
+    "privacy": [
+      "No break type, reason, or care level is stored. A care rest is known only while trial_clock_paused_at is set, and that field is never shown to staff dashboards with a user id.",
+      "Whether a notice is scheduled is decided at break start and stored only as break_notice_at."
+    ]
+  },
+  "use_cases": [
+    {
+      "id": "UC-BRK-01",
+      "title": "Take a break is on every view and works the same way",
+      "type": "verification",
+      "actor": "QA and automated tests",
+      "preconditions": [
+        "Build includes the shared Take a break component."
+      ],
+      "main_flow": [
+        "For each view in view_inventory where take_a_break_visible is true, load the view in each context it can appear in.",
+        "Check the control is visible, labeled exactly copy.take_a_break_control, and in the same place on every view.",
+        "Select it with a pointer, with the keyboard (Tab then Enter or Space), and through a screen reader.",
+        "Check the screen that opens matches expected_screen for that view and context.",
+        "Select the screen's resume action and check the user returns to the same view with nothing lost."
+      ],
+      "acceptance_criteria": [
+        "Present on 100 percent of the views marked visible, in every context listed, at every care level.",
+        "Not shown on break screens (V-41 to V-43, V-45). Each of those shows its replacement action instead.",
+        "One select, no confirmation dialog (crisis plan level 1).",
+        "Target at least 44 by 44 CSS pixels, which meets WCAG 2.2 target size minimum (2.5.8).",
+        "Visible without scrolling sideways at 320 CSS pixels wide and at 400 percent zoom (WCAG 2.2 reflow, 1.4.10).",
+        "Accessible name is Take a break. Focus order reaches it on every view. Visible focus indicator.",
+        "Does not rely on color. Has a text label, not only an icon.",
+        "Partly typed text in a field is kept when the user resumes.",
+        "Selecting it while the speech listener is on (V-29) stops listening and discards the audio before the break screen opens (case UC-CASE-22).",
+        "Selecting it on a delete confirmation (V-25, V-34) cancels the deletion. Nothing is deleted.",
+        "Every view added after this spec gets the control by default. A view without it fails the test unless listed in view_inventory with take_a_break_visible false."
+      ],
+      "sources": [
+        "https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html",
+        "https://www.w3.org/WAI/WCAG22/Understanding/reflow.html"
+      ]
+    },
+    {
+      "id": "UC-BRK-02",
+      "title": "Take a break before signing in",
+      "actor": "Prospective or signed-out user",
+      "preconditions": [
+        "User is on V-01 to V-09, or on V-10 while signed out."
+      ],
+      "trigger": "User selects Take a break.",
+      "main_flow": [
+        "Open S-01.",
+        "On Go back, return to the view the user came from."
+      ],
+      "postconditions": [
+        "Nothing saved, nothing sent."
+      ],
+      "acceptance_criteria": [
+        "No account is created and no data is stored.",
+        "On V-03 (check your inbox), a magic link that is already sent stays valid for its normal 15 minutes.",
+        "Support resources link works without signing in (crisis plan AC-26-10)."
+      ]
+    },
+    {
+      "id": "UC-BRK-03",
+      "title": "Take a break during account setup",
+      "migrated_from": "account UC-REG-14 (v3), break part",
+      "actor": "New user",
+      "preconditions": [
+        "User is on V-11 to V-22, or on V-23 to V-25 with no case."
+      ],
+      "trigger": "User selects Take a break.",
+      "main_flow": [
+        "Stop the setup flow and save progress (account onboarding_step).",
+        "Open S-02 during setup, or S-02b after setup with no case.",
+        "Acknowledge without steering back to setup. Wait with no timers, nudges, or reminders.",
+        "On copy.setup_break_resume, continue at the first incomplete step (account UC-REG-13)."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "Distress or harm language is present.",
+          "steps": [
+            "Follow the crisis plan for that level (context account_setup). This includes the check-in offer (crisis plan DEC-26-04)."
+          ]
+        },
+        {
+          "condition": "User closes the tab.",
+          "steps": [
+            "Progress is already saved. On next sign-in, account UC-REG-13 resumes."
+          ]
+        }
+      ],
+      "postconditions": [
+        "Setup paused. Progress saved."
+      ],
+      "acceptance_criteria": [
+        "No trial fields change.",
+        "No notification is sent about a setup break.",
+        "copy.quiet_988_line and the Support resources link are on S-02 (BRK-D-04).",
+        "Behavior is identical across voices."
+      ]
+    },
+    {
+      "id": "UC-BRK-04",
+      "title": "Take a break in a draft case",
+      "migrated_from": "case UC-CASE-10 Pause and come back later",
+      "actor": "Signed-in user",
+      "preconditions": [
+        "A draft case exists and no journey is active."
+      ],
+      "trigger": [
+        "User selects Take a break or Stop for now",
+        "User closes the browser tab or window",
+        "User says they need a break"
+      ],
+      "main_flow": [
+        "Save everything and last_intake_step.",
+        "Open S-03.",
+        "On return, show the session-start AI reminder if due (case UC-CASE-23), greet, say where they left off in one line, and ask copy.draft_resume_question."
+      ],
+      "alternate_flows": [
+        {
+          "name": "delete_draft",
+          "steps": [
+            "User can delete the draft any time, free, now or with a 7-day hold (UC-END-13)."
+          ]
+        },
+        {
+          "name": "closed_tab",
+          "steps": [
+            "The draft's card on the home screen (case UC-CASE-25) shows the 28-day draft notice."
+          ]
+        }
+      ],
+      "acceptance_criteria": [
+        "Pausing a draft never touches trial fields.",
+        "No notification is ever sent about a draft (case DEC-06).",
+        "Draft retention follows case draft_cleanup_job."
+      ],
+      "config": {
+        "draft_retention_days": 28
+      }
+    },
+    {
+      "id": "UC-BRK-05",
+      "title": "Take a break on an active journey",
+      "migrated_from": "crisis plan rest section and DEC-26-07, UC-END-08",
+      "actor": "Signed-in user with an active journey",
+      "preconditions": [
+        "At least one active journey. Care level 1."
+      ],
+      "trigger": "User selects Take a break, or accepts a rest offer (UC-BRK-06).",
+      "main_flow": [
+        "Open S-04 with the four rest choices.",
+        "On the free days, show copy.rest_normal_clock_note with the trial end date. If subscribed, show copy.rest_subscription_note (BRK-D-08).",
+        "On a choice, set break_started_at and break_until (BRK-D-07) on the account and tasks_paused_until on every active case.",
+        "If break_until is more than 24 hours away, schedule break_notice_at (UC-BRK-09).",
+        "Make no change to the Stripe subscription or any subscription field.",
+        "Open S-05."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "User selects Never mind, keep going.",
+          "steps": [
+            "Return to the view they came from. Nothing changes."
+          ]
+        },
+        {
+          "condition": "User is at care level 2, 3, or 4.",
+          "steps": [
+            "Go to UC-BRK-07."
+          ]
+        }
+      ],
+      "postconditions": [
+        "Break recorded. Reminders held (UC-BRK-08)."
+      ],
+      "acceptance_criteria": [
+        "Exactly four choices, labeled per copy.",
+        "The trial clock keeps running for a normal rest and trial_ends_at does not change (AC-BRK-05).",
+        "S-05 names the end date in the user's time zone, or says it is open-ended.",
+        "copy.break_notice_line appears only when break_notice_at is set, and names the channels that will be used.",
+        "Subscribed users see copy.rest_subscription_note on S-04 and S-05 at level 1.",
+        "Starting, changing, or ending a break makes no Stripe API call and changes no subscription field (BRK-D-08)."
+      ]
+    },
+    {
+      "id": "UC-BRK-06",
+      "title": "Cairn offers a break",
+      "migrated_from": "case UC-CASE-23 rest offer, crisis plan DEC-26-02",
+      "actor": "Signed-in user",
+      "preconditions": [
+        "Care level 1."
+      ],
+      "trigger": "About 45 minutes of active use in a session, or a heavy task or heavy question just finished (BRK-D-05).",
+      "main_flow": [
+        "Show copy.offer_after_time or copy.offer_after_task. In a draft, add copy.offer_draft_suffix.",
+        "On yes: in a draft, UC-BRK-04. On an active journey, UC-BRK-05.",
+        "On no, or if the user keeps going, continue with no further mention."
+      ],
+      "acceptance_criteria": [
+        "At most once per session per trigger.",
+        "Declining never brings the offer back in the same session.",
+        "Not shown at care levels 2 to 4. The crisis plan handles those.",
+        "Written at about grade 8 and announced to screen readers."
+      ]
+    },
+    {
+      "id": "UC-BRK-07",
+      "title": "Care rest (levels 2 to 4)",
+      "actor": "Signed-in user with an active journey",
+      "preconditions": [
+        "Crisis plan sets care level 2, 3, or 4, or the user selects Take a break while at one of those levels."
+      ],
+      "trigger": "User chooses rest at level 2, Cairn pauses tasks at level 3 or 4, or the user selects Take a break at levels 2 to 4.",
+      "main_flow": [
+        "At level 2, open S-04 and show copy.rest_care_clock_note once if the user is on a trial.",
+        "At levels 3 and 4, tasks pause automatically. Offer S-04 only when the user asks how long. Show no trial or billing wording.",
+        "If the free days are still running, set trial_clock_paused_at (crisis plan DEC-26-01). Set break fields and tasks_paused_until. Never touch the subscription.",
+        "Do not schedule a break-ending notice outside Cairn (BRK-D-03).",
+        "The crisis plan check-in offer (DEC-26-04) runs separately and is not affected."
+      ],
+      "acceptance_criteria": [
+        "trial_ends_at moves later by exactly the care rest length (crisis plan AC-26-04).",
+        "[SAFETY] No trial or billing wording at levels 3 and 4 (crisis plan AC-26-03).",
+        "break_notice_at stays null unless OPEN-BRK-01 is decided otherwise.",
+        "For a subscribed user whose free days have ended, a care rest sets no trial field and changes nothing about billing (BRK-D-08)."
+      ],
+      "defers_to": "cairn-support-crisis-plan-v32.json"
+    },
+    {
+      "id": "UC-BRK-08",
+      "title": "While the user is on a break",
+      "migrated_from": "crisis plan rest.while_resting",
+      "actor": "System, and the user if they open Cairn",
+      "preconditions": [
+        "account.break_started_at is set."
+      ],
+      "main_flow": [
+        "Hold every reminder outside Cairn: due dates, inactivity notices, and trial reminders. A trial reminder that falls during a normal rest shows only inside Cairn (account D-14).",
+        "A paid subscription keeps renewing and charging on its normal dates during every kind of break (BRK-D-08).",
+        "Still send: sign-in links the user asks for, confirmations of actions the user takes (case UC-CASE-21), an opted-in check-in (crisis plan DEC-26-04), the break-ending notice (UC-BRK-09), and Stripe's own billing emails, which are not held (subscription SUB-D-08).",
+        "If the user opens Cairn, show S-06 first."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "User selects Keep resting.",
+          "steps": [
+            "Sign out or stay on S-06. Nothing changes."
+          ]
+        },
+        {
+          "condition": "User selects I'm back.",
+          "steps": [
+            "Go to UC-BRK-10."
+          ]
+        },
+        {
+          "condition": "User selects Change how long.",
+          "steps": [
+            "Go to UC-BRK-11."
+          ]
+        },
+        {
+          "condition": "User wants to look at something without ending the break.",
+          "steps": [
+            "Allow viewing cases and tasks. Editing a task ends the break and goes to UC-BRK-10 first."
+          ]
+        }
+      ],
+      "acceptance_criteria": [
+        "No message outside Cairn except the four listed (AC-BRK-06).",
+        "Opening Cairn during a break never asks the user to explain or to return."
+      ]
+    },
+    {
+      "id": "UC-BRK-09",
+      "title": "Break-ending notice 24 hours before",
+      "actor": "System",
+      "preconditions": [
+        "A normal rest with break_until more than 24 hours after break_started_at (A few days, or A week)."
+      ],
+      "trigger": "Current time reaches break_notice_at.",
+      "main_flow": [
+        "Send copy.break_ending_notice_subject and copy.break_ending_notice_body through each channel in account notification_preferences.channels: email to the sign-in email and a browser notification if browser is on.",
+        "Show the same message in Cairn the next time the user opens it.",
+        "Set break_notice_sent_at."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "break_notice_at falls in quiet hours.",
+          "steps": [
+            "Send at the end of quiet hours. This is still before the break ends."
+          ]
+        },
+        {
+          "condition": "The only channel is in-app.",
+          "steps": [
+            "Show it in Cairn only."
+          ]
+        },
+        {
+          "condition": "The user ends or changes the break first.",
+          "steps": [
+            "Cancel or reschedule the notice (UC-BRK-10, UC-BRK-11)."
+          ]
+        },
+        {
+          "condition": "The user deletes the account, or deletes the last active case.",
+          "steps": [
+            "Cancel the notice."
+          ]
+        },
+        {
+          "condition": "The break is a care rest.",
+          "steps": [
+            "Not sent outside Cairn (BRK-D-03)."
+          ]
+        },
+        {
+          "condition": "For the rest of today, or Until I come back.",
+          "steps": [
+            "No notice. The first is shorter than 24 hours, the second has no end."
+          ]
+        }
+      ],
+      "acceptance_criteria": [
+        "Sent exactly once per break, 24 hours before break_until, or at the end of quiet hours if that time is inside them.",
+        "Sent by every channel the user selected, and by no channel they did not select.",
+        "[PRIVACY] Notice text has no display name, circumstance, task detail, or crisis wording.",
+        "Never sent for a draft or setup break.",
+        "A browser notification is sent only if permission is still granted. If permission was revoked, browser is removed from channels (account notification_preferences rules)."
+      ],
+      "open_decisions": [
+        "OPEN-BRK-02: if the account frequency is No reminders, is the notice still sent outside Cairn? Default: yes, because it is about a break the user set. Confirm."
+      ]
+    },
+    {
+      "id": "UC-BRK-10",
+      "title": "Coming back from a break",
+      "migrated_from": "crisis plan rest.on_return",
+      "actor": "Signed-in user",
+      "trigger": [
+        "User selects I'm back",
+        "break_until passes and the user opens Cairn",
+        "User edits a task during a break"
+      ],
+      "main_flow": [
+        "Clear break fields and tasks_paused_until. Cancel an unsent notice.",
+        "If trial_clock_paused_at is set, add the paused time to trial_ends_at and clear it (crisis plan DEC-26-01).",
+        "Open S-07: where the user left off in one line, and copy.trial_resumed_after_care_rest once if the free days were paused.",
+        "Offer one clear next action."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "break_until passes while the user is away.",
+          "steps": [
+            "Held reminders resume on their normal schedule. No catch-up burst of messages."
+          ]
+        }
+      ],
+      "acceptance_criteria": [
+        "Never asks the user to explain the gap.",
+        "Reminders held during the break are not all sent at once afterward.",
+        "Trial dates on S-07 are in the user's time zone."
+      ]
+    },
+    {
+      "id": "UC-BRK-11",
+      "title": "Change how long a break lasts",
+      "actor": "Signed-in user",
+      "trigger": "User selects Change how long on S-06.",
+      "main_flow": [
+        "Open S-04 with the current choice marked.",
+        "Recompute break_until from the original break_started_at for 3 and 7 days, or from now for the rest of today. Recompute or cancel break_notice_at.",
+        "Show S-05 with the new end."
+      ],
+      "acceptance_criteria": [
+        "A changed break never sends two notices."
+      ]
+    },
+    {
+      "id": "UC-BRK-12",
+      "title": "Breaks and the 5-minute sign-out",
+      "actor": "Signed-in user",
+      "preconditions": [
+        "Account D-20: sign-out after 5 minutes with no activity."
+      ],
+      "main_flow": [
+        "A break never stops or extends the session timeout.",
+        "Break state is saved on the account, so signing out never ends or changes a break.",
+        "After a timeout during a break, the next sign-in opens S-06."
+      ],
+      "acceptance_criteria": [
+        "Break screens S-02 to S-06 show nothing from a case except the end date.",
+        "Being signed out during a break sends no message."
+      ]
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-BRK-01",
+      "criterion": "Take a break is on every view marked visible in view_inventory (UC-BRK-01)."
+    },
+    {
+      "id": "AC-BRK-02",
+      "criterion": "Each view opens its expected_screen."
+    },
+    {
+      "id": "AC-BRK-03",
+      "criterion": "[SAFETY] In account setup, selecting Take a break stops the flow, saves progress, and shows the 988 line.",
+      "former_id": "AC-26-09"
+    },
+    {
+      "id": "AC-BRK-04",
+      "criterion": "[NOTICE] A normal rest longer than 24 hours sends exactly one break-ending notice 24 hours before it ends, by the selected channels."
+    },
+    {
+      "id": "AC-BRK-05",
+      "criterion": "[TRIAL] A normal-mode rest never changes trial_ends_at.",
+      "former_id": "AC-26-05"
+    },
+    {
+      "id": "AC-BRK-06",
+      "criterion": "[REST] No message is sent outside Cairn while a break is active, except a sign-in link the user asks for, an action confirmation, an opted-in check-in, the break-ending notice, or Stripe's own billing emails (subscription SUB-D-08).",
+      "former_id": "AC-26-06, updated for BRK-D-02"
+    },
+    {
+      "id": "AC-BRK-07",
+      "criterion": "[REST] During any break, sign-in links the user requests and action confirmations are still delivered.",
+      "former_id": "AC-26-13"
+    },
+    {
+      "id": "AC-BRK-08",
+      "criterion": "[SAFETY] No break-ending notice is sent outside Cairn during a care rest unless OPEN-BRK-01 decides otherwise."
+    },
+    {
+      "id": "AC-BRK-09",
+      "criterion": "[BILLING] No break of any kind changes a Stripe subscription, its renewal date, its price, or any subscription field in Cairn (BRK-D-08)."
+    }
+  ],
+  "open_decisions": [
+    {
+      "id": "OPEN-BRK-01",
+      "topic": "Send the 24-hour break-ending notice during a care rest (levels 2 to 4)?",
+      "default": "No. Shown inside Cairn only.",
+      "owner": "Mara with clinical reviewer (crisis plan DEC-26-06)"
+    },
+    {
+      "id": "OPEN-BRK-02",
+      "topic": "Send the notice when the account frequency is No reminders?",
+      "default": "Yes, by the selected channels.",
+      "owner": "Mara"
+    }
+  ],
+  "related": {
+    "specs": [
+      "cairn-account-use-cases-v32.json",
+      "cairn-case-creation-use-cases-v32.json",
+      "cairn-support-crisis-plan-v32.json"
+    ],
+    "trello_cards": [
+      {
+        "name": "Build support and crisis resource fallback plan",
+        "url": "https://trello.com/c/PAA01d2O"
+      },
+      {
+        "name": "Account registration and onboarding",
+        "url": "https://trello.com/c/nCJTOytG"
+      },
+      {
+        "name": "Case creation use cases",
+        "url": "https://trello.com/c/RDV4A5xi"
+      }
+    ]
+  },
+  "sources": [
+    "https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html",
+    "https://www.w3.org/WAI/WCAG22/Understanding/reflow.html",
+    "https://988lifeline.org"
+  ]
+}

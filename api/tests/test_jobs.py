@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 from cairn_api import jobs
 from cairn_api.config import secret_from_env
 
+from .conftest import REPO
+
 
 def _client(registry):
     return TestClient(jobs.create_jobs_app(registry))
@@ -15,7 +17,12 @@ def _client(registry):
 def test_every_scheduled_job_the_worker_calls_exists():
     # Keep in step with JOBS_BY_CRON in cloudflare/src/index.ts.
     assert set(jobs.JOBS) == {"outbound", "identity_cleanup", "purge_stale_accounts", "purge_held_cases",
-                              "purge_inactive_drafts", "expire_trials", "settle_trial_clocks"}
+                              "purge_inactive_drafts", "expire_trials", "settle_trial_clocks",
+                              "process_stripe_events", "retry_cancellations", "sync_early_subscriptions",
+                              "price_change_notices"}
+    worker = (REPO / "cloudflare" / "src" / "index.ts").read_text()
+    for name in jobs.JOBS:
+        assert f'"{name}"' in worker, name
 
 
 def test_a_job_reports_counts_only():

@@ -1,0 +1,398 @@
+{
+  "spec": {
+    "id": "cairn-journey-j-sudden-unexpected",
+    "title": "Use cases for base journey J-SUDDEN-UNEXPECTED",
+    "version": "1.1.0",
+    "date": "2026-10-06",
+    "supersedes": "cairn-journey-J-SUDDEN-UNEXPECTED-use-cases-v1.json",
+    "status": "Basic validation set. Will be filled out further before MVP release.",
+    "journey_file": "cairn-core/journeys/journeys/J-SUDDEN-UNEXPECTED.json (template version 1, package 0.2.0)",
+    "scope": "Selection, the journey with no extra facts, the employed fact, the four covered states, and two steps.",
+    "expected_values": "Produced by running journeys/tools/resolve.py from cairn-core main on 2026-10-06. Regenerate if the templates change.",
+    "changelog_v1_1": [
+      "Kept to basic cases. Removed walkthrough detail, findings, and uncovered-state cases.",
+      "State coverage limited to NH, FL, CA, and NY.",
+      "Employment question asked once: a no sets both was_employed and had_employer_plan to false.",
+      "Hospice exclusion use case removed."
+    ]
+  },
+  "fixture_base": {
+    "death_circumstance": "sudden_unexpected",
+    "death_country": "US",
+    "date_of_death": "2026-10-01",
+    "death_state": "NH",
+    "residence_state": "NH"
+  },
+  "use_cases": [
+    {
+      "id": "UC-JSU-01",
+      "title": "The case gets this journey",
+      "fixture": {
+        "death_circumstance": "sudden_unexpected",
+        "death_country": "US",
+        "date_of_death": "2026-10-01",
+        "death_state": "NH",
+        "residence_state": "NH"
+      },
+      "expected": {
+        "journey_id": "J-SUDDEN-UNEXPECTED",
+        "journey_version": 1
+      },
+      "acceptance_criteria": [
+        "Exactly one base journey matches.",
+        "The case stores the journey id and version."
+      ],
+      "test_how": "Run journeys/tools/resolve.py (or the app's port of it) on the fixture and compare to expected. journeys/tools/validate.py must report 0 errors first."
+    },
+    {
+      "id": "UC-JSU-02",
+      "title": "Run the journey with no extra facts",
+      "fixture": {
+        "death_circumstance": "sudden_unexpected",
+        "death_country": "US",
+        "date_of_death": "2026-10-01",
+        "death_state": "NH",
+        "residence_state": "NH"
+      },
+      "expected": {
+        "full_step_count": 37,
+        "first_28_days_step_count": 23,
+        "steps_by_phase": {
+          "W0": [
+            "S-W0-CALL-911",
+            "S-W0-ME-CORONER",
+            "S-W0-TELL-FAMILY",
+            "S-W0-SECURE-HOME",
+            "S-W0-FIND-WISHES"
+          ],
+          "W1": [
+            "S-W1-HOW-DC-IS-MADE",
+            "S-W1-ORDER-DC",
+            "S-W1-CHECK-DC"
+          ],
+          "W2": [
+            "S-W2-CHOOSE-DISPOSITION",
+            "S-W2-COMPARE-FUNERAL-HOMES",
+            "S-W2-PLAN-SERVICE",
+            "S-W2-OBITUARY"
+          ],
+          "W3": [
+            "S-W3-SSA-REPORT",
+            "S-W3-SSA-RETURN-PAYMENT",
+            "S-W3-SSA-SURVIVOR",
+            "S-W3-CREDIT-BUREAUS",
+            "S-W3-DMV-LICENSE"
+          ],
+          "W4": [
+            "S-W4-BANKS",
+            "S-W4-DEBTS",
+            "S-W4-LIFE-INSURANCE",
+            "S-W4-OTHER-INSURANCE",
+            "S-W4-UTILITIES"
+          ],
+          "W5": [
+            "S-W5-FIND-WILL",
+            "S-W5-PROBATE-NEEDED",
+            "S-W5-GET-AUTHORITY",
+            "S-W5-IRS-FORM-56"
+          ],
+          "W6": [
+            "S-W6-INVENTORY",
+            "S-W6-UNCLAIMED",
+            "S-W6-RETIREMENT-INVEST",
+            "S-W6-BELONGINGS",
+            "S-W6-DIGITAL"
+          ],
+          "W7": [
+            "S-W7-FINAL-1040",
+            "S-W7-ESTATE-1041",
+            "S-W7-STATE-TAX"
+          ],
+          "W8": [
+            "S-W8-CLOSE-ESTATE",
+            "S-W8-KEEP-RECORDS",
+            "S-W8-GRIEF-SUPPORT"
+          ]
+        },
+        "modules_applied": [
+          "M-SSA-BENEFICIARY"
+        ],
+        "questions_queued": [
+          "Did your loved one ever serve in the military?",
+          "Was your loved one working, or did they have a pension or retirement plan from a job?",
+          "Did they set up a living trust?",
+          "Did they own a car or other vehicle?",
+          "Did they own a home or any land?"
+        ],
+        "estimated_certified_copies": 8
+      },
+      "main_flow": [
+        "Show the steps one phase at a time, starting at W0.",
+        "For each step, show acknowledge, summary, the one question, and offer_next.",
+        "The user marks each step done, not needed, or handled elsewhere, or leaves it open.",
+        "Ask queued questions one at a time, when the phase they affect is near."
+      ],
+      "acceptance_criteria": [
+        "Steps, order, and counts match expected.",
+        "Marking a step changes only that step.",
+        "Every step view has Take a break and Support resources."
+      ],
+      "test_how": "Run journeys/tools/resolve.py (or the app's port of it) on the fixture and compare to expected. journeys/tools/validate.py must report 0 errors first."
+    },
+    {
+      "id": "UC-JSU-03",
+      "title": "Add a fact: the person who died was employed",
+      "main_flow": [
+        "When W4 is near, Cairn asks once: \"Was your loved one working, or did they have a pension or retirement plan from a job?\"",
+        "Yes: set was_employed true. No: set was_employed false and had_employer_plan false. Skip or I'm not sure: set nothing.",
+        "Resolve again and add or keep steps without changing progress on any other step."
+      ],
+      "fixtures": {
+        "yes": {
+          "death_circumstance": "sudden_unexpected",
+          "death_country": "US",
+          "date_of_death": "2026-10-01",
+          "death_state": "NH",
+          "residence_state": "NH",
+          "was_employed": true
+        },
+        "no": {
+          "death_circumstance": "sudden_unexpected",
+          "death_country": "US",
+          "date_of_death": "2026-10-01",
+          "death_state": "NH",
+          "residence_state": "NH",
+          "was_employed": false,
+          "had_employer_plan": false
+        }
+      },
+      "expected": {
+        "yes": {
+          "added_step": "S-W4-EMPLOYER",
+          "added_after": "S-W4-LIFE-INSURANCE",
+          "full_step_count": 38,
+          "first_28_days_step_count": 24,
+          "estimated_certified_copies": 9,
+          "employment_question_still_queued": false
+        },
+        "no": {
+          "added_step": null,
+          "full_step_count": 37,
+          "employment_question_still_queued": false
+        }
+      },
+      "acceptance_criteria": [
+        "The employment question is asked once per case. After a yes or a no it is never queued again.",
+        "A skipped question is not asked again in the same session.",
+        "A yes adds S-W4-EMPLOYER and one more certified copy to the estimate."
+      ],
+      "build_note": "One answer covers both facts, because the question asks about working and a past employer plan together. The answer handler must set both facts on a no, so M-EMPLOYED resolves to false and is not queued again.",
+      "test_how": "Run journeys/tools/resolve.py (or the app's port of it) on the fixture and compare to expected. journeys/tools/validate.py must report 0 errors first."
+    },
+    {
+      "id": "UC-JSU-04",
+      "title": "State coverage",
+      "description": "Covers the four states with researched content: NH, FL, CA, NY. Death certificates follow the state where the death happened. Probate follows the state where the person lived.",
+      "fixture": "fixture_base with death_state and residence_state set to each state",
+      "expected": {
+        "by_state": {
+          "NH": {
+            "S-W1-ORDER-DC": [
+              {
+                "key": "vital_records",
+                "state": "NH",
+                "overlay": "US-NH",
+                "status": "researched",
+                "legal_review": "pending"
+              }
+            ],
+            "S-W5-PROBATE-NEEDED": [
+              {
+                "key": "probate",
+                "state": "NH",
+                "overlay": "US-NH",
+                "status": "researched",
+                "legal_review": "pending"
+              }
+            ]
+          },
+          "FL": {
+            "S-W1-ORDER-DC": [
+              {
+                "key": "vital_records",
+                "state": "FL",
+                "overlay": "US-FL",
+                "status": "researched",
+                "legal_review": "pending"
+              }
+            ],
+            "S-W5-PROBATE-NEEDED": [
+              {
+                "key": "probate",
+                "state": "FL",
+                "overlay": "US-FL",
+                "status": "researched",
+                "legal_review": "pending"
+              }
+            ]
+          },
+          "CA": {
+            "S-W1-ORDER-DC": [
+              {
+                "key": "vital_records",
+                "state": "CA",
+                "overlay": "US-CA",
+                "status": "researched",
+                "legal_review": "pending"
+              }
+            ],
+            "S-W5-PROBATE-NEEDED": [
+              {
+                "key": "probate",
+                "state": "CA",
+                "overlay": "US-CA",
+                "status": "researched",
+                "legal_review": "pending"
+              }
+            ]
+          },
+          "NY": {
+            "S-W1-ORDER-DC": [
+              {
+                "key": "vital_records",
+                "state": "NY",
+                "overlay": "US-NY",
+                "status": "researched",
+                "legal_review": "pending"
+              }
+            ],
+            "S-W5-PROBATE-NEEDED": [
+              {
+                "key": "probate",
+                "state": "NY",
+                "overlay": "US-DEFAULT",
+                "status": "not_verified",
+                "legal_review": "pending"
+              }
+            ]
+          }
+        },
+        "died_NH_lived_FL": {
+          "S-W1-ORDER-DC": [
+            {
+              "key": "vital_records",
+              "state": "NH",
+              "overlay": "US-NH",
+              "status": "researched",
+              "legal_review": "pending"
+            }
+          ],
+          "S-W5-PROBATE-NEEDED": [
+            {
+              "key": "probate",
+              "state": "FL",
+              "overlay": "US-FL",
+              "status": "researched",
+              "legal_review": "pending"
+            }
+          ]
+        }
+      },
+      "acceptance_criteria": [
+        "Each state's content shows with its citations.",
+        "Where an overlay status is not_verified, Cairn says it has no verified steps for that state.",
+        "All four overlays are legal review pending, so state content reaches real users only after the attorney review (Trello card 23)."
+      ],
+      "test_how": "Run journeys/tools/resolve.py (or the app's port of it) on the fixture and compare to expected. journeys/tools/validate.py must report 0 errors first.",
+      "sources": [
+        "https://www.cdc.gov/nchs/w2w/index.htm",
+        "https://trello.com/c/ljqleuFz"
+      ]
+    },
+    {
+      "id": "UC-JSU-05",
+      "title": "Step: Order certified copies of the death certificate",
+      "step_id": "S-W1-ORDER-DC",
+      "fixture": {
+        "death_circumstance": "sudden_unexpected",
+        "death_country": "US",
+        "date_of_death": "2026-10-01",
+        "death_state": "NH",
+        "residence_state": "NH"
+      },
+      "expected": {
+        "phase": "W1",
+        "depends_on": [
+          "S-W1-HOW-DC-IS-MADE"
+        ],
+        "target_date": "2026-10-15",
+        "in_first_28_days": true,
+        "estimated_certified_copies": 8,
+        "notes_on_how_dc_is_made": [
+          "When a medical examiner or coroner is involved, the death certificate may first be issued with the cause of death listed as pending. Some institutions accept a pending certificate and some do not."
+        ],
+        "copy_ask": "Would you like me to estimate how many copies you need from the accounts you know about so far?"
+      },
+      "main_flow": [
+        "Show the step and its one question.",
+        "On yes, show the copy estimate and the state ordering details with citations.",
+        "The user marks the copies ordered."
+      ],
+      "acceptance_criteria": [
+        "No fee, phone number, or form number appears without its citation.",
+        "Estimate = steps needing a certified copy, plus 2."
+      ],
+      "test_how": "Run journeys/tools/resolve.py (or the app's port of it) on the fixture and compare to expected. journeys/tools/validate.py must report 0 errors first.",
+      "sources": [
+        "https://www.cdc.gov/nchs/w2w/index.htm"
+      ]
+    },
+    {
+      "id": "UC-JSU-06",
+      "title": "Step: Understand the medical examiner or coroner's role",
+      "step_id": "S-W0-ME-CORONER",
+      "fixture": {
+        "death_circumstance": "sudden_unexpected",
+        "death_country": "US",
+        "date_of_death": "2026-10-01",
+        "death_state": "NH",
+        "residence_state": "NH"
+      },
+      "expected": {
+        "phase": "W0",
+        "w0_steps": [
+          "S-W0-CALL-911",
+          "S-W0-ME-CORONER",
+          "S-W0-TELL-FAMILY",
+          "S-W0-SECURE-HOME",
+          "S-W0-FIND-WISHES"
+        ],
+        "target_date": "2026-10-02",
+        "copy_ask": "Did the responders give you a case number or a contact at the medical examiner's or coroner's office?",
+        "jurisdiction": [
+          {
+            "key": "death_investigation",
+            "state": "NH",
+            "overlay": "US-NH",
+            "status": "researched",
+            "legal_review": "pending"
+          }
+        ]
+      },
+      "main_flow": [
+        "Check in first.",
+        "Explain the office's role and ask its one question.",
+        "Offer to keep the case number and contact in one place."
+      ],
+      "acceptance_criteria": [
+        "Never says whether an autopsy will or will not happen."
+      ],
+      "test_how": "Run journeys/tools/resolve.py (or the app's port of it) on the fixture and compare to expected. journeys/tools/validate.py must report 0 errors first."
+    }
+  ],
+  "change_needed_in_cairn_core": "Set had_employer_plan false along with was_employed false when the user answers no to the M-EMPLOYED question (UC-JSU-03).",
+  "sources": [
+    "https://www.cdc.gov/nchs/w2w/index.htm",
+    "https://github.com/cairnguide/cairn-core/tree/main/journeys"
+  ]
+}

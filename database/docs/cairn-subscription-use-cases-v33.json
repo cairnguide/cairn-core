@@ -1,0 +1,1070 @@
+{
+  "spec": {
+    "id": "cairn-subscription",
+    "title": "Cairn subscription use cases (Stripe)",
+    "version": "3.3.0",
+    "date": "2026-10-06",
+    "status": "Approved for build. Disclosure, no-refund, and cancellation copy pending legal review. SUB-D-12 tax-inclusive reading to confirm.",
+    "source_of_truth": "https://trello.com/c/glUwdD0l",
+    "replaces": "The UC-SUB series listed as 'not yet specified' on Trello card 55 and in case UC-CASE-18. Takes ownership of account D-18 (disclosure before purchase).",
+    "scope": "From the subscribe prompt through checkout, renewal, failed payments, cancellation, resubscribing, and the legal notices that go with a monthly subscription. Payments run through Stripe.",
+    "instructions_for_claude_code": [
+      "Use Stripe Checkout (Stripe-hosted page) to start subscriptions and the Stripe customer portal only for payment details and past payments. Cancellation is built in Cairn (UC-SUB-13).",
+      "Grant or remove access only from verified Stripe webhook events, never from the browser redirect (SUB-D-02).",
+      "Account fields listed in data_requirements are owned by cairn-account-use-cases-v32.json. Add them there through a migration. Do not create a second account model.",
+      "Keep the price in one config value used both for display and to choose the Stripe price.",
+      "Follow test_scope. Do not write tests that check payment receipt or delivery of any customer email.",
+      "Every Cairn screen here carries Take a break and Support resources (cairn-take-a-break-use-cases-v32.json). Add these views to its view_inventory.",
+      "User-facing strings in copy are used verbatim and stored in the copy layer. Do not use em dashes in user-facing copy."
+    ],
+    "related_specs": [
+      "cairn-account-use-cases-v32.json",
+      "cairn-case-creation-use-cases-v32.json",
+      "cairn-support-crisis-plan-v32.json",
+      "cairn-take-a-break-use-cases-v32.json"
+    ],
+    "supersedes": "cairn-subscription-use-cases-v32.json",
+    "changelog_v3_2": [
+      "Confirmed 2026-10-06: SUB-D-04 (cancel at end of the paid month), SUB-D-06 (full access during Stripe retries), SUB-D-07 (early subscribe, no charge until free days end), SUB-D-10 (Stripe receives only email and account id).",
+      "SUB-D-05 changed: no refunds of any kind. Disclosed before purchase, on cancel, and on account deletion.",
+      "SUB-D-08 changed: Stripe's failed-payment emails stay on. Cairn sends no failed-payment email of its own. Stripe's emails are not held during breaks, a known exception to the Take a break rule.",
+      "New SUB-D-12: sales tax through Stripe Tax, with tax included in the $14.99 so the customer always pays $14.99.",
+      "New SUB-D-13: no help with paying at this time. UC-SUB-19 removed.",
+      "New SUB-D-14: no help offered for disputed charges. UC-SUB-20 rewritten.",
+      "OPEN-SUB-01, 02, 03, and 06 resolved. OPEN-SUB-04, 05, 07, and 08 remain open."
+    ],
+    "changelog_v3_3": [
+      "New SUB-D-15: taking a break never affects a paid subscription. Shown before purchase, in Settings, and in the yearly reminder.",
+      "OPEN-SUB-07 resolved by SUB-D-15: a paid month is never extended for a break or care rest.",
+      "UC-SUB-06: a care rest still moves the first charge date for an early subscriber, because it only pauses free days that have not ended."
+    ]
+  },
+  "decisions": [
+    {
+      "id": "SUB-D-01",
+      "topic": "Payment processor",
+      "decision": "Stripe. Subscriptions start on Stripe Checkout. Cairn never receives or stores card or bank details.",
+      "status": "Confirmed by Mara 2026-10-06",
+      "sources": [
+        "https://docs.stripe.com/payments/checkout/build-subscriptions"
+      ]
+    },
+    {
+      "id": "SUB-D-02",
+      "topic": "Source of truth for access",
+      "decision": "Access changes only after a verified Stripe webhook event, and Cairn reads the subscription's current status from Stripe before acting on it.",
+      "status": "adopted from Stripe guidance",
+      "sources": [
+        "https://docs.stripe.com/billing/subscriptions/webhooks"
+      ]
+    },
+    {
+      "id": "SUB-D-03",
+      "topic": "Price and scope",
+      "decision": "$14.99 a month for the whole account and all cases. Owned by account D-04.",
+      "status": "Confirmed 2026-09-29 (card 55)"
+    },
+    {
+      "id": "SUB-D-04",
+      "topic": "Cancellation",
+      "decision": "Cancel online in Cairn Settings at any time. Takes effect at the end of the current paid month. No reason required. No retention offer or discount shown.",
+      "status": "Confirmed by Mara 2026-10-06",
+      "sources": [
+        "https://ktslaw.com/en/insights/alert/2024/10/california-latest-automatic-renewal-law-amendments-take-effect-in-july-2025",
+        "https://www.jonesday.com/en/insights/2026/05/ftc-revives-clicktocancel-rule-new-risks-for-subscription-businesses"
+      ]
+    },
+    {
+      "id": "SUB-D-05",
+      "topic": "Refunds",
+      "decision": "No refunds of any kind, including for part of a month, after cancelling, or after deleting the account. Access continues until the end of the paid month, except after account deletion. The no-refund rule is shown before purchase (UC-SUB-02), when cancelling (UC-SUB-13), and when deleting the account (UC-SUB-16).",
+      "status": "Confirmed by Mara 2026-10-06",
+      "legal_review": "Confirm the Terms of Use wording, and how a duplicate or mistaken charge caused by a system error is handled."
+    },
+    {
+      "id": "SUB-D-06",
+      "topic": "Failed payments",
+      "decision": "Keep full access while Stripe retries (status past_due). Read-only only after the subscription ends.",
+      "status": "Confirmed by Mara 2026-10-06",
+      "sources": [
+        "https://docs.stripe.com/billing/revenue-recovery/smart-retries"
+      ]
+    },
+    {
+      "id": "SUB-D-07",
+      "topic": "Subscribing during the free days",
+      "decision": "Users can subscribe early from Settings. No charge happens until their free days are over. The first charge is on trial_ends_at, including after a care rest moves it.",
+      "status": "Confirmed by Mara 2026-10-06"
+    },
+    {
+      "id": "SUB-D-08",
+      "topic": "Billing messages and care",
+      "decision": "Stripe's automatic failed-payment emails stay on, and Cairn sends no failed-payment email of its own. Inside Cairn there is no billing wording at care levels 3 and 4. Cairn's own billing emails (yearly reminder, price change) wait until a break ends. Stripe's emails are not held during breaks or crisis levels, which is a known exception to cairn-take-a-break-use-cases-v32.json AC-BRK-06. Confirmations of the user's own actions are always sent.",
+      "status": "Confirmed by Mara 2026-10-06",
+      "setup_note": "Turn on failed-payment customer emails in the Stripe Dashboard billing settings. Keep Stripe's email wording neutral and free of urgency."
+    },
+    {
+      "id": "SUB-D-09",
+      "topic": "Test scope",
+      "decision": "No test validates payment receipt or that the customer received a subscription confirmation or any other email.",
+      "status": "Confirmed by Mara 2026-10-06"
+    },
+    {
+      "id": "SUB-D-10",
+      "topic": "What Stripe receives",
+      "decision": "Cairn sends Stripe only the sign-in email and account.id. Nothing about cases or the person who died. Stripe asks for any billing address it needs for tax on its own page, and Cairn never receives it.",
+      "status": "Confirmed by Mara 2026-10-06"
+    },
+    {
+      "id": "SUB-D-11",
+      "topic": "Disclosure before purchase",
+      "decision": "Price, monthly renewal until canceled, when charges happen, and how to cancel are shown next to the button before payment details are asked for.",
+      "status": "Carried over from account D-18. Final copy pending legal review.",
+      "former_id": "account D-18",
+      "sources": [
+        "https://www.law.cornell.edu/uscode/text/15/8403",
+        "https://ktslaw.com/en/insights/alert/2024/10/california-latest-automatic-renewal-law-amendments-take-effect-in-july-2025"
+      ]
+    },
+    {
+      "id": "SUB-D-12",
+      "topic": "Sales tax",
+      "decision": "Sales tax is collected through Stripe Tax with automatic tax turned on for Checkout. The Stripe price is tax-inclusive, so the customer always pays exactly $14.99 and every price in Cairn's copy stays accurate.",
+      "status": "Sales tax confirmed by Mara 2026-10-06. Tax-inclusive pricing is the reading of 'includes sales tax', confirm.",
+      "setup_notes": [
+        "tax_behavior cannot be changed after it is set on a price, so confirm inclusive before creating the live price.",
+        "Choose the product tax code with an accountant from Stripe's tax code list. Stripe advises not guessing a code.",
+        "Use Stripe Tax threshold monitoring to see where registration is needed, and register before collecting in a state."
+      ],
+      "sources": [
+        "https://docs.stripe.com/tax/products-prices-tax-codes-tax-behavior",
+        "https://docs.stripe.com/tax/checkout",
+        "https://docs.stripe.com/tax/tax-codes"
+      ]
+    },
+    {
+      "id": "SUB-D-13",
+      "topic": "Help with paying",
+      "decision": "No hardship, waiver, or help-paying path at this time. No such link or offer appears anywhere in Cairn.",
+      "status": "Confirmed by Mara 2026-10-06",
+      "resolves": "OPEN-SUB-02"
+    },
+    {
+      "id": "SUB-D-14",
+      "topic": "Disputed charges",
+      "decision": "No help is offered to users for disputed charges at this time. Cairn records the dispute, alerts the owner, sends the user nothing, and does not change access.",
+      "status": "Confirmed by Mara 2026-10-06",
+      "resolves": "OPEN-SUB-06"
+    },
+    {
+      "id": "SUB-D-15",
+      "topic": "Breaks never affect a paid subscription",
+      "decision": "Taking a break never affects a paid subscription. It does not pause billing, move the renewal date, lower the price, extend the paid month, or earn a refund or credit. Breaks are only for the user to step back from the journey and recover. The only billing effect of any break is that a care rest pauses the free days, and only while the free days are still running.",
+      "status": "Confirmed by Mara 2026-10-06",
+      "same_as": "take a break BRK-D-08",
+      "resolves": "OPEN-SUB-07"
+    }
+  ],
+  "status_mapping": {
+    "note": "How Stripe subscription statuses map to Cairn account fields (account D-19).",
+    "rows": [
+      {
+        "stripe": "no subscription",
+        "subscription_status": "none",
+        "access": "full during free days, otherwise read_only"
+      },
+      {
+        "stripe": "incomplete or incomplete_expired",
+        "subscription_status": "unchanged",
+        "access": "unchanged"
+      },
+      {
+        "stripe": "trialing (early subscriber, SUB-D-07)",
+        "subscription_status": "active",
+        "access": "full"
+      },
+      {
+        "stripe": "active",
+        "subscription_status": "active",
+        "access": "full"
+      },
+      {
+        "stripe": "active with cancel_at_period_end",
+        "subscription_status": "active",
+        "access": "full until current_period_end"
+      },
+      {
+        "stripe": "past_due",
+        "subscription_status": "active",
+        "billing_notice": "payment_failed",
+        "access": "full (SUB-D-06)"
+      },
+      {
+        "stripe": "unpaid or canceled",
+        "subscription_status": "lapsed",
+        "access": "read_only, unless free days remain"
+      }
+    ],
+    "sources": [
+      "https://docs.stripe.com/billing/subscriptions/webhooks"
+    ]
+  },
+  "events_handled": [
+    "checkout.session.completed",
+    "customer.subscription.created",
+    "customer.subscription.updated",
+    "customer.subscription.deleted",
+    "invoice.paid",
+    "invoice.payment_failed",
+    "invoice.payment_action_required",
+    "customer.updated",
+    "charge.refunded",
+    "charge.dispute.created"
+  ],
+  "copy": {
+    "subscribe_prompt_title": "Your 28 free days have ended",
+    "subscribe_prompt_body": "Everything you've done is saved, and you can still see all of it. To keep adding and updating your tasks, you can subscribe.",
+    "subscribe_prompt_button": "See subscription details",
+    "subscribe_prompt_not_now": "Not now",
+    "read_only_banner": "Your account is read-only. Everything is saved. You can subscribe any time to keep going.",
+    "terms_title": "Cairn subscription",
+    "terms_price": "Cairn is $14.99 a month for your whole account, including all your cases.",
+    "terms_renewal": "Your subscription renews automatically every month until you cancel. You'll be charged $14.99 today, and then $14.99 every month on the same day.",
+    "terms_renewal_early": "Your subscription renews automatically every month until you cancel. Your first charge of $14.99 is on {trial_end_date}, when your free days end. After that, $14.99 every month on the same day.",
+    "terms_cancel": "You can cancel any time in Settings, in as few steps as it took to subscribe. If you cancel, you won't be charged again, and you keep full access until the end of the month you've paid for. There are no refunds for any part of a month.",
+    "terms_includes": "Your subscription includes every journey and task in Cairn. Downloading, closing, and deleting your information are always free.",
+    "terms_checkbox": "I understand my subscription renews every month at $14.99 until I cancel.",
+    "terms_button": "Continue to payment",
+    "terms_secure_note": "You'll enter your payment details on a secure page from Stripe, our payment provider. Stripe will ask for your billing address so sales tax is handled correctly. Cairn never sees or stores your card number or address.",
+    "checkout_submit_text": "Renews monthly at $14.99 until you cancel. Cancel any time in Cairn Settings.",
+    "finishing": "Thank you. We're finishing setting up your subscription. This usually takes a few seconds.",
+    "finishing_slow": "This is taking longer than usual. You don't need to pay again. We'll keep checking, and you can close this page if you need to.",
+    "success": "You're subscribed. Everything in Cairn is open to you again. Your next payment of $14.99 is on {next_charge_date}. We're sending a confirmation with these details and how to cancel to {email}.",
+    "success_early": "You're subscribed. You still have your free days. Your first payment of $14.99 is on {trial_end_date}. We're sending a confirmation with these details and how to cancel to {email}.",
+    "checkout_left": "No problem. Nothing was charged. You can subscribe whenever you're ready.",
+    "payment_failed_inapp": "We couldn't process your last payment. Everything stays open for now. You can update your payment details in Settings.",
+    "action_required_inapp": "Your bank needs you to confirm your last payment. You can do that in Settings.",
+    "ended_read_only": "Your subscription has ended. Everything you've done is saved, and you can still see it. You can subscribe again whenever you'd like.",
+    "settings_status_active": "Subscribed. $14.99 a month. Next payment on {next_charge_date}.",
+    "settings_status_canceling": "Canceled. You have full access until {period_end_date}. You won't be charged again.",
+    "settings_status_trial": "Free days end on {trial_end_date}. No subscription yet.",
+    "settings_status_trial_subscribed": "Subscribed. Your first payment of $14.99 is on {trial_end_date}.",
+    "settings_status_payment_issue": "There's a problem with your last payment. Your account is still open.",
+    "settings_status_none": "No subscription. Your account is read-only.",
+    "settings_update_payment": "Update payment details",
+    "settings_invoices": "See past payments",
+    "settings_cancel": "Cancel my subscription",
+    "cancel_explainer": "If you cancel, you won't be charged again. You'll keep full access until {period_end_date}. After that, your account becomes read-only. Nothing is deleted, and you can subscribe again any time. There are no refunds for any part of a month.",
+    "cancel_confirm_button": "Cancel my subscription",
+    "cancel_keep_button": "Keep my subscription",
+    "cancel_done": "Your subscription is canceled. You won't be charged again. You have full access until {period_end_date}.",
+    "undo_cancel_button": "Keep my subscription after all",
+    "undo_cancel_done": "Your subscription will continue. Your next payment of $14.99 is on {next_charge_date}.",
+    "delete_account_with_subscription": "Deleting your account also cancels your subscription right away. You won't be charged again. There is no refund for the rest of this month.",
+    "annual_reminder_subject": "Your Cairn subscription",
+    "annual_reminder_body": "This is your yearly reminder that your Cairn subscription renews every month at $14.99. It covers your whole account. You can cancel any time in Cairn under Settings, then Subscription. Taking a break in Cairn doesn't pause your subscription.",
+    "price_change_subject": "A change to your Cairn subscription price",
+    "price_change_body": "Starting {effective_date}, your Cairn subscription will be {new_price} a month. Until then, nothing changes. You can cancel any time in Cairn under Settings, then Subscription.",
+    "new_journey_needs_subscription": "To start a new journey, you'll need a subscription. It's $14.99 a month for all your cases. Your draft is saved either way.",
+    "terms_tax": "Any sales tax is included in the $14.99.",
+    "terms_breaks": "Taking a break in Cairn doesn't pause your subscription or change what you pay. Breaks are just for you, to step back and rest.",
+    "settings_breaks_note": "Taking a break doesn't pause or change your subscription."
+  },
+  "data_requirements": {
+    "note": "Account fields are owned by cairn-account-use-cases-v32.json and must be added there.",
+    "account_fields_to_add": {
+      "stripe_customer_id": "string, nullable",
+      "stripe_subscription_id": "string, nullable",
+      "current_period_end": "timestamp, nullable",
+      "cancel_at_period_end": "boolean, default false",
+      "billing_notice": "enum: none | payment_failed | action_required. Default none.",
+      "subscribed_at": "timestamp, nullable",
+      "annual_reminder_due_at": "timestamp, nullable",
+      "cancel_requested_at": "timestamp, nullable"
+    },
+    "existing_account_fields_used": [
+      "subscription_status (none | active | lapsed)",
+      "access (full | read_only)",
+      "trial_started_at",
+      "trial_ends_at",
+      "trial_clock_paused_at"
+    ],
+    "consent_record": "New consent_type value: subscription_terms. Stores copy version and price shown.",
+    "stripe_events": {
+      "event_id": "string, unique",
+      "type": "string",
+      "account_id": "uuid, nullable",
+      "received_at": "timestamp",
+      "processed_at": "timestamp, nullable"
+    },
+    "never_stored": [
+      "Card numbers or any part of them",
+      "Bank account numbers",
+      "Billing address",
+      "Stripe portal or checkout session URLs after use"
+    ]
+  },
+  "test_scope": {
+    "in_scope": [
+      "Cairn screens, copy, and accessibility for every UC-SUB use case.",
+      "The requests Cairn sends to Stripe (checkout session, portal session, cancel, undo cancel, first charge date).",
+      "Cairn's handling of Stripe events: signature checks, duplicates, ordering, status mapping, and the resulting account fields.",
+      "That a confirmation or notice job is queued once at the right time, without checking delivery.",
+      "Crisis and break holds on billing wording and messages.",
+      "That Checkout Sessions turn on automatic tax and the price is tax-inclusive.",
+      "That breaks of every kind leave the Stripe subscription and Cairn subscription fields unchanged."
+    ],
+    "out_of_scope": [
+      "Validating that a payment was received or settled.",
+      "Validating Stripe receipts or invoices.",
+      "Checking that the customer received a subscription confirmation, cancellation confirmation, reminder, or any other email.",
+      "Stripe-hosted pages themselves (Checkout and the customer portal).",
+      "Stripe's failed-payment emails.",
+      "Tax amounts Stripe calculates."
+    ],
+    "tools": [
+      "Stripe sandbox (test mode) with test clocks to move time through trials, renewals, and retries.",
+      "Stripe CLI to trigger and forward webhook events, or fixture events signed with the test endpoint secret.",
+      "A mocked Stripe client for unit tests."
+    ],
+    "sources": [
+      "https://docs.stripe.com/billing/testing",
+      "https://docs.stripe.com/billing/testing/test-clocks"
+    ]
+  },
+  "use_cases": [
+    {
+      "id": "UC-SUB-01",
+      "title": "See the subscribe prompt when the free days end",
+      "actor": "Signed-in user whose free days have ended",
+      "preconditions": [
+        "account.access is read_only because trial_ends_at has passed (account D-19).",
+        "account.subscription_status is none or lapsed.",
+        "Care level 1. Not on a break screen."
+      ],
+      "trigger": "User opens Cairn on or after day 29.",
+      "main_flow": [
+        "Show copy.subscribe_prompt_title and copy.subscribe_prompt_body once per session, before the home screen.",
+        "Offer copy.subscribe_prompt_button (goes to UC-SUB-02) and copy.subscribe_prompt_not_now (goes to the home screen).",
+        "Show copy.read_only_banner on the home screen and on every case view while access is read_only."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "User is at care level 2, 3, or 4.",
+          "steps": [
+            "Do not show the prompt or banner wording about subscribing. Show it the next session at level 1 (case global_rules.billing_during_crisis)."
+          ]
+        },
+        {
+          "condition": "User is on a break.",
+          "steps": [
+            "Show the resting screen first (cairn-take-a-break-use-cases-v32.json UC-BRK-08). The prompt waits until the user selects I'm back."
+          ]
+        },
+        {
+          "condition": "A care rest was active on day 28.",
+          "steps": [
+            "The account never becomes read-only while trial_clock_paused_at is set. The prompt appears only after the moved trial_ends_at."
+          ]
+        }
+      ],
+      "postconditions": [
+        "User has seen the price path or chosen not now. Nothing is deleted."
+      ],
+      "acceptance_criteria": [
+        "Prompt appears at most once per session and never more than once a day.",
+        "Not now always works and never reappears in the same session.",
+        "No countdown timers, urgency wording, or limited-time offers (CAIRN-LEG-07 section 3).",
+        "[SAFETY] Never shown at care levels 3 and 4.",
+        "Read-only users can still view everything, download, close, delete, use Settings, and reach Support resources."
+      ],
+      "test_notes": "Use a Stripe-free fixture: set trial_ends_at in the past. No Stripe call is needed."
+    },
+    {
+      "id": "UC-SUB-02",
+      "title": "Review the price and renewal terms and agree",
+      "actor": "Signed-in user",
+      "preconditions": [
+        "User chose to subscribe from UC-SUB-01, UC-SUB-06, UC-SUB-07, UC-SUB-15, or Settings (UC-SUB-23).",
+        "Care level 1."
+      ],
+      "trigger": "User selects a subscribe action.",
+      "main_flow": [
+        "Show one Cairn screen with copy.terms_title, copy.terms_price, copy.terms_tax, copy.terms_renewal (or copy.terms_renewal_early during the free days), copy.terms_cancel, copy.terms_includes, copy.terms_breaks, and copy.terms_secure_note, with links to the Terms of Use and Privacy Policy.",
+        "Show an unchecked checkbox with copy.terms_checkbox.",
+        "Enable copy.terms_button only when the box is checked.",
+        "On Continue, write a consent_record with consent_type subscription_terms, the copy version, price shown, timestamp, and client. Then go to UC-SUB-03."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "User leaves this screen.",
+          "steps": [
+            "Nothing is saved except that they viewed it. No reminder is sent about it."
+          ]
+        }
+      ],
+      "postconditions": [
+        "subscription_terms consent recorded."
+      ],
+      "acceptance_criteria": [
+        "Price, that it renews monthly until canceled, when the charge happens, and how to cancel are all shown on this screen before any payment details are asked for (ROSCA, California automatic renewal law, CAIRN-LEG-07 section 2.2).",
+        "The no-refund rule and that tax is included are shown on this screen before payment (SUB-D-05, SUB-D-12).",
+        "copy.terms_breaks is shown before payment, so no one subscribes thinking a break pauses billing (SUB-D-15).",
+        "The renewal terms sit next to the Continue button, not behind a link.",
+        "Checkbox is never pre-checked.",
+        "The price shown comes from the same config value used to create the Stripe price, so they cannot differ.",
+        "Take a break and Support resources are on this screen (cairn-take-a-break-use-cases-v32.json UC-BRK-01).",
+        "Readable at about grade 8, meets WCAG 2.2 AA, and Read this to me works."
+      ],
+      "legal_review": [
+        "Final disclosure and checkbox wording (CAIRN-LEG-07 section 8)."
+      ],
+      "sources": [
+        "https://www.law.cornell.edu/uscode/text/15/8403",
+        "https://ktslaw.com/en/insights/alert/2024/10/california-latest-automatic-renewal-law-amendments-take-effect-in-july-2025"
+      ]
+    },
+    {
+      "id": "UC-SUB-03",
+      "title": "Pay on Stripe Checkout",
+      "actor": "Signed-in user",
+      "preconditions": [
+        "subscription_terms consent recorded in this session."
+      ],
+      "trigger": "User selects copy.terms_button.",
+      "main_flow": [
+        "Cairn's server creates a Stripe Checkout Session in subscription mode for the $14.99 monthly price, with client_reference_id set to account.id, the customer email set to the sign-in email, success_url and cancel_url back to Cairn.",
+        "Turn on automatic tax and billing address collection on the Checkout Session. The price uses tax_behavior inclusive (SUB-D-12).",
+        "Reuse account.stripe_customer_id if one exists. Otherwise Stripe creates the customer and Cairn stores the id from the webhook.",
+        "During the free days, set the subscription's first charge date to trial_ends_at (SUB-D-07).",
+        "Set Checkout's submit text to copy.checkout_submit_text so the renewal terms also appear next to Stripe's pay button.",
+        "Redirect the user to the Stripe-hosted page."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "Stripe is unreachable when creating the session.",
+          "steps": [
+            "Stay on UC-SUB-02, say plainly that payments aren't working right now, and that nothing was charged. Offer to try again."
+          ]
+        },
+        {
+          "condition": "User already has an active subscription (for example a second tab).",
+          "steps": [
+            "Do not create a session. Show Settings, Subscription (UC-SUB-23)."
+          ]
+        }
+      ],
+      "postconditions": [
+        "User is on Stripe Checkout. Cairn state unchanged."
+      ],
+      "acceptance_criteria": [
+        "[PRIVACY] No card, bank, or billing address field is rendered or handled by Cairn. Cairn's server never receives payment details (SUB-D-01).",
+        "[PRIVACY] Metadata sent to Stripe holds only account.id. No preferred name, case name, circumstance, or anything about the person who died (SUB-D-10).",
+        "Only one open Checkout Session per account at a time.",
+        "Creating a session never changes account.access or subscription_status.",
+        "The total charged is $14.99 for every billing location, because tax is included."
+      ],
+      "test_notes": "Assert the session-create request body (mode, price, client_reference_id, metadata, submit text) against a Stripe sandbox or a mocked client. Tests assert Cairn state, screens, and the requests Cairn makes. They never check that money arrived, that a receipt is valid, or that the customer received an email (SUB-D-09).",
+      "sources": [
+        "https://docs.stripe.com/payments/checkout/build-subscriptions",
+        "https://docs.stripe.com/tax/checkout"
+      ]
+    },
+    {
+      "id": "UC-SUB-04",
+      "title": "Come back after paying",
+      "actor": "Signed-in user",
+      "preconditions": [
+        "User completed payment on Stripe Checkout."
+      ],
+      "trigger": "Stripe redirects the user to success_url.",
+      "main_flow": [
+        "Show copy.finishing. Do not grant access from this page.",
+        "Wait for Cairn's backend to process the verified checkout.session.completed and subscription events (UC-SUB-22). Check Cairn's own status, not Stripe, from the browser.",
+        "When subscription_status becomes active, set access to full, remove the read-only banner, and show copy.success (or copy.success_early during the free days).",
+        "Queue the subscription confirmation (case UC-CASE-21) with terms and how to cancel."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "Status is not active after 30 seconds.",
+          "steps": [
+            "Show copy.finishing_slow. Keep checking in the background. Never ask the user to pay again."
+          ]
+        },
+        {
+          "condition": "The 5-minute sign-out happened while the user was on Stripe (account D-20).",
+          "steps": [
+            "After sign-in, show the result from Cairn's own status."
+          ]
+        },
+        {
+          "condition": "Webhook arrives before the user returns.",
+          "steps": [
+            "The success page shows copy.success straight away."
+          ]
+        }
+      ],
+      "postconditions": [
+        "account.subscription_status active, access full, stripe ids stored."
+      ],
+      "acceptance_criteria": [
+        "Visiting success_url directly, without a verified event, never grants access (SUB-D-02).",
+        "Read-only data becomes editable again with nothing lost.",
+        "The confirmation is queued exactly once per subscription."
+      ],
+      "test_notes": "Drive with a signed test event or the Stripe CLI against the sandbox. Assert the account fields and screens, and that one confirmation job was queued. Do not check delivery. Tests assert Cairn state, screens, and the requests Cairn makes. They never check that money arrived, that a receipt is valid, or that the customer received an email (SUB-D-09).",
+      "sources": [
+        "https://docs.stripe.com/billing/subscriptions/webhooks"
+      ]
+    },
+    {
+      "id": "UC-SUB-05",
+      "title": "Leave Stripe Checkout without paying",
+      "actor": "Signed-in user",
+      "preconditions": [
+        "User is on Stripe Checkout."
+      ],
+      "trigger": "User selects back on Stripe, closes the tab, or the first payment fails and is not completed.",
+      "main_flow": [
+        "On return to cancel_url, show copy.checkout_left on the screen they came from.",
+        "Leave access, subscription_status, and trial fields unchanged."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "Initial payment needed bank confirmation and was not completed (Stripe status incomplete, then incomplete_expired).",
+          "steps": [
+            "Treat as not subscribed. Remove the stored subscription id when incomplete_expired arrives."
+          ]
+        }
+      ],
+      "acceptance_criteria": [
+        "No reminder, email, or follow-up is sent about an abandoned checkout.",
+        "The consent record stays (it is proof of what was shown), but no subscription is created in Cairn."
+      ],
+      "test_notes": "Tests assert Cairn state, screens, and the requests Cairn makes. They never check that money arrived, that a receipt is valid, or that the customer received an email (SUB-D-09)."
+    },
+    {
+      "id": "UC-SUB-06",
+      "title": "Subscribe before the free days end",
+      "status": "proposed, confirm (SUB-D-07)",
+      "actor": "Signed-in user on the free trial",
+      "preconditions": [
+        "trial_started_at set, trial_ends_at in the future, subscription_status none."
+      ],
+      "trigger": "User selects Subscribe in Settings, Subscription.",
+      "main_flow": [
+        "Run UC-SUB-02 with copy.terms_renewal_early, then UC-SUB-03 with the first charge on trial_ends_at.",
+        "On success show copy.success_early."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "A care rest moves trial_ends_at later after the user subscribed.",
+          "steps": [
+            "Update the Stripe subscription's first charge date to the new trial_ends_at when the care rest ends. This applies only because the free days have not ended yet (SUB-D-15)."
+          ]
+        },
+        {
+          "condition": "User cancels before the first charge.",
+          "steps": [
+            "Cancel with no charge. Access follows the free days as if they never subscribed."
+          ]
+        }
+      ],
+      "acceptance_criteria": [
+        "Subscribing early never shortens the free days.",
+        "No charge happens before trial_ends_at, including after a care rest moves it.",
+        "The 7-day trial-ending note (account D-14) is replaced by a note that the first payment is coming, using the same timing."
+      ],
+      "test_notes": "Use a Stripe test clock to move past trial_ends_at and check Cairn's state. Tests assert Cairn state, screens, and the requests Cairn makes. They never check that money arrived, that a receipt is valid, or that the customer received an email (SUB-D-09).",
+      "sources": [
+        "https://docs.stripe.com/billing/testing/test-clocks"
+      ]
+    },
+    {
+      "id": "UC-SUB-07",
+      "title": "Subscribe to start a new journey on a read-only account",
+      "actor": "Signed-in user with a read-only account",
+      "preconditions": [
+        "access read_only. A draft case is ready (case UC-CASE-18)."
+      ],
+      "trigger": "User selects Start journey on a draft.",
+      "main_flow": [
+        "Show copy.new_journey_needs_subscription with Subscribe and Not now.",
+        "Subscribe runs UC-SUB-02 to UC-SUB-04, then returns to the draft's Start journey screen.",
+        "Not now keeps the draft. Draft retention still applies (case DEC-06)."
+      ],
+      "acceptance_criteria": [
+        "[SAFETY] Never shown at care levels 3 and 4 (case UC-CASE-18).",
+        "The draft and its answers are unchanged by the subscription flow."
+      ],
+      "replaces": "The 'UC-SUB, card 55, not yet specified' reference in case UC-CASE-18."
+    },
+    {
+      "id": "UC-SUB-08",
+      "title": "Monthly renewal",
+      "actor": "System",
+      "preconditions": [
+        "subscription_status active."
+      ],
+      "trigger": "Stripe renews the subscription and sends invoice.paid and customer.subscription.updated.",
+      "main_flow": [
+        "Verify and record the events (UC-SUB-22).",
+        "Retrieve the subscription from Stripe and confirm its status is active before updating current_period_end (Stripe guidance).",
+        "Clear any billing_notice."
+      ],
+      "acceptance_criteria": [
+        "Access stays full with no interruption across the renewal.",
+        "Cairn sends no message of its own about a normal renewal.",
+        "Renewal happens on its normal date whether or not the user is on a break (SUB-D-15)."
+      ],
+      "test_notes": "Advance a Stripe test clock one month. Assert current_period_end moved and access stayed full. Tests assert Cairn state, screens, and the requests Cairn makes. They never check that money arrived, that a receipt is valid, or that the customer received an email (SUB-D-09).",
+      "sources": [
+        "https://docs.stripe.com/billing/subscriptions/webhooks",
+        "https://docs.stripe.com/billing/testing/test-clocks"
+      ]
+    },
+    {
+      "id": "UC-SUB-09",
+      "title": "A renewal payment fails",
+      "actor": "System, then the user",
+      "preconditions": [
+        "subscription_status active."
+      ],
+      "trigger": "invoice.payment_failed, and the Stripe subscription becomes past_due.",
+      "main_flow": [
+        "Set billing_notice to payment_failed. Keep access full while Stripe retries (SUB-D-06).",
+        "Show copy.payment_failed_inapp on the home screen and in Settings, at care level 1 only.",
+        "Stripe sends its own failed-payment email (SUB-D-08). Cairn sends none.",
+        "Offer copy.settings_update_payment (UC-SUB-12)."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "A retry succeeds (invoice.paid, status active).",
+          "steps": [
+            "Clear billing_notice. Say nothing more."
+          ]
+        },
+        {
+          "condition": "User is on a break.",
+          "steps": [
+            "Stripe's email is not held (SUB-D-08). Cairn's in-app notice waits until the user selects I'm back."
+          ]
+        },
+        {
+          "condition": "Retries run out.",
+          "steps": [
+            "Go to UC-SUB-11."
+          ]
+        }
+      ],
+      "acceptance_criteria": [
+        "No access is removed while the Stripe status is past_due.",
+        "Cairn queues no failed-payment email of its own.",
+        "In-app notice text has no case details and no urgency wording."
+      ],
+      "test_notes": "Use a sandbox decline test payment method and a test clock, or trigger invoice.payment_failed with the Stripe CLI. Assert billing_notice and screens. Do not test Stripe's email. Tests never check that money arrived, that a receipt is valid, or that the customer received an email (SUB-D-09).",
+      "sources": [
+        "https://docs.stripe.com/billing/subscriptions/webhooks",
+        "https://docs.stripe.com/billing/revenue-recovery/smart-retries"
+      ]
+    },
+    {
+      "id": "UC-SUB-10",
+      "title": "The bank asks the user to confirm a payment",
+      "actor": "User",
+      "preconditions": [
+        "subscription_status active."
+      ],
+      "trigger": "invoice.payment_action_required.",
+      "main_flow": [
+        "Set billing_notice to action_required.",
+        "Show copy.action_required_inapp at care level 1, with a button that opens Stripe's hosted page for that invoice.",
+        "Clear billing_notice when invoice.paid arrives."
+      ],
+      "acceptance_criteria": [
+        "Access stays full while the confirmation is pending.",
+        "Cairn's in-app notice follows the same break and crisis holds as UC-SUB-09."
+      ],
+      "test_notes": "Tests assert Cairn state, screens, and the requests Cairn makes. They never check that money arrived, that a receipt is valid, or that the customer received an email (SUB-D-09)."
+    },
+    {
+      "id": "UC-SUB-11",
+      "title": "The subscription ends after failed payments",
+      "actor": "System",
+      "preconditions": [
+        "Stripe retries are exhausted."
+      ],
+      "trigger": "customer.subscription.deleted, or customer.subscription.updated with status canceled or unpaid.",
+      "main_flow": [
+        "Set subscription_status lapsed and access read_only (account D-19). Delete nothing.",
+        "At the user's next level 1 session, show copy.ended_read_only with Subscribe again (UC-SUB-15)."
+      ],
+      "acceptance_criteria": [
+        "Nothing is deleted.",
+        "Download, close, delete, and Settings stay available.",
+        "[SAFETY] No wording at care levels 3 and 4."
+      ],
+      "test_notes": "Configure the sandbox to cancel after retries, advance a test clock, assert lapsed and read_only. Tests assert Cairn state, screens, and the requests Cairn makes. They never check that money arrived, that a receipt is valid, or that the customer received an email (SUB-D-09).",
+      "sources": [
+        "https://docs.stripe.com/billing/subscriptions/webhooks"
+      ]
+    },
+    {
+      "id": "UC-SUB-12",
+      "title": "Update payment details or see past payments",
+      "actor": "Subscribed user",
+      "trigger": "User selects copy.settings_update_payment or copy.settings_invoices.",
+      "main_flow": [
+        "Cairn's server creates a Stripe customer portal session for account.stripe_customer_id and sends the user there.",
+        "Return the user to Settings, Subscription afterwards.",
+        "Process any customer.updated or subscription events that follow (UC-SUB-22)."
+      ],
+      "acceptance_criteria": [
+        "The portal is configured without cancellation deflection coupons or retention offers (SUB-D-04).",
+        "[PRIVACY] Cairn stores no payment method details from the portal.",
+        "Portal sessions are created on demand and never stored or emailed."
+      ],
+      "test_notes": "Assert the portal session request and return route only. Tests assert Cairn state, screens, and the requests Cairn makes. They never check that money arrived, that a receipt is valid, or that the customer received an email (SUB-D-09).",
+      "sources": [
+        "https://docs.stripe.com/customer-management"
+      ]
+    },
+    {
+      "id": "UC-SUB-13",
+      "title": "Cancel the subscription",
+      "actor": "Subscribed user",
+      "preconditions": [
+        "subscription_status active and cancel_at_period_end false."
+      ],
+      "trigger": "User selects copy.settings_cancel.",
+      "main_flow": [
+        "Show copy.cancel_explainer with the current period end date.",
+        "Offer copy.cancel_confirm_button and copy.cancel_keep_button. No reason is asked. No discount or retention offer is shown.",
+        "On confirm, Cairn's server sets the Stripe subscription to cancel at the end of the current period.",
+        "Show copy.cancel_done and queue the cancellation confirmation (case UC-CASE-21).",
+        "At the end of the current paid month (customer.subscription.deleted), set subscription_status lapsed and access read_only unless free days remain."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "User is at care level 4.",
+          "steps": [
+            "Do not cancel in the same turn (cairn-support-crisis-plan-v32.json AC-26-11). The option stays available when the user asks again."
+          ]
+        },
+        {
+          "condition": "Stripe is unreachable.",
+          "steps": [
+            "Say plainly the cancellation didn't go through and nothing more will be charged because of the delay, then retry. Record the request time as proof of the cancel request."
+          ]
+        }
+      ],
+      "acceptance_criteria": [
+        "Cancel takes no more steps than subscribing: Settings, Subscription, cancel explainer, confirm (CAIRN-LEG-07 section 2.2).",
+        "Available online at any time, including on read-only accounts and during a normal break.",
+        "No phone call, chat, email, or second confirmation is required.",
+        "A cancel request is recorded with a timestamp before calling Stripe.",
+        "No refund is issued, and the explainer says so before the user confirms (SUB-D-05)."
+      ],
+      "test_notes": "Assert the Stripe update request (cancel at period end) and the account fields after the simulated period end. Tests assert Cairn state, screens, and the requests Cairn makes. They never check that money arrived, that a receipt is valid, or that the customer received an email (SUB-D-09).",
+      "sources": [
+        "https://ktslaw.com/en/insights/alert/2024/10/california-latest-automatic-renewal-law-amendments-take-effect-in-july-2025",
+        "https://www.jonesday.com/en/insights/2026/05/ftc-revives-clicktocancel-rule-new-risks-for-subscription-businesses",
+        "https://docs.stripe.com/customer-management"
+      ]
+    },
+    {
+      "id": "UC-SUB-14",
+      "title": "Undo a cancellation before the period ends",
+      "actor": "User who canceled",
+      "preconditions": [
+        "cancel_at_period_end true and current_period_end in the future."
+      ],
+      "trigger": "User selects copy.undo_cancel_button in Settings.",
+      "main_flow": [
+        "Remove the scheduled cancellation in Stripe.",
+        "Show copy.undo_cancel_done."
+      ],
+      "acceptance_criteria": [
+        "No new consent is needed because the terms are unchanged.",
+        "No charge happens before the next normal renewal date."
+      ],
+      "test_notes": "Tests assert Cairn state, screens, and the requests Cairn makes. They never check that money arrived, that a receipt is valid, or that the customer received an email (SUB-D-09)."
+    },
+    {
+      "id": "UC-SUB-15",
+      "title": "Subscribe again after the subscription ended",
+      "actor": "User with subscription_status lapsed",
+      "trigger": "User selects Subscribe again.",
+      "main_flow": [
+        "Run UC-SUB-02 to UC-SUB-04 with a new consent record. Reuse the same Stripe customer."
+      ],
+      "acceptance_criteria": [
+        "Earlier cases and tasks are all there and editable again.",
+        "No free days are offered again (account D-04)."
+      ],
+      "test_notes": "Tests assert Cairn state, screens, and the requests Cairn makes. They never check that money arrived, that a receipt is valid, or that the customer received an email (SUB-D-09)."
+    },
+    {
+      "id": "UC-SUB-16",
+      "title": "Delete the account while subscribed",
+      "actor": "Subscribed user",
+      "trigger": "User starts account deletion (account UC-ACCT-01).",
+      "main_flow": [
+        "Show copy.delete_account_with_subscription on the deletion explainer.",
+        "Before deleting Cairn data, cancel the Stripe subscription immediately so no further charge can happen.",
+        "Then continue account UC-ACCT-01."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "Stripe cancellation fails.",
+          "steps": [
+            "Do not finish deletion until the subscription is confirmed canceled. Tell the user plainly and retry. Alert support if it still fails."
+          ]
+        }
+      ],
+      "acceptance_criteria": [
+        "No charge is possible after the user confirms deletion.",
+        "No refund is issued for the rest of the month, and the deletion explainer says so first (SUB-D-05).",
+        "Records Cairn must keep by law (subscription consent and billing records) are kept only as the retention schedule allows (OPEN-SUB-04)."
+      ],
+      "test_notes": "Tests assert Cairn state, screens, and the requests Cairn makes. They never check that money arrived, that a receipt is valid, or that the customer received an email (SUB-D-09).",
+      "account_spec_change_needed": "account UC-ACCT-01 should add this step."
+    },
+    {
+      "id": "UC-SUB-17",
+      "title": "Yearly renewal reminder",
+      "actor": "System",
+      "preconditions": [
+        "subscription_status active for 12 months since subscribed_at or the last reminder."
+      ],
+      "trigger": "annual_reminder_due_at is reached.",
+      "main_flow": [
+        "Email copy.annual_reminder_subject and body to the sign-in email, the same medium used to subscribe.",
+        "Set the next annual_reminder_due_at."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "User is on a break or at care level 3 or 4.",
+          "steps": [
+            "Send when the break ends or the user is back at level 1, within 30 days."
+          ]
+        }
+      ],
+      "acceptance_criteria": [
+        "States the product, the charge amount and frequency, and how to cancel (California automatic renewal law).",
+        "Says that taking a break doesn't pause the subscription (SUB-D-15)."
+      ],
+      "test_notes": "Assert the reminder job is queued at the right time with a test clock or a fixed clock. Tests assert Cairn state, screens, and the requests Cairn makes. They never check that money arrived, that a receipt is valid, or that the customer received an email (SUB-D-09).",
+      "sources": [
+        "https://ktslaw.com/en/insights/alert/2024/10/california-latest-automatic-renewal-law-amendments-take-effect-in-july-2025"
+      ],
+      "legal_review": [
+        "Confirm reminder content and timing for California and other state automatic renewal laws."
+      ]
+    },
+    {
+      "id": "UC-SUB-18",
+      "title": "Price change notice",
+      "actor": "System",
+      "preconditions": [
+        "Cairn decides to change the subscription price."
+      ],
+      "trigger": "A new price is scheduled with an effective date.",
+      "main_flow": [
+        "Email copy.price_change_subject and body to every active subscriber between 30 and 7 days before the new price applies to them, and show it in Cairn at level 1.",
+        "Apply the new price only from the first renewal on or after the effective date."
+      ],
+      "acceptance_criteria": [
+        "Notice sent no less than 7 and no more than 30 days before the change (California automatic renewal law).",
+        "Breaks and care levels may delay the email only within that window. If they would push it outside, the effective date moves for that user."
+      ],
+      "test_notes": "Tests assert Cairn state, screens, and the requests Cairn makes. They never check that money arrived, that a receipt is valid, or that the customer received an email (SUB-D-09).",
+      "sources": [
+        "https://ktslaw.com/en/insights/alert/2024/10/california-latest-automatic-renewal-law-amendments-take-effect-in-july-2025"
+      ],
+      "legal_review": [
+        "Whether a price increase also needs fresh consent."
+      ]
+    },
+    {
+      "id": "UC-SUB-19",
+      "title": "Ask for help paying",
+      "status": "removed 2026-10-06 (SUB-D-13)",
+      "note": "ID kept so earlier references resolve. Do not build."
+    },
+    {
+      "id": "UC-SUB-20",
+      "title": "A disputed charge",
+      "status": "Confirmed by Mara 2026-10-06 (SUB-D-14)",
+      "actor": "System and owner",
+      "trigger": "charge.dispute.created, or charge.refunded when Stripe reverses a charge as part of a dispute.",
+      "main_flow": [
+        "Record the event against the account (UC-SUB-22).",
+        "Alert the owner.",
+        "Send the user nothing and offer no help in Cairn.",
+        "Do not change access."
+      ],
+      "acceptance_criteria": [
+        "No user-facing message, screen, or link about disputes.",
+        "Access and subscription_status are unchanged by a dispute event alone.",
+        "Cairn never starts a refund (SUB-D-05)."
+      ],
+      "test_notes": "Trigger charge.dispute.created with the Stripe CLI. Assert the record, the owner alert job, and unchanged access. Tests never check that money arrived, that a receipt is valid, or that the customer received an email (SUB-D-09).",
+      "sources": [
+        "https://docs.stripe.com/billing/subscriptions/webhooks"
+      ]
+    },
+    {
+      "id": "UC-SUB-21",
+      "title": "Billing during a break or a crisis conversation",
+      "actor": "System",
+      "main_flow": [
+        "At care levels 3 and 4: no subscription, price, payment, or trial wording on any screen. The subscribe prompt, banners, and payment notices wait until the user is back at level 1 (case global_rules.billing_during_crisis).",
+        "At care level 2: no subscribe prompt. Payment problem notices wait.",
+        "During any break: Cairn holds its own billing emails (yearly reminder, price change) until the break ends (cairn-take-a-break-use-cases-v32.json UC-BRK-08). Stripe's failed-payment emails are not held (SUB-D-08). Confirmations of something the user just did (subscribed, canceled) are still sent.",
+        "Stripe keeps billing an active subscription on its normal dates during every break and care rest. Cairn never pauses, delays, or credits it (SUB-D-15). The user hears nothing about billing inside Cairn until level 1 (crisis plan)."
+      ],
+      "acceptance_criteria": [
+        "[SAFETY] A test at levels 3 and 4 finds no billing words on any screen.",
+        "Cairn sends no failed-payment email of its own. Stripe's failed-payment emails stay on (SUB-D-08).",
+        "Starting, changing, or ending a break makes no Stripe API call and changes no subscription field (SUB-D-15)."
+      ]
+    },
+    {
+      "id": "UC-SUB-22",
+      "title": "Processing Stripe events safely",
+      "type": "system",
+      "actor": "Cairn backend",
+      "trigger": "Any Stripe webhook event.",
+      "main_flow": [
+        "Verify the Stripe signature with the endpoint secret. Reject anything that fails.",
+        "Record event.id in stripe_events. If it was already processed, return success and do nothing (idempotent).",
+        "Find the account by client_reference_id or stripe_customer_id. Never by email.",
+        "For subscription changes, retrieve the current subscription from Stripe and set Cairn's fields from it, so events arriving out of order cannot leave stale state.",
+        "Map the Stripe status to Cairn fields using status_mapping.",
+        "Return success quickly. Do slow work in a background job."
+      ],
+      "acceptance_criteria": [
+        "Unsigned or wrongly signed requests change nothing.",
+        "The same event delivered twice changes state once.",
+        "Events delivered out of order end in the state Stripe reports now.",
+        "Events for an unknown customer are logged and alerted, never applied to a guessed account.",
+        "[PRIVACY] Stored event records keep ids, type, and timestamps only, not full payloads."
+      ],
+      "test_notes": "Send fixture events signed with the test endpoint secret, including duplicates, bad signatures, and out-of-order pairs. Tests assert Cairn state, screens, and the requests Cairn makes. They never check that money arrived, that a receipt is valid, or that the customer received an email (SUB-D-09).",
+      "sources": [
+        "https://docs.stripe.com/webhooks#verify-events",
+        "https://docs.stripe.com/billing/subscriptions/webhooks"
+      ]
+    },
+    {
+      "id": "UC-SUB-23",
+      "title": "See subscription status in Settings",
+      "actor": "Signed-in user",
+      "trigger": "User opens Settings, Subscription.",
+      "main_flow": [
+        "Show one status line: copy.settings_status_trial, copy.settings_status_trial_subscribed, copy.settings_status_active, copy.settings_status_canceling, copy.settings_status_payment_issue, or copy.settings_status_none.",
+        "For subscribed users, show copy.settings_breaks_note under the status line.",
+        "Show only the actions that apply: Subscribe (UC-SUB-02), copy.settings_update_payment and copy.settings_invoices (UC-SUB-12), copy.settings_cancel (UC-SUB-13), copy.undo_cancel_button (UC-SUB-14)."
+      ],
+      "acceptance_criteria": [
+        "Dates are in the user's time zone.",
+        "Status comes from Cairn's stored fields and loads without calling Stripe.",
+        "[SAFETY] At care levels 3 and 4 this page shows only the cancel action and no price wording."
+      ],
+      "test_notes": "Tests assert Cairn state, screens, and the requests Cairn makes. They never check that money arrived, that a receipt is valid, or that the customer received an email (SUB-D-09)."
+    }
+  ],
+  "open_decisions": [
+    {
+      "id": "OPEN-SUB-01",
+      "topic": "Refund policy",
+      "default": "SUB-D-05",
+      "owner": "Mara with counsel",
+      "status": "resolved: no refunds of any kind (SUB-D-05)"
+    },
+    {
+      "id": "OPEN-SUB-02",
+      "topic": "Hardship or waiver path (card 55)",
+      "default": "UC-SUB-19, support decides case by case",
+      "owner": "Mara",
+      "status": "resolved: no help paying at this time (SUB-D-13)"
+    },
+    {
+      "id": "OPEN-SUB-03",
+      "topic": "Sales tax on the subscription (Stripe Tax, which would need a billing location from Stripe's page)",
+      "default": "decide before launch",
+      "owner": "Mara with accountant",
+      "status": "resolved: Stripe Tax, tax included in $14.99 (SUB-D-12)"
+    },
+    {
+      "id": "OPEN-SUB-04",
+      "topic": "Keeping subscription consent records after account deletion. California requires proof of consent for 3 years or 1 year after the subscription ends, whichever is longer. Account UC-ACCT-01 and D-08 currently delete everything.",
+      "default": "keep only the subscription consent record and billing records for the legal period, as the Privacy Policy retention schedule's billing row",
+      "owner": "counsel",
+      "sources": [
+        "https://ktslaw.com/en/insights/alert/2024/10/california-latest-automatic-renewal-law-amendments-take-effect-in-july-2025"
+      ]
+    },
+    {
+      "id": "OPEN-SUB-05",
+      "topic": "Stripe email receipts for successful payments",
+      "default": "on, sent by Stripe (outside test scope)",
+      "owner": "Mara"
+    },
+    {
+      "id": "OPEN-SUB-06",
+      "topic": "Access during a disputed charge",
+      "default": "no automatic change, support reviews",
+      "owner": "Mara",
+      "status": "resolved: no help for disputes, no access change (SUB-D-14)"
+    },
+    {
+      "id": "OPEN-SUB-07",
+      "topic": "Extend a paid month after a long care rest",
+      "default": "no",
+      "owner": "Mara with clinical reviewer",
+      "status": "resolved 2026-10-06: no (SUB-D-15)"
+    },
+    {
+      "id": "OPEN-SUB-08",
+      "topic": "Arbitration or courts in the Terms of Use for billing disputes",
+      "default": "open in Terms v0.1",
+      "owner": "counsel"
+    }
+  ],
+  "changes_needed_in_other_specs": [
+    "cairn-account-use-cases-v32.json: add the account fields above, consent_type subscription_terms, a UC-ACCT-01 step to cancel Stripe first (UC-SUB-16), and point D-18 here (SUB-D-11).",
+    "cairn-case-creation-use-cases-v32.json: UC-CASE-18 points to UC-SUB-07. UC-CASE-21 adds subscribed and canceled confirmations.",
+    "cairn-take-a-break-use-cases-v32.json: add the subscription views (subscribe prompt, terms, finishing, Settings subscription, cancel) to view_inventory.",
+    "Terms of Use v0.1: replace Apple and Google billing language with Stripe web billing, the $14.99 price, renewal, and cancellation terms (case policy_updates_required).",
+    "Privacy Policy v0.2: add Stripe as a subprocessor and what it receives (SUB-D-10).",
+    "Terms of Use v0.1: add the no-refunds rule (SUB-D-05) and that sales tax is included in the price (SUB-D-12).",
+    "Privacy Policy v0.2: Stripe collects a billing address for sales tax on its own page. Cairn does not receive it.",
+    "Terms of Use v0.1: state that taking a break does not pause or change a paid subscription (SUB-D-15)."
+  ],
+  "related": {
+    "trello_cards": [
+      {
+        "name": "GAP: Subscription, pricing, and payment after the 28-day trial",
+        "url": "https://trello.com/c/glUwdD0l"
+      }
+    ],
+    "legal_library": "Legal Library/07_Consumer_Protection_Subscriptions_and_Communications.docx (CAIRN-LEG-07 v0.1)"
+  },
+  "sources": [
+    "https://docs.stripe.com/payments/checkout/build-subscriptions",
+    "https://docs.stripe.com/billing/subscriptions/webhooks",
+    "https://docs.stripe.com/customer-management",
+    "https://docs.stripe.com/billing/testing/test-clocks",
+    "https://docs.stripe.com/billing/testing",
+    "https://docs.stripe.com/webhooks#verify-events",
+    "https://docs.stripe.com/billing/revenue-recovery/smart-retries",
+    "https://www.law.cornell.edu/uscode/text/15/8403",
+    "https://ktslaw.com/en/insights/alert/2024/10/california-latest-automatic-renewal-law-amendments-take-effect-in-july-2025",
+    "https://www.jonesday.com/en/insights/2026/05/ftc-revives-clicktocancel-rule-new-risks-for-subscription-businesses",
+    "https://gc.nh.gov/rsa/html/xxxi/358-a/358-a-mrg.htm",
+    "https://docs.stripe.com/tax/products-prices-tax-codes-tax-behavior",
+    "https://docs.stripe.com/tax/checkout"
+  ]
+}

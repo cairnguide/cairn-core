@@ -1,0 +1,1312 @@
+{
+  "spec": {
+    "id": "cairn-account-setup",
+    "title": "Cairn new account setup use cases",
+    "version": "3.2.0",
+    "date": "2026-10-06",
+    "scope": "Everything from first arrival through a completed account setup, ending at the hand-off to case creation, plus returning sign-in, sessions, Settings, and account deletion. Case creation and Start journey are in cairn-case-creation-use-cases-v32.json. Crisis behavior is in cairn-support-crisis-plan-v32.json.",
+    "source_of_truth": "https://trello.com/c/nCJTOytG",
+    "supersedes": "cairn-account-use-cases-v31.json (v3.1.0) and all earlier account and registration files.",
+    "status": "Approved for build. User-facing copy pending legal review. D-14, D-19, D-20 confirmed 2026-10-06. UC-REG-18 to UC-REG-20 proposed, confirm.",
+    "platform": "Alpha is web browser only. Native iOS and Android notes are marked future_native.",
+    "use_case_ids_note": "UC-REG IDs are kept stable so existing Trello references stay valid. Order of screens is defined by onboarding_sequence, not by ID number.",
+    "instructions_for_claude_code": [
+      "If an earlier account spec (cairn-account-use-cases.json or -v21.json) is already in the repo, merge this version into it rather than overwriting blindly. Where they disagree, this version reflects decisions through 2026-10-06. List every conflict you resolved.",
+      "Retired files: cairn-registration-use-cases.json v1.1.0, cairn-account-use-cases.json v2.0.0, and cairn-account-use-cases-v21.json. Do not implement from them.",
+      "cairn-take-a-break-use-cases-v32.json owns the Take a break control and every break screen. Do not build break behavior from this file.",
+      "This spec owns the account entity. cairn-case-creation-use-cases-v32.json and cairn-support-crisis-plan-v32.json reference its fields. Where the crisis plan differs on crisis behavior, the crisis plan wins. Report any difference you find.",
+      "Compare the existing registration and onboarding code against every use case below. Report which use cases are satisfied, partially satisfied, or missing, then implement the changes.",
+      "Treat data_requirements as the target shape. Adapt names to the existing schema, migrations, and RLS policies in cairn-core rather than duplicating tables.",
+      "Enforce data_boundary in code and tests, not only in UI. No field, column, API parameter, or log line created by this flow may hold anything listed under never_collected_at_setup.",
+      "User-facing strings in copy must be used verbatim and stored so they can be versioned and replaced after legal review.",
+      "Every flow follows the conversational principles: acknowledge first, one question per screen, offer rather than demand, always leave a clear next action.",
+      "Items marked legal_review must be implemented as written but kept easy to change.",
+      "Do not use em dashes in any user-facing copy."
+    ],
+    "changelog_v2_1": [
+      "Merged the remaining content of cairn-registration-use-cases.json v1.1.0 into this file. That file is retired.",
+      "Decision ID collision fixed. v1.1.0 used D-11 for the care rest trial pause and v2.0.0 used D-11 for no name from sign-in providers. D-11 is now a retired pointer to the care rest rule (DEC-26-01, owned by the case creation and crisis plan specs). No name from sign-in providers is now D-16.",
+      "Restored the Apple subscription disclosure requirement (price, renewal term, what is included, how to cancel, before purchase) as D-18 and a UC-REG-08 acceptance criterion, pending a subscribe spec.",
+      "Restored dropped legal_review items: age gate approach and under-18 handling (UC-REG-06), pending-account cleanup period (UC-REG-10), and voice design against SB 243 human-likeness concerns (UC-REG-12).",
+      "New D-17 (proposed, confirm): tapping I need a moment always shows the 988 line as a quiet optional line, matching v1.1.0 behavior and card 26 level 3 guidance to offer 988 for any emotional distress.",
+      "trial_summary now tells the user, before they check the box, that a care rest pauses their free days. Wording carried over from v1.1.0.",
+      "Restored the acceptance criterion that the 988 line appears in the AI notice (UC-REG-09).",
+      "Restored source links: Apple data use and sharing (UC-REG-07), Apple subscriptions (UC-REG-08), Apple account deletion (UC-ACCT-01).",
+      "Added related specs pointing to the case creation spec for the trial clock, care rest math, and trial reminders."
+    ],
+    "suite": {
+      "name": "Cairn signup through first journey, v3.1 suite",
+      "files": {
+        "cairn-account-use-cases-v32.json": "Owns the account entity (including break fields), sign-in, sessions, setup acknowledgments, preferred name, voice, notification preferences, Settings, and account deletion.",
+        "cairn-case-creation-use-cases-v32.json": "Owns cases, intake, journey selection, Start journey, the home screen, and action confirmations.",
+        "cairn-support-crisis-plan-v32.json": "Owns crisis detection, care levels, care rest triggers and the trial pause, the follow-up check-in, and support resources. Wins on crisis behavior.",
+        "cairn-take-a-break-use-cases-v32.json": "Owns the Take a break control, every break screen, Cairn's rest offers, what is sent or held during a break, the break-ending notice, and coming back.",
+        "cairn-subscription-use-cases-v33.json": "Owns subscribing, Stripe checkout and events, renewal, failed payments, cancelling, and subscription notices."
+      },
+      "rule": "Each decision and each field has exactly one owner file. Other files reference it by ID and do not restate it."
+    },
+    "changelog_v3": [
+      "Account entity now has one owner. Trial, access, subscription, and check-in fields that were split between this spec and the case creation spec are all defined here (D-19). The case spec references them.",
+      "account.status now tracks only setup lifecycle (pending_onboarding, setup_complete, pending_deletion). Read-only access and subscription state move to account.access and account.subscription_status, matching the case spec. trial_active, read_only, and subscribed are removed from status.",
+      "trial_ends_at formula now includes care rest time, matching the crisis plan and case spec.",
+      "Notification preferences: setup stays the single place channels and frequency are chosen (D-13). Due date lead time and inactivity notices are added to the same record and asked at journey confirmation (case UC-CASE-19). Case UC-CASE-20 merged into UC-REG-17.",
+      "Copy fix: the in-app channel label read 'Only inside Cairn' while being always on next to email. Now 'Inside Cairn, when I sign in (always on)'.",
+      "Copy fix: notify_service_notice said the trial note is 'always' emailed, which conflicted with the crisis plan rule that nothing goes outside Cairn during a rest. Wording now matches.",
+      "D-14 linked to case OPEN-02 so trial reminder timing and channel are decided once.",
+      "D-17 now points to crisis plan DEC-26-07, which owns break controls.",
+      "Gaps filled: UC-REG-18 Sign in as a returning user, UC-REG-19 Sign out and session timeout, UC-REG-20 Can't get into the sign-in email.",
+      "Gaps filled in UC-REG-04: magic link opened in a different browser or device, and email security scanners using up single-use links.",
+      "Gaps filled: Support resources link on the welcome screen and every setup screen. 988 line added to the under-18 answer. Read this to me on every setup screen.",
+      "UC-REG-09 now cites New York General Business Law section 1702 alongside SB 243, and counts as the session-start AI reminder for that day (case UC-CASE-23).",
+      "UC-REG-13 and UC-REG-16 now hand off to a defined home screen (case UC-CASE-25) and to draft resume (case UC-CASE-10).",
+      "UC-ACCT-01 now cancels a scheduled check-in and reminders, follows the crisis plan rule against account actions at level 4, and sends its confirmation through case UC-CASE-21.",
+      "UC-REG-14 now defers to the crisis plan for levels and stores a check-in on the account."
+    ],
+    "changelog_v3_1": [
+      "D-14 confirmed: the trial-ending note is emailed 7 days before trial_ends_at, and shown in Cairn.",
+      "D-19 confirmed: one account state model.",
+      "D-20 confirmed: sign out after 5 minutes with no activity. That is stricter than NIST AAL3, whose limit is 15 minutes. A warning with a Stay signed in button comes first, as WCAG 2.2 AA requires.",
+      "OPEN-11 resolved: email is pre-selected at signup.",
+      "One break label everywhere: I need a moment is retired and replaced by Take a break (take a break file BRK-D-01). UC-REG-14 break behavior migrated to cairn-take-a-break-use-cases-v31.json UC-BRK-03. UC-REG-14 now covers only distress during setup.",
+      "Account entity gains break fields (owned here, used by cairn-take-a-break-use-cases-v31.json).",
+      "notify_service_notice copy now says a week."
+    ],
+    "changelog_v3_2": [
+      "trial_summary now says the care rest pause applies only to the free days, and that a break never pauses or changes a subscription (take a break BRK-D-08). This is a new copy version, so the trial acknowledgment is versioned up.",
+      "trial_clock_paused_at is set only while the free days are running."
+    ]
+  },
+  "principles": {
+    "conversational": [
+      "Acknowledge the person's situation before asking anything.",
+      "Ask one question at a time.",
+      "Offer next steps rather than demanding information.",
+      "Never leave the user without a clear next action."
+    ],
+    "audience": "Design for the least tech-comfortable user: surviving spouse, adult child acting as executor, power of attorney, or professional fiduciary.",
+    "accessibility": [
+      "Meet WCAG 2.2 AA.",
+      "Follow federal plain language guidelines at about an 8th grade reading level.",
+      "Touch and click targets at least 44x44 px.",
+      "Never rely on color alone to carry meaning.",
+      "Buttons carry text labels, not icons alone.",
+      "Every screen works with keyboard only and with a screen reader.",
+      "Read this to me is available on every setup screen, including the full Privacy Policy, trial, and AI notices."
+    ],
+    "safety_invariants": [
+      "The crisis protocol, AI disclosure, attorney referral rules, and citation requirements apply on every screen and cannot be changed by any setting, including voice.",
+      "Cairn never presents itself as a human, attorney, therapist, counselor, or medical professional.",
+      "The Support resources link and the Take a break control are on every screen (cairn-take-a-break-use-cases-v32.json UC-BRK-01, crisis plan support_resources)."
+    ]
+  },
+  "data_boundary": {
+    "summary": "Account setup collects only what is needed to sign in, address the user kindly, and reach them the way they asked. No PII beyond a sign-in email, no PHI, and no financial information.",
+    "collected_at_setup": [
+      {
+        "item": "Sign-in email address",
+        "why": "Required to create and recover the account and to send the notices the user chooses. May be an Apple private relay address."
+      },
+      {
+        "item": "Auth provider and provider subject ID",
+        "why": "Required to sign the user in."
+      },
+      {
+        "item": "Adult attestation (true or false) with timestamp",
+        "why": "Eligibility under the Terms of Use. No birthdate or age is stored."
+      },
+      {
+        "item": "Consent records",
+        "why": "Proof of what the user acknowledged and which version."
+      },
+      {
+        "item": "Preferred name",
+        "why": "How Cairn addresses the user. Not a legal name. Free text, validated."
+      },
+      {
+        "item": "Optional pronunciation hint",
+        "why": "For future spoken replies."
+      },
+      {
+        "item": "Cairn voice choice",
+        "why": "Sets conversational tone."
+      },
+      {
+        "item": "Notification channels, frequency, and quiet hours",
+        "why": "Cairn only notifies the way the user chose."
+      },
+      {
+        "item": "Browser time zone",
+        "why": "Read from the browser, never asked. Used for quiet hours and dates."
+      },
+      {
+        "item": "Browser push subscription endpoint",
+        "why": "Only if the user turns on browser notifications. Deleted when turned off or on account deletion."
+      },
+      {
+        "item": "Follow-up check-in time, only if the user says yes after a hard moment",
+        "why": "Crisis plan DEC-26-04. Holds a time only, never a reason."
+      }
+    ],
+    "never_collected_at_setup": [
+      "Legal name, date of birth, or exact age",
+      "Phone number (SMS is not offered at setup, see D-12)",
+      "Mailing or physical address",
+      "Social Security number, any part of it",
+      "Government ID numbers",
+      "Any health, medical, mental health, or cause of death information (PHI)",
+      "Payment card, bank, or any financial account information",
+      "Information about the person who died (collected later in case creation)",
+      "Profile photo or name from Google or Apple (not requested, see D-16)",
+      "Contacts, location, or device identifiers beyond the push endpoint"
+    ],
+    "enforcement": [
+      "The account setup API rejects any field not listed in collected_at_setup.",
+      "OAuth requests ask only for the openid and email scopes. Do not request profile or name scopes.",
+      "The preferred name field is limited to 50 characters and rejects input containing 5 or more digits, so numbers such as SSNs or card numbers cannot be stored there.",
+      "Application and error logs never record the preferred name or email in plain text.",
+      "Automated tests assert that no column added by this flow matches any never_collected_at_setup item."
+    ]
+  },
+  "decisions": [
+    {
+      "id": "D-01",
+      "topic": "Sign-in methods",
+      "decision": "Offer Google, Sign in with Apple, and email. On native iOS later, Apple sign-in is required whenever Google is offered.",
+      "source": "https://developer.apple.com/app-store/review/guidelines/#login-services",
+      "applies": "now (web), required future_native"
+    },
+    {
+      "id": "D-02",
+      "topic": "Trial length",
+      "decision": "Free trial is 4 weeks, exactly 28 days. Copy always says 28 days."
+    },
+    {
+      "id": "D-03",
+      "topic": "Trial start",
+      "decision": "The 28-day clock starts when the user taps Start journey on their first case. Account setup never starts it."
+    },
+    {
+      "id": "D-04",
+      "topic": "Trial scope and price",
+      "decision": "One trial per account. After the trial, one subscription at $14.99 a month covers the whole account and all cases."
+    },
+    {
+      "id": "D-05",
+      "topic": "Trial end",
+      "decision": "On day 29 without a subscription the account becomes read-only. Nothing is deleted and nothing is charged."
+    },
+    {
+      "id": "D-06",
+      "topic": "No financial data at setup",
+      "decision": "No payment method or financial information is collected during setup or the trial."
+    },
+    {
+      "id": "D-07",
+      "topic": "Marketing and advertising",
+      "decision": "Cairn never uses user or decedent data for marketing or advertising."
+    },
+    {
+      "id": "D-08",
+      "topic": "Account deletion",
+      "decision": "Users can delete their account and all data at any time, no questions asked. Always free."
+    },
+    {
+      "id": "D-09",
+      "topic": "AI disclosure",
+      "decision": "Setup includes the SB 243 AI guide notice exactly as quoted in the Privacy Policy and Terms of Use.",
+      "source": "https://legiscan.com/CA/text/SB243/"
+    },
+    {
+      "id": "D-10",
+      "topic": "Email sign-in",
+      "decision": "Passwordless magic link by default. If passwords are added, follow NIST SP 800-63B-4.",
+      "source": "https://pages.nist.gov/800-63-4/sp800-63b.html"
+    },
+    {
+      "id": "D-11",
+      "topic": "Care rest pauses the trial (retired ID, pointer only)",
+      "decision": "In v1.1.0, D-11 recorded DEC-26-01: a care rest pauses the 28-day free period and trial_ends_at moves later by the paused time. That rule is unchanged but is owned by the case creation spec (trial fields) and the support and crisis plan (card 26). Account setup never starts or pauses the trial clock. Do not reuse this ID.",
+      "source": "cairn-support-crisis-plan-v32.json DEC-26-01, cairn-case-creation-use-cases-v32.json UC-CASE-12"
+    },
+    {
+      "id": "D-12",
+      "topic": "Notification channels at setup",
+      "decision": "Setup offers email, in-app, and browser notifications. Text messages are not offered because they require a phone number. SMS can be added later with its own consent step.",
+      "source": "https://www.fcc.gov/general/telemarketing-and-robocalls"
+    },
+    {
+      "id": "D-13",
+      "topic": "When notification preferences are chosen",
+      "decision": "Notification channel and frequency are chosen during account setup. This replaces the earlier plan to choose them at journey setup. Journey setup may show them again for confirmation but does not ask from scratch.",
+      "supersedes": "case DEC-08 (notifications chosen at journey setup)",
+      "resolves": [
+        "case OPEN-04: notification preferences are account-wide, not per journey",
+        "case OPEN-08: a draft user now always has channels for a check-in"
+      ],
+      "detail": "Channels and frequency are asked at setup (UC-REG-15). Due date lead time and inactivity notices are asked when the first journey is confirmed (case UC-CASE-19), because they only matter once there are tasks."
+    },
+    {
+      "id": "D-14",
+      "topic": "Service notices",
+      "decision": "Sign-in links, confirmations of actions the user takes, and account or security notices always go to the sign-in email, regardless of reminder preferences. The trial-ending note is emailed 7 days before trial_ends_at and also shown in Cairn. If trial_ends_at moves (care rest), the note is rescheduled. If the note falls during a break, it shows only inside Cairn (take a break UC-BRK-08, confirmed rule from crisis plan 2026-09-29).",
+      "status": "Confirmed by Mara 2026-10-06",
+      "linked_open_decision": "case OPEN-02, now resolved by this decision."
+    },
+    {
+      "id": "D-15",
+      "topic": "Voices",
+      "decision": "Four voices: Steady and Direct, Warm and Patient, Brisk and Businesslike, Plain and Practical. Choose for me selects Steady and Direct."
+    },
+    {
+      "id": "D-16",
+      "topic": "No name from sign-in providers",
+      "decision": "Cairn does not request the name or photo from Google or Apple. It asks the user what they would like to be called. This keeps setup to the minimum data needed.",
+      "renumbered_from": "D-11 in v2.0.0"
+    },
+    {
+      "id": "D-17",
+      "topic": "988 line on the setup break control (retired)",
+      "decision": "Retired. The setup control is now Take a break (cairn-take-a-break-use-cases-v32.json BRK-D-01). The 988 line on break screens is cairn-take-a-break-use-cases-v32.json BRK-D-04.",
+      "status": "retired 2026-10-06",
+      "rationale": "v2.0.0 showed 988 only when distress language was present. The tap itself is a signal, and card 26 level 3 says to offer 988 for any emotional distress.",
+      "source": "cairn-take-a-break-use-cases-v32.json"
+    },
+    {
+      "id": "D-18",
+      "topic": "Subscription disclosure before purchase",
+      "decision": "Before any purchase, the subscription screen shows the price, renewal term, what is included, and how to cancel. Required on native iOS and adopted now for the web alpha.",
+      "source": "https://developer.apple.com/app-store/review/guidelines/#subscriptions",
+      "applies": "now (web), required future_native",
+      "owner": "Subscribe spec (not yet written). Tracked here until that spec exists."
+    },
+    {
+      "id": "D-19",
+      "topic": "One account state model",
+      "decision": "account.status tracks setup lifecycle only. account.access (full or read_only) and account.subscription_status (none, active, lapsed) track billing state. Trial dates live on the account. This spec owns all of these fields. The case spec and crisis plan reference them.",
+      "status": "Confirmed by Mara 2026-10-06",
+      "reason": "v2.1 put read_only and subscribed in account.status while case v2 kept access and subscription_status, giving two sources of truth for read-only."
+    },
+    {
+      "id": "D-20",
+      "topic": "Session length",
+      "decision": "Users are signed out after 5 minutes with no activity, because case views can show sensitive information. This is stricter than NIST SP 800-63B-4, whose strictest inactivity limit is 15 minutes at AAL3. Before signing out, Cairn shows copy.timeout_warning with a Stay signed in button and at least 20 seconds to respond (WCAG 2.2 success criterion 2.2.1). Overall, users sign in again at least every 30 days (NIST AAL1). Both values are config.",
+      "status": "Confirmed by Mara 2026-10-06",
+      "source": [
+        "https://pages.nist.gov/800-63-4/sp800-63b.html",
+        "https://www.w3.org/WAI/WCAG22/Understanding/timing-adjustable.html"
+      ],
+      "source_note": "SP 800-63B-4 sections 2.1.3, 2.2.3, 2.3.3: inactivity limits are none required at AAL1, at most 1 hour at AAL2, at most 15 minutes at AAL3. These are maximums, so 5 minutes is allowed.",
+      "usability_note": "Email users sign in again with a new magic link after each timeout. Monitor this in usability testing with the least tech-comfortable users."
+    }
+  ],
+  "onboarding_sequence": [
+    "UC-REG-01 Welcome",
+    "UC-REG-02, UC-REG-03, or UC-REG-04 Create account (UC-REG-05 if the account exists)",
+    "UC-REG-06 Adult confirmation",
+    "UC-REG-07 Privacy Policy and Terms acknowledgment",
+    "UC-REG-08 Free trial acknowledgment",
+    "UC-REG-09 AI guide acknowledgment",
+    "UC-REG-11 Preferred name",
+    "UC-REG-12 Cairn voice",
+    "UC-REG-15 Notification preferences",
+    "UC-REG-16 Setup complete and hand-off to case creation"
+  ],
+  "available_on_every_screen": [
+    "Take a break (cairn-take-a-break-use-cases-v32.json UC-BRK-01)",
+    "UC-REG-13 Leave and resume (automatic)",
+    "Support resources link (crisis plan support_resources)",
+    "Read this to me"
+  ],
+  "after_setup": [
+    "UC-REG-17 Change setup choices later",
+    "UC-REG-18 Sign in as a returning user",
+    "UC-REG-19 Sign out and session timeout",
+    "UC-REG-20 Can't get into the sign-in email",
+    "UC-ACCT-01 Delete account"
+  ],
+  "copy": {
+    "welcome_acknowledgment": "We're sorry you're here. Cairn will walk with you one step at a time.",
+    "welcome_not_ready_link": "Not ready to sign up? See what the first weeks look like.",
+    "oauth_cancelled": "No problem. You can choose another way whenever you're ready.",
+    "email_question": "What email would you like to use for Cairn?",
+    "email_check_inbox": "Check your inbox for a link from Cairn. It may take a minute.",
+    "account_exists": "It looks like you already have a Cairn account. Last time you signed in with {provider}.",
+    "age_question": "Are you 18 or older?",
+    "age_under_18": "Cairn is built for adults handling these tasks. If you're helping a family member, they can create an account.",
+    "privacy_terms_summary": "Your privacy matters, especially right now. Cairn never uses your information, or information about the person who died, for marketing or advertising. We do not sell it or share it for ads. We use it only to help you with the steps in front of you. You can delete your account and your information at any time from Settings.",
+    "privacy_terms_checkbox": "I have read and agree to the Privacy Policy and Terms of Use.",
+    "trial_summary": "Cairn is free for 28 days, and we will not ask for a card. Your 28 days begin when you start your journey on your first case, so nothing counts down while you get settled. Once they begin, they keep counting even if you pause. There is one exception: if things become too much and Cairn suggests a rest, your free days stop counting until you come back. This applies only to your free days. Once you subscribe, taking a break doesn't pause or change your subscription. After 28 days, Cairn is $14.99 a month for your whole account. If you do not subscribe, your account becomes read-only on day 29. Nothing is deleted and nothing is charged. We will remind you before your free time ends.",
+    "trial_checkbox": "I understand that 28 days after I start my journey, I will need a subscription to keep using Cairn fully.",
+    "ai_notice": "Before we begin, an important notice. Cairn is an artificial intelligence (AI) guide. It is not a human. It is not an attorney and cannot give legal advice. It is not a therapist, counselor, or medical professional. Cairn helps you organize the steps after a death and points you to official instructions, and it can make mistakes. Whenever your situation calls for an attorney, a therapist, or crisis support, Cairn will always tell you and point you to one. If you are in crisis, you can call or text 988, or chat at 988lifeline.org, any time.",
+    "ai_notice_legal": "This notice is provided consistent with the disclosure requirements of California Senate Bill 243 (2025), which requires that you be told clearly that you are interacting with an artificially generated assistant and not a human.",
+    "ai_checkbox": "I understand Cairn is an AI guide, not a human, attorney, or therapist, and is not a substitute for professional advice.",
+    "ai_persistent_label": "AI guide",
+    "decline_acknowledgment": "That's okay. You can't use Cairn without agreeing, but you're not stuck.",
+    "preferred_name_question": "What would you like me to call you?",
+    "preferred_name_helper": "A first name or nickname is perfect. Please don't enter numbers or personal details here.",
+    "preferred_name_invalid": "That looks like it might include a number or personal detail. Could you try just the name you'd like me to use?",
+    "pronunciation_link": "Add how to say it",
+    "voice_question": "How would you like me to talk with you? You can change this anytime.",
+    "voice_sample_intro": "Here's how each one sounds when it's time to order death certificates.",
+    "voice_steady_direct_label": "Steady and Direct",
+    "voice_steady_direct_description": "Just the next step, clearly stated.",
+    "voice_steady_direct_sample": "Your next step is ordering certified copies of the death certificate. Most families need between 5 and 10. I'll show you where to order them.",
+    "voice_warm_patient_label": "Warm and Patient",
+    "voice_warm_patient_description": "Room to take things in before moving on.",
+    "voice_warm_patient_sample": "There's no rush. When you're ready, the next thing to do is order copies of the death certificate. Many places will ask for one, so it helps to have a few. We can look at it together whenever you'd like.",
+    "voice_brisk_businesslike_label": "Brisk and Businesslike",
+    "voice_brisk_businesslike_description": "Treat it like a project to close out.",
+    "voice_brisk_businesslike_sample": "Next task: order 5 to 10 certified death certificates. They unlock most of the steps that follow. Here's where to order.",
+    "voice_plain_practical_label": "Plain and Practical",
+    "voice_plain_practical_description": "No soft words, just what's true and what's next.",
+    "voice_plain_practical_sample": "Banks, Social Security, and insurers will each want a certified death certificate. Order 5 to 10 copies now. Here's where.",
+    "voice_default_button": "Choose for me",
+    "voice_confirm": "Thank you, {preferred_name}. I'll talk with you this way. You can change it anytime in Settings.",
+    "notify_intro": "Last thing. I'll only reach out the way you choose.",
+    "notify_channel_question": "When something needs your attention, how should I let you know? You can pick more than one.",
+    "notify_channel_email": "Email to {email}",
+    "notify_channel_inapp": "Inside Cairn, when I sign in (always on)",
+    "notify_channel_browser": "A notification in this browser",
+    "notify_browser_permission_pre": "Your browser will now ask if Cairn can send notifications. Choose Allow to turn them on.",
+    "notify_browser_denied": "That's okay. Browser notifications are off. You can turn them on later in Settings.",
+    "notify_frequency_question": "How often would you like to hear from me?",
+    "notify_frequency_due_only": "Only when something is due or needs me",
+    "notify_frequency_daily": "A short daily summary",
+    "notify_frequency_weekly": "A short weekly summary",
+    "notify_frequency_none": "No reminders. I'll check in on my own.",
+    "notify_quiet_hours_note": "I won't send anything between 9 PM and 8 AM your time. You can change that in Settings.",
+    "notify_service_notice": "Whatever you choose, I'll always send sign-in links and confirmations of things you do in Cairn to {email}. I'll also send a note there a week before your free time ends, unless you're taking a break.",
+    "setup_complete": "You're all set, {preferred_name}. Here's what you chose.",
+    "setup_complete_summary": "Voice: {voice}. Reminders: {frequency}, by {channels}. Confirmations go to {email}.",
+    "setup_complete_next": "When you're ready, the next step is to tell me a little about the person who died. Your 28 free days won't start until you start your journey.",
+    "setup_complete_primary_button": "Start a case",
+    "setup_complete_secondary_button": "Not yet. Take me to my home screen.",
+    "resume_onboarding": "Welcome back. You were almost done. Let's pick up where you left off.",
+    "crisis_resource": "You can call or text 988, or chat at 988lifeline.org, any time. Veterans can call 988 and press 1, or text 838255.",
+    "settings_saved": "Saved. {confirmation_destination}",
+    "age_under_18_support": "If you want to talk to someone right now, you can call or text 988 any time.",
+    "support_resources_link": "Support resources",
+    "read_this_to_me": "Read this to me",
+    "magic_link_landing": "Select Continue to finish signing in to Cairn.",
+    "magic_link_landing_button": "Continue",
+    "magic_link_other_device": "You signed in from a different browser or device. You can keep going there, or I can send a new link so you can sign in here.",
+    "signin_welcome_back": "Welcome back, {preferred_name}. Everything is where you left it.",
+    "session_timed_out": "For your privacy, you were signed out after a while with no activity. Everything is saved. Sign in again whenever you're ready.",
+    "signed_out": "You're signed out. Everything is saved.",
+    "signout_shared_device_tip": "If you're on a shared or public computer, sign out when you're done.",
+    "recovery_intro": "If you can't get into the email you use for Cairn, our support team can help. We'll ask a few questions to make sure it's really you.",
+    "checkin_email_ask_setup": "Would it be okay to send that to {email}, or only show it here?",
+    "take_a_break_control": "Take a break",
+    "timeout_warning": "Would you like to stay signed in? To keep your information private, I'll sign you out soon if there's no activity.",
+    "timeout_warning_button": "Stay signed in"
+  },
+  "data_requirements": {
+    "note": "Suggested shape. Map onto the existing relational schema and RLS policies in cairn-core. Field names are illustrative.",
+    "account": {
+      "fields": {
+        "id": "uuid",
+        "email": "string, verified. May be an Apple private relay address.",
+        "auth_provider": "enum: google | apple | email",
+        "provider_subject_id": "string, unique per provider",
+        "adult_attested": "boolean",
+        "adult_attested_at": "timestamp",
+        "preferred_name": "string, max 50, validated per data_boundary.enforcement",
+        "name_pronunciation": "string, max 80, nullable",
+        "voice": "enum: steady_direct | warm_patient | brisk_businesslike | plain_practical. Default steady_direct.",
+        "time_zone": "IANA string read from the browser",
+        "onboarding_step": "enum of the last completed step, used by UC-REG-13",
+        "status": "enum: pending_onboarding | setup_complete | pending_deletion. Setup lifecycle only (D-19).",
+        "trial_started_at": "timestamp, nullable. Set once, in the same transaction that moves the first case from draft to active (case UC-CASE-12). Never reset. Never written by account setup.",
+        "trial_ends_at": "timestamp, nullable. trial_started_at plus 28 days plus the total length of every care rest (crisis plan DEC-26-01).",
+        "created_at": "timestamp",
+        "access": "enum: full | read_only. Default full (D-19).",
+        "subscription_status": "enum: none | active | lapsed. Default none (D-19).",
+        "trial_clock_paused_at": "timestamp, nullable. Set when a care rest starts on an active journey, only while the free days are running. Never set for a subscribed user whose free days have ended. Cleared when the rest ends. The reason is never stored.",
+        "trial_reminder_sent_at": "timestamp, nullable.",
+        "check_in_at": "timestamp, nullable. Crisis plan DEC-26-04. Set only on a yes. Cleared when sent.",
+        "check_in_case_id": "uuid, nullable. Used only to cancel the check-in if that case is deleted.",
+        "last_active_at": "timestamp. Used for the 5-minute inactivity timeout (D-20).",
+        "break_started_at": "timestamp, nullable. cairn-take-a-break-use-cases-v32.json.",
+        "break_until": "timestamp, nullable. Null with break_started_at set means Until I come back.",
+        "break_notice_at": "timestamp, nullable. 24 hours before break_until, adjusted for quiet hours (cairn-take-a-break-use-cases-v32.json UC-BRK-09).",
+        "break_notice_sent_at": "timestamp, nullable.",
+        "trial_note_at": "timestamp, nullable. trial_ends_at minus 7 days (D-14). Recomputed when trial_ends_at moves."
+      },
+      "rules": [
+        "Account setup never writes trial_started_at, trial_ends_at, or trial_clock_paused_at.",
+        "trial_started_at is written once, in the Start journey transaction for the first case, and only if null.",
+        "When a care rest ends, add (now minus trial_clock_paused_at) to trial_ends_at and clear trial_clock_paused_at.",
+        "When now is at or after trial_ends_at, subscription_status is not active, and trial_clock_paused_at is null, set access to read_only. Delete nothing.",
+        "Read-only means cases and tasks can be viewed but not created or edited, except that a draft can be created and edited (case UC-CASE-18). Settings, account deletion, support resources, and subscribing stay available.",
+        "Display all dates in account.time_zone.",
+        "No break or care rest ever changes subscription_status, the Stripe subscription, or any billing date (take a break BRK-D-08)."
+      ]
+    },
+    "notification_preferences": {
+      "fields": {
+        "account_id": "uuid, one row per account",
+        "channels": "array of enum: email | in_app | browser. in_app is always included. text is reserved for post-alpha (case OPEN-05) and needs its own consent step (D-12).",
+        "frequency": "enum: due_only | daily | weekly | none",
+        "quiet_hours_start": "time, default 21:00 local",
+        "quiet_hours_end": "time, default 08:00 local",
+        "browser_push_endpoint": "string, nullable. Only when browser is chosen and permission granted.",
+        "updated_at": "timestamp",
+        "due_date_lead": "enum: day_before | three_days | one_week. Asked at case UC-CASE-19. Default three_days (case OPEN-03).",
+        "inactivity_after": "enum: off | three_days | one_week | two_weeks. Asked at case UC-CASE-19. Default off (case OPEN-03).",
+        "scope_note": "One row per account. Applies to every case (D-13 resolves case OPEN-04)."
+      },
+      "rules": [
+        "Reminder and inactivity notices follow channels, frequency, and quiet hours exactly.",
+        "Service notices (D-14) always go to the account email and also appear in-app.",
+        "If browser permission is revoked, remove browser from channels and clear the endpoint.",
+        "Notification text never includes a case display name, the circumstance, or task details (case UC-CASE-19).",
+        "During a break, follow cairn-take-a-break-use-cases-v32.json UC-BRK-08 for what is sent and held."
+      ]
+    },
+    "consent_record": {
+      "fields": {
+        "id": "uuid",
+        "account_id": "uuid",
+        "consent_type": "enum: privacy_terms | trial_terms | ai_notice",
+        "document_version": "string",
+        "accepted_at": "timestamp",
+        "auth_provider": "enum",
+        "client": "string, browser and app version"
+      },
+      "rules": [
+        "Append-only. Removed only by full account deletion.",
+        "A new document version requires a new acknowledgment at next sign-in."
+      ]
+    }
+  },
+  "use_cases": [
+    {
+      "id": "UC-REG-01",
+      "title": "Arrive at the welcome screen",
+      "actor": "Prospective user",
+      "preconditions": [
+        "User is not signed in."
+      ],
+      "trigger": "User opens Cairn in a browser.",
+      "main_flow": [
+        "Show copy.welcome_acknowledgment before any request.",
+        "Show three equally weighted choices: Continue with Google, Continue with Apple, Continue with email.",
+        "Show a link: Already have an account? Sign in.",
+        "Show copy.welcome_not_ready_link, which opens https://cairnguide.app/journey.",
+        "Show copy.support_resources_link, which opens the Support resources page without signing in (crisis plan support_resources)."
+      ],
+      "alternate_flows": [],
+      "postconditions": [
+        "User has chosen a sign-in method or left with a next step."
+      ],
+      "acceptance_criteria": [
+        "No personal data is requested on this screen.",
+        "Meets the accessibility principles.",
+        "Support resources link is visible before sign-in (crisis plan AC-26-10)."
+      ]
+    },
+    {
+      "id": "UC-REG-02",
+      "title": "Create an account with Google",
+      "actor": "Prospective user",
+      "preconditions": [
+        "User chose Continue with Google."
+      ],
+      "trigger": "User completes Google consent.",
+      "main_flow": [
+        "Request only the openid and email scopes.",
+        "Verify the Google ID token server-side.",
+        "Create the account with email, auth_provider google, provider_subject_id, and browser time_zone.",
+        "Continue to UC-REG-06."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "User cancels on Google's screen.",
+          "steps": [
+            "Return to UC-REG-01 and show copy.oauth_cancelled."
+          ]
+        },
+        {
+          "condition": "Email already belongs to a Cairn account.",
+          "steps": [
+            "Go to UC-REG-05."
+          ]
+        }
+      ],
+      "postconditions": [
+        "Account exists with status pending_onboarding."
+      ],
+      "acceptance_criteria": [
+        "Token verification happens on the server.",
+        "No name or photo is requested or stored from Google."
+      ]
+    },
+    {
+      "id": "UC-REG-03",
+      "title": "Create an account with Apple",
+      "actor": "Prospective user",
+      "preconditions": [
+        "User chose Continue with Apple."
+      ],
+      "trigger": "User completes Sign in with Apple on the web.",
+      "main_flow": [
+        "Request only the email scope.",
+        "Verify the Apple identity token server-side.",
+        "Accept either the real email or a Hide My Email relay address.",
+        "Create the account with auth_provider apple and browser time_zone.",
+        "Continue to UC-REG-06."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "User cancels.",
+          "steps": [
+            "Return to UC-REG-01 and show copy.oauth_cancelled."
+          ]
+        },
+        {
+          "condition": "Email already belongs to a Cairn account.",
+          "steps": [
+            "Go to UC-REG-05."
+          ]
+        }
+      ],
+      "postconditions": [
+        "Account exists with status pending_onboarding."
+      ],
+      "acceptance_criteria": [
+        "Sign in with Apple for the web is configured with a Services ID and verified domain.",
+        "Cairn's sending domain is registered with Apple's Private Email Relay Service and authenticated with SPF and DKIM, so magic links, confirmations, and reminders reach relay addresses.",
+        "Sending stays under the relay limit of 100 emails per day per address."
+      ],
+      "sources": [
+        "https://developer.apple.com/documentation/signinwithapple/configuring-your-environment-for-sign-in-with-apple",
+        "https://developer.apple.com/documentation/signinwithapple/communicating-using-the-private-email-relay-service"
+      ]
+    },
+    {
+      "id": "UC-REG-04",
+      "title": "Create an account with email",
+      "actor": "Prospective user",
+      "preconditions": [
+        "User chose Continue with email."
+      ],
+      "trigger": "User submits an email address.",
+      "main_flow": [
+        "Ask copy.email_question. Ask for nothing else.",
+        "Send a magic sign-in link and show copy.email_check_inbox.",
+        "The link opens a Cairn page showing copy.magic_link_landing and copy.magic_link_landing_button. The link token is used only when the user selects Continue.",
+        "Mark the email verified and create the account with auth_provider email and browser time_zone.",
+        "Continue to UC-REG-06."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "Link expired.",
+          "steps": [
+            "Show a single Send a new link button."
+          ]
+        },
+        {
+          "condition": "No email after 60 seconds.",
+          "steps": [
+            "Offer Resend and a prompt to check the spelling."
+          ]
+        },
+        {
+          "condition": "Email already belongs to a Cairn account.",
+          "steps": [
+            "Go to UC-REG-05."
+          ]
+        },
+        {
+          "condition": "User opens the link in a different browser or device than the one that asked for it.",
+          "steps": [
+            "Sign the user in where they opened the link and continue setup there.",
+            "If the original tab is still open, show copy.magic_link_other_device with a Send a new link here button."
+          ]
+        },
+        {
+          "condition": "An email security scanner opens the link before the user does.",
+          "steps": [
+            "The scanner reaches only the landing page. The token is not used until a person selects Continue."
+          ]
+        }
+      ],
+      "postconditions": [
+        "Account exists with a verified email and status pending_onboarding."
+      ],
+      "acceptance_criteria": [
+        "Magic link expires after 15 minutes and works once.",
+        "If passwords are ever offered: at least 15 characters when the password is the only factor, allow at least 64, no composition rules, screen against breached-password lists, no forced rotation.",
+        "A GET request to the link never uses up the token. Only the Continue action does.",
+        "Setup progress follows the account, not the browser, so it can continue on any device."
+      ],
+      "sources": [
+        "https://pages.nist.gov/800-63-4/sp800-63b.html"
+      ]
+    },
+    {
+      "id": "UC-REG-05",
+      "title": "Account already exists or user signs in a different way",
+      "actor": "Returning user",
+      "preconditions": [
+        "Submitted email or provider identity matches an existing account."
+      ],
+      "trigger": "Sign-up attempt with an existing identity.",
+      "main_flow": [
+        "Show copy.account_exists with the provider used previously.",
+        "Offer that provider as the primary button.",
+        "After sign-in, resume per UC-REG-13 if setup is not finished."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "User wants to add a second sign-in method.",
+          "steps": [
+            "Require sign-in with the original method before linking."
+          ]
+        }
+      ],
+      "postconditions": [
+        "User is signed in to the existing account or directed to the correct method."
+      ],
+      "acceptance_criteria": [
+        "Never auto-link accounts across providers without verification.",
+        "Support has a documented path to merge an Apple relay account with a real-email account."
+      ]
+    },
+    {
+      "id": "UC-REG-06",
+      "title": "Confirm the user is an adult",
+      "actor": "New user",
+      "preconditions": [
+        "Account created."
+      ],
+      "trigger": "Account creation completes.",
+      "main_flow": [
+        "Ask copy.age_question with Yes and No.",
+        "On Yes, set adult_attested true and adult_attested_at. Continue to UC-REG-07."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "User answers No.",
+          "steps": [
+            "Show copy.age_under_18 followed by copy.age_under_18_support.",
+            "Link to https://cairnguide.app/journey and the Support resources page.",
+            "Stop onboarding. Delete the account record after the pending-account period."
+          ]
+        }
+      ],
+      "postconditions": [
+        "Adult attestation recorded, or onboarding stops."
+      ],
+      "acceptance_criteria": [
+        "No birthdate or numeric age is asked for or stored.",
+        "No further data is collected from a user who answers No."
+      ],
+      "future_native": "When native iOS or Android apps ship, read the app store age signal where state law requires it and treat an under-18 signal like a No answer. Delete the signal after use.",
+      "legal_review": [
+        "Confirm a self-attested adult check is sufficient for the web alpha.",
+        "Confirm the overall age gate approach and the handling of under-18 answers, including the pending-account deletion period."
+      ],
+      "related": "Case UC-CASE-24 covers a user who says they are under 18 later, during case creation. Both follow the same answer to case OPEN-09."
+    },
+    {
+      "id": "UC-REG-07",
+      "title": "Acknowledge the Privacy Policy and Terms of Use",
+      "actor": "New user",
+      "preconditions": [
+        "Adult attested."
+      ],
+      "trigger": "UC-REG-06 completes.",
+      "main_flow": [
+        "Show copy.privacy_terms_summary with links to the full Privacy Policy and Terms of Use.",
+        "Show an unchecked checkbox with copy.privacy_terms_checkbox.",
+        "Enable Continue only when checked.",
+        "Write a consent_record with consent_type privacy_terms."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "User does not agree.",
+          "steps": [
+            "Go to UC-REG-10."
+          ]
+        }
+      ],
+      "postconditions": [
+        "privacy_terms consent recorded."
+      ],
+      "acceptance_criteria": [
+        "Checkbox is never pre-checked.",
+        "Summary text matches the in-product promise quoted in Privacy Policy section 20 exactly.",
+        "The linked policy names the third-party AI provider before any conversation data is sent to it."
+      ],
+      "legal_review": [
+        "Require the no marketing or advertising commitment in the AI provider and every subprocessor contract."
+      ],
+      "sources": [
+        "https://developer.apple.com/app-store/review/guidelines/#data-use-and-sharing"
+      ]
+    },
+    {
+      "id": "UC-REG-08",
+      "title": "Acknowledge the free trial and subscription",
+      "actor": "New user",
+      "preconditions": [
+        "privacy_terms consent recorded."
+      ],
+      "trigger": "UC-REG-07 completes.",
+      "main_flow": [
+        "Show copy.trial_summary.",
+        "Show an unchecked checkbox with copy.trial_checkbox.",
+        "Write a consent_record with consent_type trial_terms."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "User does not agree.",
+          "steps": [
+            "Go to UC-REG-10."
+          ]
+        }
+      ],
+      "postconditions": [
+        "trial_terms consent recorded. trial_started_at remains null."
+      ],
+      "acceptance_criteria": [
+        "No payment method or financial information is requested.",
+        "This flow never writes trial_started_at or trial_ends_at.",
+        "Price shown matches the current subscription price.",
+        "trial_summary explains that a care rest pauses the free days, before the checkbox is shown.",
+        "The later subscription screen shows price, renewal term, what is included, and how to cancel before purchase (D-18).",
+        "trial_summary says breaks never pause or change a subscription (take a break BRK-D-08)."
+      ],
+      "sources": [
+        "https://developer.apple.com/app-store/review/guidelines/#subscriptions"
+      ],
+      "related_specs_note": "Trial fields and rules are defined in this spec (data_requirements.account, D-19). Start journey, the trial confirmation, and reminder timing (OPEN-02) are in cairn-case-creation-use-cases-v32.json. Care rest pauses are in cairn-support-crisis-plan-v32.json."
+    },
+    {
+      "id": "UC-REG-09",
+      "title": "Acknowledge Cairn's use of AI and its limits",
+      "actor": "New user",
+      "preconditions": [
+        "trial_terms consent recorded."
+      ],
+      "trigger": "UC-REG-08 completes.",
+      "main_flow": [
+        "Show copy.ai_notice followed by copy.ai_notice_legal.",
+        "Show an unchecked checkbox with copy.ai_checkbox.",
+        "Write a consent_record with consent_type ai_notice."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "User does not agree.",
+          "steps": [
+            "Go to UC-REG-10."
+          ]
+        }
+      ],
+      "postconditions": [
+        "ai_notice consent recorded."
+      ],
+      "acceptance_criteria": [
+        "Notice text matches Privacy Policy section 10 and the Terms of Use exactly.",
+        "The 988 line appears in the notice.",
+        "copy.ai_persistent_label is visible in every chat view after this step.",
+        "Completing this step counts as the session-start AI reminder for that day (case UC-CASE-23), so the user is not shown a second notice right away."
+      ],
+      "sources": [
+        "https://legiscan.com/CA/text/SB243/",
+        "https://www.nysenate.gov/legislation/laws/GBS/1702",
+        "https://988lifeline.org"
+      ],
+      "legal_review": [
+        "Confirm whether Cairn is a companion chatbot under SB 243 or falls under its exemption.",
+        "Confirm whether Cairn is an AI companion under New York General Business Law Article 47 (section 1702). The same question is open on case UC-CASE-23. Decide once, here.",
+        "Confirm SB 243 citation wording."
+      ]
+    },
+    {
+      "id": "UC-REG-10",
+      "title": "User declines an acknowledgment",
+      "actor": "New user",
+      "preconditions": [
+        "User is on UC-REG-07, UC-REG-08, or UC-REG-09."
+      ],
+      "trigger": "User chooses I'm not sure, or tries to leave without checking the box.",
+      "main_flow": [
+        "Show copy.decline_acknowledgment.",
+        "Offer: read the full document again, view https://cairnguide.app/journey, contact support."
+      ],
+      "alternate_flows": [],
+      "postconditions": [
+        "Account remains pending_onboarding."
+      ],
+      "acceptance_criteria": [
+        "The user is never left without a next action.",
+        "Pending accounts and their consent records are deleted after the period in the retention schedule."
+      ],
+      "legal_review": [
+        "Set the pending-account cleanup period in the retention schedule."
+      ]
+    },
+    {
+      "id": "UC-REG-11",
+      "title": "Provide a preferred name",
+      "actor": "New user",
+      "preconditions": [
+        "All three acknowledgments recorded."
+      ],
+      "trigger": "UC-REG-09 completes.",
+      "main_flow": [
+        "Ask copy.preferred_name_question with copy.preferred_name_helper below the field.",
+        "Offer optional copy.pronunciation_link.",
+        "Validate per data_boundary.enforcement.",
+        "Save preferred_name and optional name_pronunciation."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "Input fails validation.",
+          "steps": [
+            "Show copy.preferred_name_invalid. Do not save or log the rejected input."
+          ]
+        },
+        {
+          "condition": "Input contains distress language.",
+          "steps": [
+            "Go to UC-REG-14."
+          ]
+        }
+      ],
+      "postconditions": [
+        "preferred_name saved."
+      ],
+      "acceptance_criteria": [
+        "The field is empty. It is not pre-filled from any provider.",
+        "Legal name is never asked for in this flow.",
+        "Rejected input is not stored or logged."
+      ]
+    },
+    {
+      "id": "UC-REG-12",
+      "title": "Choose a Cairn voice",
+      "actor": "New user",
+      "preconditions": [
+        "preferred_name saved."
+      ],
+      "trigger": "UC-REG-11 completes.",
+      "main_flow": [
+        "Ask copy.voice_question and show copy.voice_sample_intro.",
+        "Show the four voices as cards, each with its label, description, and sample reply to the same situation.",
+        "Offer copy.voice_default_button, which selects Steady and Direct.",
+        "Save voice.",
+        "Show copy.voice_confirm written in the chosen voice."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "User wants to compare again.",
+          "steps": [
+            "Allow going back to the cards without losing the selection."
+          ]
+        }
+      ],
+      "postconditions": [
+        "voice saved."
+      ],
+      "acceptance_criteria": [
+        "Sample replies are visible without extra taps or hover.",
+        "Voice changes tone only. It never changes the crisis protocol, AI disclosure, attorney referrals, or citations.",
+        "Voices do not use human first names.",
+        "Voice can be changed anytime in Settings (UC-REG-17)."
+      ],
+      "legal_review": [
+        "Review the voice design against SB 243 human-likeness concerns."
+      ]
+    },
+    {
+      "id": "UC-REG-15",
+      "title": "Choose how and how often to be notified",
+      "actor": "New user",
+      "preconditions": [
+        "voice saved."
+      ],
+      "trigger": "UC-REG-12 completes.",
+      "main_flow": [
+        "Show copy.notify_intro.",
+        "Ask copy.notify_channel_question with three options: copy.notify_channel_email, copy.notify_channel_inapp, copy.notify_channel_browser. Email and in-app are pre-selected. In-app is always on and cannot be unchecked.",
+        "If browser is selected, show copy.notify_browser_permission_pre, then request browser notification permission in direct response to the user's tap.",
+        "On the next screen, ask copy.notify_frequency_question with copy.notify_frequency_due_only, copy.notify_frequency_daily, copy.notify_frequency_weekly, and copy.notify_frequency_none. Default is due_only.",
+        "Show copy.notify_quiet_hours_note and copy.notify_service_notice.",
+        "Save notification_preferences."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "Browser permission is denied or dismissed.",
+          "steps": [
+            "Show copy.notify_browser_denied. Remove browser from channels and continue."
+          ]
+        },
+        {
+          "condition": "Browser does not support notifications.",
+          "steps": [
+            "Hide the browser option."
+          ]
+        },
+        {
+          "condition": "User chooses No reminders.",
+          "steps": [
+            "Save frequency none. Service notices still go to email per D-14."
+          ]
+        }
+      ],
+      "postconditions": [
+        "notification_preferences saved."
+      ],
+      "acceptance_criteria": [
+        "Channel and frequency are separate screens, one question each.",
+        "No phone number is requested. Text messages are not an option at setup.",
+        "Browser permission is requested only after the user chooses browser notifications, never on page load.",
+        "Quiet hours use the browser time zone and are not asked during setup.",
+        "No notification is sent outside the user's choices except service notices.",
+        "Due date lead time and inactivity notices are not asked here. They are asked when the first journey is confirmed (case UC-CASE-19).",
+        "Email is pre-selected (case OPEN-11 resolved 2026-10-06)."
+      ],
+      "sources": [
+        "https://developer.mozilla.org/en-US/docs/Web/API/Notifications_API/Using_the_Notifications_API"
+      ]
+    },
+    {
+      "id": "UC-REG-16",
+      "title": "Setup complete and hand-off to case creation",
+      "actor": "New user",
+      "preconditions": [
+        "notification_preferences saved."
+      ],
+      "trigger": "UC-REG-15 completes.",
+      "main_flow": [
+        "Show copy.setup_complete and copy.setup_complete_summary with the user's choices.",
+        "Show copy.setup_complete_next.",
+        "Offer copy.setup_complete_primary_button, which opens case creation (case UC-CASE-01).",
+        "Offer copy.setup_complete_secondary_button, which opens the home screen (case UC-CASE-25).",
+        "Set status to setup_complete and send a welcome confirmation to the sign-in email (case UC-CASE-21).",
+        "Show copy.signout_shared_device_tip once (UC-REG-19)."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "User wants to change a choice.",
+          "steps": [
+            "Each item in the summary links back to its step, then returns here."
+          ]
+        }
+      ],
+      "postconditions": [
+        "Account status is setup_complete. No case exists yet. Trial clock has not started."
+      ],
+      "acceptance_criteria": [
+        "The summary states where confirmations will go.",
+        "Nothing about the person who died is asked on this screen.",
+        "The welcome email contains no personal details beyond the preferred name."
+      ]
+    },
+    {
+      "id": "UC-REG-13",
+      "title": "Leave and resume setup",
+      "actor": "Returning user",
+      "preconditions": [
+        "Setup is not complete, or status is setup_complete with no case."
+      ],
+      "trigger": "User signs in again.",
+      "main_flow": [
+        "Show the session-start AI reminder if due (case UC-CASE-23).",
+        "Show copy.resume_onboarding.",
+        "Resume at the first incomplete step.",
+        "If setup is complete and a draft case exists, resume it (case UC-CASE-10).",
+        "If setup is complete and no case exists, open the home screen (case UC-CASE-25)."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "A policy or notice version changed since the user acknowledged it.",
+          "steps": [
+            "Ask for acknowledgment of the new version before continuing."
+          ]
+        }
+      ],
+      "postconditions": [
+        "User continues from where they left off."
+      ],
+      "acceptance_criteria": [
+        "Completed steps are not repeated unless a version changed.",
+        "No free days are used during setup."
+      ],
+      "legal_review": [
+        "Set the cleanup period for accounts that finish setup but never start a case."
+      ]
+    },
+    {
+      "id": "UC-REG-14",
+      "title": "User shows signs of distress during setup",
+      "actor": "Any user",
+      "preconditions": [
+        "User is anywhere in setup."
+      ],
+      "trigger": "Distress or harm language appears in the preferred name field, or in any free text during setup.",
+      "main_flow": [
+        "Follow the crisis plan for that level (context account_setup).",
+        "Stop the setup flow and save progress.",
+        "After level 3 or 4, offer the follow-up once (crisis plan DEC-26-04). On a yes, set account.check_in_at. If UC-REG-15 is not done yet, ask copy.checkin_email_ask_setup."
+      ],
+      "alternate_flows": [],
+      "postconditions": [
+        "Setup is paused. Progress is saved."
+      ],
+      "acceptance_criteria": [
+        "Crisis plan AC-26-01, AC-26-03, AC-26-10, AC-26-11, and AC-26-12 pass in setup.",
+        "Behavior is identical across voices.",
+        "Distress text entered in the name field is not saved as the name."
+      ],
+      "sources": [
+        "https://988lifeline.org",
+        "https://www.veteranscrisisline.net"
+      ],
+      "defers_to": "cairn-support-crisis-plan-v32.json",
+      "migrated_out": "The Take a break part of this use case moved to cairn-take-a-break-use-cases-v31.json UC-BRK-03."
+    },
+    {
+      "id": "UC-REG-17",
+      "title": "Change setup choices later",
+      "actor": "Signed-in user",
+      "preconditions": [
+        "Setup complete."
+      ],
+      "trigger": "User opens Settings.",
+      "main_flow": [
+        "Show preferred name, pronunciation, voice, notification channels, frequency, due date lead time, inactivity notices, and quiet hours, each editable on its own.",
+        "Read back each change in one line and save it separately. Show copy.settings_saved with where the confirmation was sent.",
+        "Offer a Stop all reminders choice that sets frequency to none in one step, with no persuasion."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "User turns off browser notifications.",
+          "steps": [
+            "Clear browser_push_endpoint."
+          ]
+        },
+        {
+          "condition": "User is at care level 4.",
+          "steps": [
+            "Do not apply Settings changes in the same turn (crisis plan AC-26-11)."
+          ]
+        }
+      ],
+      "postconditions": [
+        "Updated choices take effect immediately."
+      ],
+      "acceptance_criteria": [
+        "Settings uses the same validation and data boundary as setup.",
+        "Changes are allowed in read-only accounts too."
+      ],
+      "merged_from": "case UC-CASE-20 (Change how Cairn keeps in touch). Its multiple-cases branch is removed because preferences are account-wide (D-13)."
+    },
+    {
+      "id": "UC-ACCT-01",
+      "title": "Delete account",
+      "actor": "Any signed-in user",
+      "preconditions": [
+        "User is signed in, in any status including read_only."
+      ],
+      "trigger": "User chooses Delete account in Settings.",
+      "main_flow": [
+        "Explain plainly that the account and all its data will be deleted.",
+        "Ask for confirmation once. No reason is required.",
+        "Before deleting, say on screen where the confirmation will go (case UC-CASE-21).",
+        "Delete the account, consent records, notification preferences, push endpoint, scheduled check-in, scheduled reminders, and all cases.",
+        "For Apple accounts, revoke tokens through the Sign in with Apple REST API.",
+        "Send a deletion confirmation to the sign-in email (case UC-CASE-21)."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "User is at care level 4.",
+          "steps": [
+            "Do not delete in the same turn. Follow the crisis plan. Deletion stays available once the user asks again later (crisis plan AC-26-11)."
+          ]
+        }
+      ],
+      "postconditions": [
+        "Account and all data deleted. Tokens revoked."
+      ],
+      "acceptance_criteria": [
+        "Always free and available in any status.",
+        "Deactivation alone does not satisfy this use case.",
+        "No check-in or reminder is sent after deletion."
+      ],
+      "sources": [
+        "https://developer.apple.com/support/offering-account-deletion-in-your-app/"
+      ]
+    },
+    {
+      "id": "UC-REG-18",
+      "title": "Sign in as a returning user",
+      "status": "proposed, confirm",
+      "actor": "Returning user",
+      "preconditions": [
+        "Account exists.",
+        "User is signed out."
+      ],
+      "trigger": "User selects Already have an account? Sign in, or opens Cairn while signed out.",
+      "main_flow": [
+        "Offer the same three methods as UC-REG-01, with the method used last shown first.",
+        "Email uses the same magic link and landing page as UC-REG-04.",
+        "After sign-in, show the session-start AI reminder if due (case UC-CASE-23).",
+        "Route by state: setup not complete goes to UC-REG-13, a draft case goes to case UC-CASE-10, otherwise the home screen (case UC-CASE-25) with copy.signin_welcome_back.",
+        "If a policy or notice version changed, ask for the new acknowledgment first (UC-REG-13)."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "Account is pending_deletion.",
+          "steps": [
+            "Explain plainly when deletion will happen and offer to cancel it, if the retention schedule allows."
+          ]
+        },
+        {
+          "condition": "User can't get into their email.",
+          "steps": [
+            "Go to UC-REG-20."
+          ]
+        }
+      ],
+      "postconditions": [
+        "User is signed in and on the right screen."
+      ],
+      "acceptance_criteria": [
+        "Read-only accounts can sign in and see everything (D-19).",
+        "Sign-in never asks for anything collected only at case creation."
+      ]
+    },
+    {
+      "id": "UC-REG-19",
+      "title": "Sign out and session timeout",
+      "status": "D-20 confirmed 2026-10-06. Use case proposed, confirm.",
+      "actor": "Signed-in user",
+      "preconditions": [
+        "User is signed in."
+      ],
+      "trigger": "User selects Sign out, the inactivity timeout passes, or the overall session limit passes (D-20).",
+      "main_flow": [
+        "After 4 minutes and 40 seconds with no activity, show copy.timeout_warning and copy.timeout_warning_button. Any activity also counts as staying.",
+        "If there is no response by 5 minutes, save everything and sign out.",
+        "On Sign out, show copy.signed_out.",
+        "On a timeout, show copy.session_timed_out the next time the page is used."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "User is at care level 3 or 4 when the timeout happens.",
+          "steps": [
+            "The warning shows with no countdown numbers.",
+            "The signed-out screen also shows copy.crisis_resource and the Support resources link."
+          ]
+        },
+        {
+          "condition": "User is on a break.",
+          "steps": [
+            "See cairn-take-a-break-use-cases-v32.json UC-BRK-12."
+          ]
+        }
+      ],
+      "postconditions": [
+        "Session ended. No data lost."
+      ],
+      "acceptance_criteria": [
+        "Sign out is on every signed-in screen and in Settings.",
+        "copy.signout_shared_device_tip is shown once, on the setup complete screen (UC-REG-16).",
+        "After sign-out or timeout, the browser back button shows no case data.",
+        "The warning gives at least 20 seconds and needs one simple action to stay signed in (WCAG 2.2 success criterion 2.2.1).",
+        "Text being typed when the timeout happens is saved as a draft answer where the screen allows it, so the user does not lose it."
+      ],
+      "config": {
+        "inactivity_timeout_seconds": 300,
+        "warning_before_timeout_seconds": 20,
+        "overall_session_days": 30
+      },
+      "sources": [
+        "https://pages.nist.gov/800-63-4/sp800-63b.html",
+        "https://www.w3.org/WAI/WCAG22/Understanding/timing-adjustable.html"
+      ]
+    },
+    {
+      "id": "UC-REG-20",
+      "title": "Can't get into the sign-in email",
+      "status": "proposed, confirm with security review",
+      "actor": "Returning user",
+      "preconditions": [
+        "User can't reach the email used for Cairn, for example it was a shared family address or belonged to the person who died."
+      ],
+      "trigger": "User selects I can't get into my email on the sign-in screen.",
+      "main_flow": [
+        "Show copy.recovery_intro.",
+        "Open a support request. Support verifies identity with a documented process before changing the sign-in email.",
+        "Send a notice to the old address, if it still works, before the change takes effect."
+      ],
+      "alternate_flows": [
+        {
+          "condition": "User signed up with Google or Apple.",
+          "steps": [
+            "Explain that access follows that Google or Apple account, and point to that provider's recovery page."
+          ]
+        }
+      ],
+      "postconditions": [
+        "User regains access, or knows the next step."
+      ],
+      "acceptance_criteria": [
+        "Support never changes the sign-in email without the documented identity check.",
+        "The user is never left without a next action."
+      ],
+      "legal_review": [
+        "Security review of the identity check before launch."
+      ]
+    }
+  ],
+  "related": {
+    "trello_cards": [
+      {
+        "name": "Account registration and onboarding",
+        "url": "https://trello.com/c/nCJTOytG"
+      },
+      {
+        "name": "Build support and crisis resource fallback plan",
+        "url": "https://trello.com/c/PAA01d2O"
+      },
+      {
+        "name": "Case creation use cases",
+        "url": "https://trello.com/c/RDV4A5xi"
+      },
+      {
+        "name": "Open questions",
+        "url": "https://trello.com/c/DKgHH7M7"
+      }
+    ],
+    "policies": [
+      "CAIRN-POL-PRIV-01 v0.2",
+      "CAIRN-POL-SEC-01 v0.2",
+      "CAIRN-POL-TOU-01 v0.1"
+    ],
+    "specs": [
+      {
+        "file": "cairn-case-creation-use-cases-v32.json",
+        "covers": "Case creation, Start journey, home screen (UC-CASE-25), journey notification confirmation (UC-CASE-19), action confirmations (UC-CASE-21), AI session reminders (UC-CASE-23)."
+      },
+      {
+        "file": "cairn-support-crisis-plan-v32.json",
+        "covers": "Care levels, rest, check-in, break controls (DEC-26-07), support resources. Wins on crisis behavior."
+      },
+      {
+        "file": "cairn-take-a-break-use-cases-v32.json",
+        "covers": "Take a break control, break screens, rest offers, break-ending notice."
+      }
+    ],
+    "retired": [
+      "cairn-registration-use-cases.json v1.1.0",
+      "cairn-account-use-cases.json v2.0.0",
+      "cairn-account-use-cases-v21.json v2.1.0",
+      "cairn-account-use-cases-v3.json v3.0.0"
+    ]
+  }
+}

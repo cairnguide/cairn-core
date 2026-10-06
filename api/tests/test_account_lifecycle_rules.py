@@ -1,11 +1,14 @@
-"""Rules for UC-REG-15, UC-REG-16, and UC-CASE-19 to UC-CASE-21 that need no database.
+"""Rules for account deletion (UC-ACCT-01), the download (UC-REG-16), keeping in touch (account D-13, UC-REG-17,
+case UC-CASE-19), and confirmations (UC-CASE-21) that need no database.
 
-The database-backed checks are in test_account_lifecycle.py.
+Specs: database/docs/cairn-account-use-cases-v32.json and cairn-case-creation-use-cases-v32.json. The
+database-backed checks are in test_account_lifecycle.py and test_use_cases_v3.py.
 """
 from __future__ import annotations
 
 import ast
 import json
+import re
 import sys
 
 import pytest
@@ -14,23 +17,25 @@ from pydantic import ValidationError
 from cairn_api import account_chat, outbound
 from cairn_api import notifications as nt
 from cairn_api.account import mask_email
-from cairn_api.copy_store import load_case_copy, load_copy
+from cairn_api.copy_store import load_break_copy, load_case_copy, load_copy, load_subscription_copy
 from cairn_api.main import create_app
 from cairn_api.schemas import (
     DataExport,
-    NotificationChangeIn,
     NotificationChannel,
-    NotificationChoice,
-    NotificationSetIn,
+    NotificationChannelsIn,
+    NotificationSettingsPatch,
 )
+from cairn_api.store import DEFAULT_NOTIFICATIONS, notification_values_valid
 
 from .conftest import REPO, SETTINGS, as_user
 
 COPY = load_copy()
 CASE_COPY = load_case_copy()
-ACCOUNT_SPEC = json.loads((REPO / "database" / "docs" / "cairn-account-use-cases-2026-09-25.json").read_text())
-CASE_SPEC = json.loads((REPO / "database" / "docs" / "cairn-case-creation-use-cases-2026-09-25.json").read_text())
-NEW = {u["id"]: u for u in ACCOUNT_SPEC["new_use_cases"] + CASE_SPEC["new_use_cases"]}
+BREAK_COPY = load_break_copy()
+SUB_COPY = load_subscription_copy()
+ACCOUNT_SPEC = json.loads((REPO / "database" / "docs" / "cairn-account-use-cases-v32.json").read_text())
+CASE_SPEC = json.loads((REPO / "database" / "docs" / "cairn-case-creation-use-cases-v32.json").read_text())
+UC = {u["id"]: u for u in ACCOUNT_SPEC["use_cases"] + CASE_SPEC["use_cases"]}
 
 
 # ------------------------------------------------------------------ masking (UC-CASE-19, UC-CASE-21)
@@ -45,101 +50,119 @@ def test_emails_are_masked_and_relay_domains_stay_recognizable(email, masked):
     assert mask_email(email) == masked
 
 
-# ------------------------------------------------------------------ choice shape (UC-CASE-19)
+# ------------------------------------------------------------------ choice shape (account D-13)
 
-@pytest.mark.parametrize("choice", [
-    {"channels": ["in_app_only"]},
-    {"channels": ["email"], "reasons": ["due_date_upcoming"], "due_date_lead_days": 3},
-    {"channels": ["email", "push"], "reasons": ["due_date_upcoming", "inactivity"], "due_date_lead_days": 7,
-     "inactivity_days": 14, "frequency": "as_it_happens"},
+@pytest.mark.parametrize("change", [
+    {},
+    {"channels": ["email", "in_app", "browser"], "browser_push_endpoint": "https://push.example.test/abc"},
+    {"frequency": "none"},
+    {"quiet_hours_start": "22:30", "quiet_hours_end": "07:00"},
+    {"due_date_lead": "one_week", "inactivity_after": "two_weeks"},
 ])
-def test_valid_choices(choice):
-    NotificationChoice.model_validate(choice)
+def test_valid_choices(change):
+    assert notification_values_valid({**DEFAULT_NOTIFICATIONS, **change})
 
 
-@pytest.mark.parametrize("choice", [
-    {"channels": []},
-    {"channels": ["sms"], "reasons": ["inactivity"], "inactivity_days": 3},
-    {"channels": ["in_app_only", "email"], "reasons": ["inactivity"], "inactivity_days": 3},
-    {"channels": ["in_app_only"], "reasons": ["inactivity"], "inactivity_days": 3},
-    {"channels": ["email"]},
-    {"channels": ["email"], "reasons": ["due_date_upcoming"]},
-    {"channels": ["email"], "reasons": ["due_date_upcoming"], "due_date_lead_days": 2},
-    {"channels": ["email"], "reasons": ["inactivity"], "inactivity_days": 3, "due_date_lead_days": 3},
-    {"channels": ["email", "email"], "reasons": ["inactivity"], "inactivity_days": 3},
-    {"channels": ["email"], "reasons": ["inactivity"], "inactivity_days": 3, "frequency": "hourly"},
+@pytest.mark.parametrize("change", [
+    {"channels": ["email"]},                                  # in_app is always on
+    {"channels": ["in_app", "sms"]},                          # no text messages (D-12, OPEN-05)
+    {"channels": ["in_app", "in_app"]},
+    {"frequency": "hourly"},
+    {"quiet_hours_start": "25:00"},
+    {"due_date_lead": "two_days"},
+    {"inactivity_after": "a_month"},
+    {"browser_push_endpoint": "https://push.example.test/abc"},  # browser isn't chosen
+    {"channels": ["in_app", "browser"], "browser_push_endpoint": "http://push.example.test/abc"},
 ])
-def test_invalid_choices(choice):
-    with pytest.raises(ValidationError):
-        NotificationChoice.model_validate(choice)
+def test_invalid_choices(change):
+    assert not notification_values_valid({**DEFAULT_NOTIFICATIONS, **change})
 
 
-def test_keep_it_simple_matches_the_spec_shortcut():
-    preset = NEW["UC-CASE-19"]["shortcut"]["preset"]
-    assert nt.KEEP_IT_SIMPLE.model_dump(mode="json", exclude={"inactivity_days"}) == {
-        "channels": preset["channels"], "reasons": preset["reasons"],
-        "due_date_lead_days": preset["due_date_lead_days"], "frequency": preset["frequency"]}
+def test_setup_defaults_match_the_spec():
+    """UC-REG-15: email and in-app pre-selected (OPEN-11), due only, 9 PM to 8 AM quiet hours. UC-CASE-19 and
+    OPEN-03: 3 days before, no inactivity notices."""
+    assert DEFAULT_NOTIFICATIONS["channels"] == ["email", "in_app"]
+    assert DEFAULT_NOTIFICATIONS["frequency"] == "due_only"
+    assert (DEFAULT_NOTIFICATIONS["quiet_hours_start"], DEFAULT_NOTIFICATIONS["quiet_hours_end"]) == ("21:00", "08:00")
+    fields = ACCOUNT_SPEC["data_requirements"]["notification_preferences"]["fields"]
+    assert "Default three_days" in fields["due_date_lead"] and "Default off" in fields["inactivity_after"]
+    assert DEFAULT_NOTIFICATIONS["due_date_lead"] == "three_days" and DEFAULT_NOTIFICATIONS["inactivity_after"] == "off"
 
 
-def test_set_and_change_requests_say_exactly_one_thing():
+def test_requests_say_what_changes():
     with pytest.raises(ValidationError):
-        NotificationSetIn.model_validate({"preset": "keep_it_simple", "choice": {"channels": ["in_app_only"]}})
-    with pytest.raises(ValidationError):
-        NotificationSetIn.model_validate({"preset": "same_as"})
-    with pytest.raises(ValidationError):
-        NotificationChangeIn.model_validate({"stop_everything": True, "choice": {"channels": ["in_app_only"]}})
-    with pytest.raises(ValidationError):
-        NotificationChangeIn.model_validate({})
+        NotificationSettingsPatch.model_validate({})
+    with pytest.raises(ValidationError):  # an endpoint needs browser and permission granted
+        NotificationChannelsIn.model_validate({"email": True, "browser_push_endpoint": "https://push.example.test/a"})
+    NotificationSettingsPatch.model_validate({"stop_all_reminders": True})
 
 
 def test_the_data_model_matches_the_spec_entity():
-    """UC-CASE-19 data: the same enums. SMS fields are left out until SMS is decided (card 50)."""
-    fields = NEW["UC-CASE-19"]["data"]["fields"]
-    assert fields["channels"] == "array<enum: email|sms|push|in_app_only>"
-    assert {c.value for c in NotificationChannel} == {"email", "push", "in_app_only"}
+    """account data_requirements.notification_preferences: one row per account, these fields and enums."""
     sys.path.insert(0, str(REPO / "database" / "db"))
     import schema
+    fields = ACCOUNT_SPEC["data_requirements"]["notification_preferences"]["fields"]
     stored = schema.COLLECTIONS["notification_preferences"]["$and"][0]["$jsonSchema"]["properties"]
-    assert set(stored) == {"_id", "channels", "reasons", "due_date_lead_days", "inactivity_days", "frequency",
-                           "push_permission_granted", "updated_at"}
-    assert stored["channels"]["items"]["enum"] == ["email", "push", "in_app_only"]
-    assert stored["due_date_lead_days"]["enum"] == [1, 3, 7, None]
-    assert stored["inactivity_days"]["enum"] == [3, 7, 14, None]
+    assert set(stored) == {"_id", "channels", "frequency", "quiet_hours_start", "quiet_hours_end",
+                           "browser_push_endpoint", "due_date_lead", "inactivity_after", "journey_confirmed_at",
+                           "updated_at"}
+    assert set(f for f in fields if f not in ("account_id", "scope_note")) <= set(stored) | {"updated_at"}
+    assert stored["channels"]["items"]["enum"] == ["email", "in_app", "browser"]
+    assert stored["frequency"]["enum"] == ["due_only", "daily", "weekly", "none"]
+    assert stored["due_date_lead"]["enum"] == ["day_before", "three_days", "one_week"]
+    assert stored["inactivity_after"]["enum"] == ["off", "three_days", "one_week", "two_weeks"]
+    assert {c.value for c in NotificationChannel} == {"email", "in_app", "browser"}
 
 
 # ------------------------------------------------------------------ plain-language readback
 
-def test_readback_is_one_plain_sentence():
-    # skipped_or_in_app_only: nothing sent outside the app, due dates and updates show in Cairn only.
-    assert nt.readback(CASE_COPY, nt.IN_APP_ONLY) == CASE_COPY["readback_in_app_only"]
-    assert "outside the app" in CASE_COPY["readback_in_app_only"] and "in Cairn" in CASE_COPY["readback_in_app_only"]
-    line = nt.readback(CASE_COPY, nt.KEEP_IT_SIMPLE)
-    assert line == "Cairn will reach you by email 3 days before a step is due, no more than once a day."
-    both = NotificationChoice(channels=["email", "push"], reasons=["due_date_upcoming", "inactivity"],
-                              due_date_lead_days=1, inactivity_days=7, frequency="as_it_happens")
-    assert nt.readback(CASE_COPY, both) == (
-        "Cairn will reach you by email and browser notifications the day before a step is due and when you "
-        "haven't been in Cairn for 7 days, as things come up.")
+def test_readback_is_one_plain_line():
+    none = {**DEFAULT_NOTIFICATIONS, "frequency": "none"}
+    assert nt.readback(COPY, none) == COPY["notify_readback_none"]
+    assert nt.readback(COPY, DEFAULT_NOTIFICATIONS) == (
+        "I'll reach you by email and inside Cairn, with only when something is due. I won't send anything between "
+        "9 PM and 8 AM your time.")
+
+
+def test_quiet_hours_wrap_past_midnight_and_move_a_time_to_their_end():
+    from datetime import datetime, timezone
+    prefs = DEFAULT_NOTIFICATIONS
+    tz = "America/New_York"
+    late = datetime(2026, 10, 7, 2, 30, tzinfo=timezone.utc)   # 10:30 PM in New York
+    noon = datetime(2026, 10, 7, 16, 0, tzinfo=timezone.utc)   # noon in New York
+    assert nt.in_quiet_hours(late, tz, prefs) and not nt.in_quiet_hours(noon, tz, prefs)
+    moved = nt.after_quiet_hours(late, tz, prefs)
+    assert moved == datetime(2026, 10, 7, 12, 0, tzinfo=timezone.utc)  # 8 AM in New York
+    assert nt.after_quiet_hours(noon, tz, prefs) == noon
 
 
 # ------------------------------------------------------------------ what goes out (UC-CASE-19, UC-CASE-21)
 
 def test_outbound_messages_are_short_private_and_never_repeat_content():
     """Never the name of the person who died, the circumstance, task details, or anything deleted."""
-    messages = [outbound.confirmation(kind, COPY) for kind in outbound.CONFIRMATION_KEYS]
+    messages = [outbound.confirmation({"action_type": kind, "preferred_name": "Pat"}, COPY, SUB_COPY)
+                for kind in outbound.CONFIRMATION_KEYS]
     messages += [outbound.notification(r, COPY, CASE_COPY) for r in ("due_date_upcoming", "inactivity")]
+    messages += [outbound.check_in(CASE_COPY), outbound.break_notice(BREAK_COPY)]
     assert outbound.notification("due_date_upcoming", COPY, CASE_COPY).body == "You have a step coming up in Cairn."
     for m in messages:
         text = m.subject + " " + m.body
-        assert "{" not in text and len(m.body) <= 160
-        for word in ("died", "death", "certificate", "Social Security", "bank", "funeral", "veteran", "will"):
+        assert "{" not in text and len(m.body) <= 320
+        for word in ("died", "death", "certificate", "Social Security", "bank", "funeral", "veteran"):
             assert word.lower() not in text.lower(), (word, text)
+        assert not re.search(r"\b(a|the|their) will\b", text, re.I), text  # the legal document, not the verb
 
 
-def test_confirmation_types_match_the_spec_log():
-    kinds = NEW["UC-CASE-21"]["data"]["fields"]["action_type"]
-    assert kinds == "enum: " + "|".join(outbound.CONFIRMATION_KEYS)
-    assert NEW["UC-CASE-21"]["data"]["fields"]["content_stored"] is False
+def test_confirmation_types_cover_the_spec():
+    """UC-CASE-21 v3: setup welcome, a Settings change, case deleted now or after the hold, account deleted. The
+    subscription spec adds subscribed and cancelled (changes_needed_in_other_specs)."""
+    rules = " ".join(UC["UC-CASE-21"]["rules"])
+    for words in ("setup complete welcome", "Settings change", "case deleted now", "7-day hold", "account deleted"):
+        assert words in rules
+    sys.path.insert(0, str(REPO / "database" / "db"))
+    import schema
+    assert set(outbound.CONFIRMATION_KEYS) == set(schema.CONFIRMATION_TYPES)
+    assert {"subscription_started", "subscription_canceled"} <= set(schema.CONFIRMATION_TYPES)
 
 
 # ------------------------------------------------------------------ account requests in chat
@@ -161,13 +184,10 @@ def test_account_requests_are_recognized(text, intent):
     assert account_chat.read(text).intent == intent
 
 
-def test_email_me_instead_switches_the_channel_and_keeps_the_rest():
-    current = NotificationChoice(channels=["push"], reasons=["inactivity"], inactivity_days=14,
-                                 frequency="weekly_max")
-    switched = account_chat.switch_channel(current, NotificationChannel.email, nt.KEEP_IT_SIMPLE)
-    assert switched.channels == [NotificationChannel.email] and switched.inactivity_days == 14
-    fresh = account_chat.switch_channel(nt.IN_APP_ONLY, NotificationChannel.email, nt.KEEP_IT_SIMPLE)
-    assert fresh == nt.KEEP_IT_SIMPLE
+def test_email_me_instead_switches_the_channel_only():
+    switched = account_chat.switch_channel(NotificationChannel.email)
+    assert switched.email and not switched.browser
+    assert nt.channels_from(switched) == (["email", "in_app"], None)
 
 
 def test_risk_of_harm_is_seen_alongside_an_account_request():
@@ -195,12 +215,12 @@ def test_the_download_has_no_field_for_sensitive_numbers():
 def test_new_routes_are_in_the_contract():
     paths = create_app(settings=SETTINGS).openapi()["paths"]
     for path in ("/v1/me/deletion", "/v1/me/data-export", "/v1/me/data-export/file", "/v1/me/messages",
-                 "/v1/me/notification-preferences", "/v1/me/notification-preferences/changes",
-                 "/v1/cases/{case_id}/notification-preferences",
-                 "/v1/cases/{case_id}/notification-preferences/readback",
-                 "/v1/cases/{case_id}/notification-preferences/push-permission",
+                 "/v1/me/notification-preferences", "/v1/cases/{case_id}/keep-in-touch",
                  "/v1/cases/{case_id}/deletion"):
         assert path in paths, path
+    assert {"get", "patch"} <= set(paths["/v1/me/notification-preferences"])
+    for old in ("/v1/me/notification-preferences/changes", "/v1/cases/{case_id}/notification-preferences"):
+        assert old not in paths, old  # case UC-CASE-20 merged into account UC-REG-17 (account D-13)
     assert {"get", "post", "delete"} <= set(paths["/v1/cases/{case_id}/deletion"])
 
 
@@ -217,7 +237,7 @@ def test_no_user_facing_copy_is_inline_in_the_new_code():
 
 
 def test_deletion_copy_never_asks_why_or_tries_to_keep_the_user():
-    """UC-REG-15 rules: no reason asked, no retention offer, discount, or persuasion."""
+    """UC-ACCT-01: no reason asked, no retention offer, discount, or persuasion."""
     keys = [k for k in {**COPY.flow, **COPY.draft} if k.startswith(("deletion_", "delete_", "email_account"))]
     assert keys
     for k in keys:

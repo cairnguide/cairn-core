@@ -9,6 +9,7 @@ auth0/actions/cairn-claims.js: email, email_verified, and sign_in_method.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 import jwt
@@ -37,6 +38,8 @@ class Identity:
     email: str | None
     email_verified: bool
     sign_in_method: SignInMethod
+    # When the token was issued (iat), for the 5-minute sign-out (D-20). None only for test identities.
+    issued_at: datetime | None = None
 
 
 def identity_from_claims(claims: dict, namespace: str) -> Identity:
@@ -49,12 +52,14 @@ def identity_from_claims(claims: dict, namespace: str) -> Identity:
         raise ApiError(403, "sign_in_method_not_supported",
                        "Please sign in with Google, Apple, or your email address.")
     verified = claims.get(f"{namespace}email_verified", False)
+    iat = claims.get("iat")
     return Identity(
         subject=subject,
         email=claims.get(f"{namespace}email"),
         # Tolerate the string form some providers use for this flag.
         email_verified=verified is True or verified == "true",
         sign_in_method=method,
+        issued_at=datetime.fromtimestamp(int(iat), tz=timezone.utc) if iat is not None else None,
     )
 
 
@@ -83,9 +88,31 @@ class TokenVerifier:
         return identity_from_claims(claims, self._namespace)
 
 
-def get_identity(request: Request,
-                 creds: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> Identity:
+def verified_identity(request: Request,
+                      creds: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> Identity:
+    """The caller's verified token. Tests replace this dependency, never get_identity."""
     if creds is None or creds.scheme.lower() != "bearer":
         raise ApiError(401, "not_signed_in", "Please sign in to continue.")
     verifier: TokenVerifier = request.app.state.token_verifier
     return verifier.verify(creds.credentials)
+
+
+def get_identity(request: Request, identity: Identity = Depends(verified_identity)) -> Identity:
+    """The caller, with the 5-minute sign-out applied (D-20, UC-REG-19). A token from a session that went quiet for
+    longer than the timeout, or that is older than the overall session limit, is refused with session_timed_out.
+    Signing in again issues a new token, which starts a new session."""
+    settings = request.app.state.settings
+    now = datetime.now(timezone.utc)
+    if identity.issued_at is not None and now - identity.issued_at > timedelta(days=settings.overall_session_days):
+        raise _timed_out(request)
+    check = getattr(request.app.state.db, "check_activity", None)
+    if check is not None and not check(identity.subject, identity.issued_at, now,
+                                       timeout=timedelta(seconds=settings.inactivity_timeout_seconds),
+                                       every=timedelta(seconds=settings.activity_write_seconds)):
+        raise _timed_out(request)
+    return identity
+
+
+def _timed_out(request: Request) -> ApiError:
+    copy = request.app.state.copy
+    return ApiError(401, "session_timed_out", copy["session_timed_out"])

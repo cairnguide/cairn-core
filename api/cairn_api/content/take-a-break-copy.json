@@ -1,0 +1,60 @@
+{
+  "version": "3.2.0",
+  "source": "database/docs/cairn-take-a-break-use-cases-v32.json (take a break spec 3.2.0)",
+  "status": "pending_clinical_and_legal_review",
+  "notes": [
+    "spec_copy is the take a break spec 3.2.0 copy, verbatim. rest_care_clock_note_condition is a rule, not copy, and is applied in breaks.py.",
+    "draft_copy was written for the build because the spec doesn't supply it.",
+    "Placeholders in braces are filled by the API: {trial_end_date}, {break_end_date}, {channels}, {preferred_name}, {last_step}."
+  ],
+  "spec_copy": {
+    "take_a_break_control": "Take a break",
+    "presignin_break": "Take all the time you need. Nothing has been saved yet, so there's nothing to lose. You can come back whenever you're ready.",
+    "presignin_break_back": "Go back",
+    "setup_break": "Of course. Everything you've done so far is saved. Take whatever time you need.",
+    "setup_break_resume": "I'm ready to keep going",
+    "signed_in_nothing_to_pause": "Of course. Take whatever time you need. Everything is saved.",
+    "quiet_988_line": "If you'd like to talk with someone, you can call or text 988, or chat at 988lifeline.org, any time.",
+    "draft_pause": "Everything you've shared is saved. There's no rush. To protect your privacy, if this isn't picked up again within 28 days, it will be deleted automatically.",
+    "draft_resume_question": "Would you like to keep going, or look at something else?",
+    "rest_choices_question": "How long would you like to rest?",
+    "rest_choice_today": "For the rest of today",
+    "rest_choice_3_days": "A few days (3)",
+    "rest_choice_7_days": "A week (7)",
+    "rest_choice_open": "Until I come back",
+    "rest_keep_going": "Never mind, keep going",
+    "rest_normal_clock_note": "Your free days keep counting while you rest. They end on {trial_end_date}.",
+    "rest_care_clock_note": "Your free days will pause while you rest.",
+    "break_started": "You're on a break until {break_end_date}. I won't send any reminders while you rest.",
+    "break_started_open_ended": "You're on a break until you come back. I won't send any reminders while you rest.",
+    "break_notice_line": "I'll send you a short note the day before your break ends, by {channels}.",
+    "resting_screen": "You're on a break until {break_end_date}. There's nothing you need to do.",
+    "resting_screen_open_ended": "You're on a break. There's nothing you need to do.",
+    "resting_keep": "Keep resting",
+    "resting_back": "I'm back",
+    "resting_change": "Change how long",
+    "break_ending_notice_subject": "A note from Cairn",
+    "break_ending_notice_body": "Your break ends tomorrow. There's nothing you need to do. Cairn will be here when you're ready.",
+    "welcome_back": "Welcome back, {preferred_name}. Here's where we left off: {last_step}.",
+    "trial_resumed_after_care_rest": "Your free days were paused while you rested. They now end on {trial_end_date}.",
+    "offer_after_time": "We've covered a lot. Would this be a good place to rest?",
+    "offer_after_task": "That's a hard one, and you did it. Would this be a good place to rest, or would you like to see what's next?",
+    "offer_draft_suffix": "Everything is saved.",
+    "rest_subscription_note": "Your subscription keeps going as normal while you rest. A break doesn't pause it or change what you pay. This time is just for you."
+  },
+  "flow_copy": {
+    "support_resources_link": "Support resources"
+  },
+  "draft_copy": {
+    "break_end_today": "11:59 PM tonight",
+    "break_notice_channel_email": "email",
+    "break_notice_channel_browser": "a notification in this browser",
+    "break_notice_channel_in_app": "a note here in Cairn",
+    "back_next_action": "Pick up where I left off",
+    "back_nothing_in_progress": "the start of your journey",
+    "break_notice_in_app": "Your break ends tomorrow. There's nothing you need to do. Cairn will be here when you're ready."
+  },
+  "legal_review_keys": [
+    "rest_subscription_note"
+  ]
+}

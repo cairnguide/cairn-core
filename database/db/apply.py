@@ -66,8 +66,72 @@ def case_creation_v2(db) -> None:
     db.case_tasks.update_many({"status": "check_on_this"}, {"$set": {"status": "not_started", "needs_check": True}})
 
 
+def use_cases_v3(db) -> None:
+    """The v3 use case suite (account 3.2.0, case creation 3.2.0, crisis plan 3.2.0, take a break 3.2.0,
+    subscription 3.3.0). One account state model (D-19), notification choices for the whole account (D-13),
+    check-ins and breaks on the account, the subscription fields, and one trial-ending note 7 days before (D-14)."""
+    from datetime import timedelta
+
+    # Notification choices: one per account, from the account's most recent journey choice. Nothing chosen, or
+    # in_app_only, keeps everything inside Cairn. Browser push needs a new permission, so it is not carried over.
+    channel = {"email": "email", "push": None, "in_app_only": "in_app"}
+    frequency = {"as_it_happens": "due_only", "daily_max": "daily", "weekly_max": "weekly"}
+    lead = {1: "day_before", 3: "three_days", 7: "one_week"}
+    inactivity = {3: "three_days", 7: "one_week", 14: "two_weeks"}
+    owners = {c["_id"]: c["created_by"] for c in db.cases.find({}, {"created_by": 1})}
+    newest: dict = {}
+    for p in db.notification_preferences.find({"reasons": {"$exists": True}}).sort("updated_at", 1):
+        if p["_id"] in owners:
+            newest[owners[p["_id"]]] = p
+    db.notification_preferences.delete_many({"reasons": {"$exists": True}})
+    for user_id, p in newest.items():
+        chosen = [channel[c] for c in p["channels"] if channel[c]]
+        db.notification_preferences.insert_one({
+            "_id": user_id, "channels": [c for c in ("email", "in_app") if c in chosen or c == "in_app"],
+            "frequency": frequency[p["frequency"]] if p["reasons"] else "none",
+            "quiet_hours_start": "21:00", "quiet_hours_end": "08:00", "browser_push_endpoint": None,
+            "due_date_lead": lead.get(p["due_date_lead_days"], "three_days"),
+            "inactivity_after": inactivity.get(p["inactivity_days"], "off"),
+            "journey_confirmed_at": p["updated_at"], "updated_at": p["updated_at"]})
+
+    # A check-in waiting on a case moves to its owner's account.
+    check_ins = {}
+    for c in db.cases.find({"check_in_at": {"$ne": None}}, {"created_by": 1, "check_in_at": 1}):
+        check_ins[c["created_by"]] = (c["check_in_at"], c["_id"])
+    db.cases.update_many({"check_in_at": {"$exists": True}}, {"$unset": {"check_in_at": ""}})
+
+    old_status = {"pending_onboarding": "pending_onboarding", "pending_deletion": "pending_deletion"}
+    for u in db.users.find({"access": {"$exists": False}}):
+        status = old_status.get(u["status"], "setup_complete")
+        check_in_at, check_in_case = check_ins.get(u["_id"], (None, None))
+        db.users.update_one({"_id": u["_id"]}, {"$set": {
+            "status": status,
+            "access": "read_only" if u["status"] == "read_only" else "full",
+            "subscription_status": "active" if u["status"] == "subscribed" else "none",
+            "adult_attested": None, "adult_attested_at": None, "last_active_at": None,
+            "check_in_at": check_in_at, "check_in_case_id": check_in_case, "check_in_by_email": False,
+            "check_in_sent_at": None, "break_started_at": None, "break_until": None, "break_notice_at": None,
+            "break_notice_sent_at": None, "subscribe_prompt_shown_on": None, "price_notice_sent_for": None,
+            "name_prefill": None,
+            "stripe_customer_id": None,
+            "stripe_subscription_id": None, "stripe_checkout_session_id": None, "current_period_end": None,
+            "cancel_at_period_end": False, "billing_notice": "none", "subscribed_at": None,
+            "annual_reminder_due_at": None, "cancel_requested_at": None}})
+
+    # Account D-14: one trial-ending note, a week before. Unsent notes from the old three-note schedule go.
+    db.trial_reminders.delete_many({"kind": {"$in": ["trial_day_21", "trial_day_27"]}, "email_sent_at": None})
+    db.trial_reminders.update_many({"skipped_at": {"$exists": False}}, {"$set": {"skipped_at": None}})
+    for r in db.trial_reminders.find({"kind": "trial_ends_soon", "email_sent_at": None}):
+        u = db.users.find_one({"_id": r["user_id"]}, {"trial_ends_at": 1})
+        if u and u.get("trial_ends_at"):
+            db.trial_reminders.update_one({"_id": r["_id"]},
+                                          {"$set": {"due_at": u["trial_ends_at"] - timedelta(days=7)}})
+    db.app_settings.update_one({"_id": "trial_reminder_days_before", "value": 3}, {"$set": {"value": 7}})
+
+
 MIGRATIONS: list[tuple[str, object]] = [
     ("2026-10-04_case_creation_v2", case_creation_v2),
+    ("2026-10-06_use_cases_v3", use_cases_v3),
 ]
 
 

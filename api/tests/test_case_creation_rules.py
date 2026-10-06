@@ -1,7 +1,8 @@
 """Case creation rules that need no database: journey selection, redaction, safety, extraction, and copy.
 
-Spec: database/docs/cairn-case-creation-use-cases-v2.json (2.0.0), which defers to
-database/docs/cairn-support-crisis-plan.json for crisis levels and replies. Each test names the
+Spec: database/docs/cairn-case-creation-use-cases-v32.json (3.2.0), which defers to
+database/docs/cairn-support-crisis-plan-v32.json for crisis levels and replies and to
+database/docs/cairn-take-a-break-use-cases-v32.json for breaks. Each test names the
 use case and acceptance criterion it covers. [SAFETY] and [PRIVACY] criteria
 are release blockers, and so is [LEGAL]. The database-backed checks are in test_case_creation.py.
 """
@@ -16,7 +17,7 @@ import pytest
 
 from cairn_api import journey_selection as js
 from cairn_api import safety
-from cairn_api.copy_store import load_case_copy
+from cairn_api.copy_store import load_break_copy, load_case_copy
 from cairn_api.extraction import extract
 from cairn_api.intake import Ctx, question
 from cairn_api.redaction import REMOVED, luhn_valid, redact
@@ -24,8 +25,10 @@ from cairn_api.schemas import FieldKey, IntakeMessageIn, IntakeSession, SafetyMo
 
 from .conftest import REPO
 
-SPEC = json.loads((REPO / "database" / "docs" / "cairn-case-creation-use-cases-v2.json").read_text())
-PLAN = json.loads((REPO / "database" / "docs" / "cairn-support-crisis-plan.json").read_text())
+SPEC = json.loads((REPO / "database" / "docs" / "cairn-case-creation-use-cases-v32.json").read_text())
+PLAN = json.loads((REPO / "database" / "docs" / "cairn-support-crisis-plan-v32.json").read_text())
+BREAKS = json.loads((REPO / "database" / "docs" / "cairn-take-a-break-use-cases-v32.json").read_text())
+BREAK_COPY = load_break_copy()
 DEFINITION = json.loads((REPO / "database" / "content" / "journeys" / "journey-selection.json").read_text())
 COPY = load_case_copy()
 UC = {u["id"]: u for u in SPEC["use_cases"]}
@@ -48,18 +51,13 @@ def test_spec_copy_is_verbatim():
     fields = {f["key"]: f for f in SPEC["data_fields"]}
     expected = {f"question_{k}": f["question_copy"] for k, f in fields.items()}
     expected["pre_question_circumstance"] = fields["circumstance"]["pre_question_copy"]
-    clause = UC["UC-CASE-12"]["copy"]["reminder_channel_clause_options"]
     expected.update({
         "intro": UC["UC-CASE-01"]["copy"]["intro"],
         "poa_authority_note": UC["UC-CASE-02"]["alternate_flows"][0]["copy"],
         "place_unknown": UC["UC-CASE-04"]["alternate_flows"][0]["copy"],
         "level_2_after_skips": UC["UC-CASE-09"]["copy"]["level_2_after_skips"],
-        "pause": UC["UC-CASE-10"]["copy"]["pause"],
-        "resume_question": UC["UC-CASE-10"]["copy"]["resume_question"],
         "pre_button_notice": UC["UC-CASE-12"]["copy"]["pre_button_notice"],
         "confirmation_first_case": UC["UC-CASE-12"]["copy"]["confirmation_first_case"],
-        "reminder_channel_clause_channel_chosen": clause["channel_chosen"],
-        "reminder_channel_clause_in_cairn_only": clause["in_cairn_only"],
         "not_today": UC["UC-CASE-13"]["alternate_flows"][0]["copy"],
         "steady_care_example": SPEC["voice_samples"]["uc_case_05"]["steady_care"],
         "redaction_explanation": UC["UC-CASE-15"]["copy"]["explanation"],
@@ -67,36 +65,46 @@ def test_spec_copy_is_verbatim():
         "confirmation_existing_trial": UC["UC-CASE-18"]["copy"]["confirmation_existing_trial"],
         "confirmation_subscribed": UC["UC-CASE-18"]["copy"]["confirmation_subscribed"],
         "notifications_intro": UC["UC-CASE-19"]["copy"]["opening"],
+        "lead_time_question": UC["UC-CASE-19"]["copy"]["lead_time_question"],
+        "inactivity_question": UC["UC-CASE-19"]["copy"]["inactivity_question"],
         "notification_example": UC["UC-CASE-19"]["copy"]["example_notification"],
         "speech_first_use": UC["UC-CASE-22"]["copy"]["first_use"],
         "ai_reminder": UC["UC-CASE-23"]["copy"]["ai_reminder"],
-        "rest_offer": UC["UC-CASE-23"]["copy"]["rest_offer"],
         "under_18_message": UC["UC-CASE-24"]["copy"]["message"],
-        # The crisis plan's scripts. It wins where the two specs differ.
-        "rest_offer_after_time": PLAN["rest"]["copy"]["offer_after_time"],
-        "rest_offer_after_task": PLAN["rest"]["copy"]["offer_after_task"],
-        "rest_normal_clock_note": PLAN["rest"]["copy"]["rest_normal_clock_note"],
-        "rest_care_clock_note": PLAN["rest"]["copy"]["rest_care_clock_note"],
+        "empty_state": UC["UC-CASE-25"]["copy"]["empty_state"],
+        "empty_state_button": UC["UC-CASE-25"]["copy"]["empty_state_button"],
+        # The crisis plan's follow-up. It wins where the specs differ.
         "check_in_question": PLAN["follow_up"]["ask"],
         "check_in_outside_cairn": PLAN["follow_up"]["message_outside_cairn"],
         "check_in_in_cairn": PLAN["follow_up"]["message_in_cairn"],
     })
     expected.update({f"circumstance_question_{v}": t for v, t in SPEC["voice_samples"]["uc_case_05"].items()})
     expected.update({f"notifications_question_{v}": t for v, t in SPEC["voice_samples"]["uc_case_19"].items()})
-    quoted = {"rest_return_paused_note": PLAN["rest"]["on_return"],
-              "ask_about_suicide": next(b for b in PLAN["safety_modes"][3]["behavior"] if "directly" in b)}
+    quoted = {"ask_about_suicide": next(b for b in PLAN["safety_modes"][3]["behavior"] if "directly" in b)}
     assert {k: v for k, v in COPY.spec.items() if k not in quoted} == expected
     for key, source in quoted.items():
         assert f"'{COPY[key]}'" in source
     assert COPY.version == SPEC["spec_version"]
-    assert [COPY[f"rest_{k}"] for k in ("today", "three_days", "week", "until_back")] == PLAN["rest"]["choices"]
+
+
+def test_take_a_break_copy_is_verbatim():
+    """The take a break spec 3.2.0 owns every break screen's words (UC-BRK). rest_care_clock_note_condition is a rule,
+    not copy."""
+    expected = {k: v for k, v in BREAKS["copy"].items() if k != "rest_care_clock_note_condition"}
+    assert BREAK_COPY.spec == expected and BREAK_COPY.version == BREAKS["spec"]["version"]
+    assert [BREAK_COPY[k] for k in ("rest_choice_today", "rest_choice_3_days", "rest_choice_7_days",
+                                    "rest_choice_open")] == ["For the rest of today", "A few days (3)", "A week (7)",
+                                                             "Until I come back"]
+    for text in BREAK_COPY.all_strings:
+        assert "—" not in text and ";" not in text, text
 
 
 def test_web_only_copy_never_says_tap_or_phone():
     """DEC-PLAT: the alpha is web browser only. 'tap' became 'select', phone notifications became browser ones."""
     for text in COPY.all_strings:
         assert not re.search(r"\btap\b|\bphone\b", text, re.I), text
-    assert COPY["channel_push"] == "Browser notifications"
+    for text in BREAK_COPY.all_strings:
+        assert not re.search(r"\btap\b|\bphone\b", text, re.I), text
 
 
 def _grade(text: str) -> float:
@@ -110,8 +118,10 @@ def _grade(text: str) -> float:
 def test_copy_is_about_grade_8():
     """DEC-A11Y and UC-CASE-23: about a grade 8 reading level (Federal Plain Language Guidelines). Every reminder
     and offer is at grade 8 or below, and the copy as a whole averages grade 8 or below."""
-    for key in ("ai_reminder", "rest_offer", "rest_offer_after_time", "rest_offer_after_task", "check_in_question"):
+    for key in ("ai_reminder", "check_in_question"):
         assert _grade(COPY[key]) <= 8, key
+    for key in ("offer_after_time", "offer_after_task", "quiet_988_line"):  # UC-BRK-06
+        assert _grade(BREAK_COPY[key]) <= 8, key
     sentences = [x for x in COPY.all_strings if len(x.split()) >= 6]
     assert sum(_grade(x) for x in sentences) / len(sentences) <= 8
     assert not [x for x in sentences if _grade(x) > 12]
@@ -119,10 +129,12 @@ def test_copy_is_about_grade_8():
 
 def test_legal_wording_is_flagged_for_counsel():
     """[LEGAL] UC-CASE-12: price and subscription wording needs counsel approval before launch."""
-    for key in ("confirmation_first_case", "subscription_needed_new_journey", "confirmation_subscribed"):
+    for key in ("confirmation_first_case", "confirmation_subscribed", "pre_button_notice"):
         assert key in COPY.legal_review
     assert "$14.99 a month" in COPY["confirmation_first_case"]
-    assert "$14.99 a month" in COPY["subscription_needed_new_journey"]
+    from cairn_api.copy_store import load_subscription_copy
+    sub = load_subscription_copy()
+    assert "new_journey_needs_subscription" in sub.legal_review and "$14.99" in sub["new_journey_needs_subscription"]
 
 
 def test_case_copy_follows_house_style():
@@ -619,36 +631,49 @@ def test_open_decisions_are_configuration_with_the_spec_defaults():
 
     from .conftest import SETTINGS
     assert SETTINGS.estate_plan_mode == "add_on"                         # OPEN-01
-    assert SETTINGS.notification_scope == "per_journey"                  # OPEN-04
+    assert SETTINGS.notification_scope == "account"                      # OPEN-04, resolved by account D-13
     assert SETTINGS.sms_enabled is False                                 # OPEN-05
     assert SETTINGS.state_content_approach == "verified_link_confirm"    # OPEN-06
     assert SETTINGS.unsure_counts_as_skip is False                       # OPEN-07
-    assert SETTINGS.draft_check_in == "next_open"                        # OPEN-08
+    assert SETTINGS.draft_check_in == "account_channels"                 # OPEN-08, resolved by account D-13
     assert SETTINGS.under_18_handling == "stop_intake"                   # OPEN-09
     assert SETTINGS.outside_us_handling == "out_of_scope_message"        # OPEN-10
     assert SETTINGS.pre_need_path == "not_built"
     assert SETTINGS.subscription_price_display == "$14.99 a month"
     for bad in ({"estate_plan_mode": "trailhead"}, {"pre_need_path": "built"}, {"sms_enabled": True},
-                {"notification_scope": "account"}, {"ai_reminder_every_hours": 4}):
+                {"notification_scope": "per_journey"}, {"ai_reminder_every_hours": 4},
+                {"break_notice_during_care_rest": True}, {"inactivity_timeout_seconds": 1800},
+                {"warning_before_timeout_seconds": 10}, {"overall_session_days": 90}):
         with pytest.raises(RuntimeError):
             Settings(**{**SETTINGS.__dict__, **bad})
     schema = (REPO / "database" / "db" / "schema.py").read_text()
-    assert re.search(r'"trial_reminder_days_before": \(3,', schema)   # OPEN-02
+    assert re.search(r'"trial_reminder_days_before": \(7,', schema)   # OPEN-02, resolved by account D-14
     assert re.search(r'"draft_retention_days": \(28,', schema)        # DEC-06
-    from cairn_api import notifications
-    simple = notifications.KEEP_IT_SIMPLE                               # OPEN-03
-    assert (simple.channels[0].value, simple.due_date_lead_days, simple.inactivity_days, simple.frequency.value) == (
-        "email", 3, None, "daily_max")
+    from cairn_api.store import DEFAULT_NOTIFICATIONS  # OPEN-03 and OPEN-11
+    assert (DEFAULT_NOTIFICATIONS["channels"], DEFAULT_NOTIFICATIONS["due_date_lead"],
+            DEFAULT_NOTIFICATIONS["inactivity_after"]) == (["email", "in_app"], "three_days", "off")
+    assert SETTINGS.break_notice_during_care_rest is False              # OPEN-BRK-01
+    assert SETTINGS.break_notice_without_reminders is True              # OPEN-BRK-02
+    assert (SETTINGS.inactivity_timeout_seconds, SETTINGS.warning_before_timeout_seconds,
+            SETTINGS.overall_session_days) == (300, 20, 30)             # D-20
 
 
-def test_no_payment_code_in_the_api():
-    """[PRIVACY] DEC-02: no payment form, field, or SDK call anywhere in case creation or Start journey."""
+CASE_CREATION_MODULES = ("intake.py", "extraction.py", "journey_selection.py", "journey.py", "messages.py",
+                         "routers/case_intake.py", "routers/cases.py", "routers/tasks.py")
+
+
+def test_no_payment_code_in_case_creation_and_no_payment_details_anywhere():
+    """[PRIVACY] DEC-02 and SUB-D-01: no payment form, field, or SDK call in case creation or Start journey. Payments
+    happen only on Stripe's own pages: no card, bank, or billing address field anywhere in the API."""
+    api = REPO / "api" / "cairn_api"
+    for rel in CASE_CREATION_MODULES:
+        assert not re.search(r"\b(stripe|braintree|paypal|square|adyen|storekit|revenuecat|payment_method)\b",
+                             (api / rel).read_text(), re.I), rel
     # redaction.py names card_number as something it removes, so it is the one module left out.
-    source = "\n".join(p.read_text() for p in (REPO / "api" / "cairn_api").rglob("*.py") if p.name != "redaction.py")
-    assert not re.search(r"\b(stripe|braintree|paypal|square|adyen|storekit|revenuecat|payment_method|"
-                         r"card_number|cvv|cvc|billing_address)\b", source, re.I)
+    source = "\n".join(p.read_text() for p in api.rglob("*.py") if p.name != "redaction.py")
+    assert not re.search(r"\b(card_number|cvv|cvc|billing_address|iban|routing_number)\b", source, re.I)
     deps = (REPO / "api" / "pyproject.toml").read_text()
-    assert not re.search(r"stripe|braintree|paypal|adyen|revenuecat", deps, re.I)
+    assert not re.search(r"stripe|braintree|paypal|adyen|revenuecat", deps, re.I)  # Stripe through httpx only
 
 
 def test_no_document_upload():
@@ -662,13 +687,13 @@ def test_no_document_upload():
 
 
 def test_policy_updates_are_tracked():
-    audit = (REPO / "database" / "docs" / "case-creation-v2-gap-audit.md").read_text()
+    audit = (REPO / "database" / "docs" / "use-cases-v3-gap-audit.md").read_text()
     for update in SPEC["policy_updates_required"]:
         assert update in audit
 
 
 def test_spec_file_is_the_one_implemented():
-    assert SPEC["spec_version"] == "2.0.0" and PLAN["version"] == "0.2"
+    assert SPEC["spec_version"] == "3.2.0" and PLAN["version"] == "3.2.0" and BREAKS["spec"]["version"] == "3.2.0"
 
 
 # ------------------------------------------------------------------ UC-CASE-15 and UC-CASE-22

@@ -75,12 +75,13 @@ def test_voice_text_shown_in_onboarding_has_no_em_dashes_or_semicolons():
             assert "—" not in text and ";" not in text, (v.id, text)
 
 
-def test_every_voice_has_a_confirmation():
+def test_every_voice_has_a_card_and_one_confirmation():
+    """UC-REG-12 (account spec 3.2.0): a label, description, and sample for each voice, and copy.voice_confirm."""
     copy = load_copy()
     for v in Voice:
-        assert copy[f"voice_{v.value}_confirm"].format(preferred_name="Pat").startswith(("Thanks, Pat",
-                                                                                          "Thank you, Pat",
-                                                                                          "Got it, Pat"))
+        assert copy[f"voice_{v.value}_label"] and copy[f"voice_{v.value}_description"]
+        assert copy[f"voice_{v.value}_sample"]
+    assert copy["voice_confirm"].format(preferred_name="Pat").startswith("Thank you, Pat")
 
 
 # ------------------------------------------------------------------ provisioning (no database)
@@ -244,7 +245,9 @@ def test_the_chosen_voice_is_saved_on_the_user(api, voice):
     assert r.status_code == 201, r.text
     body = onboard(api, subject, preferred_name="Pat", voice=voice.value)
     assert body["account"]["voice"] == voice.value
-    assert body["screen"]["acknowledgment"] == load_copy()[f"voice_{voice.value}_confirm"].format(preferred_name="Pat")
+    # The confirmation came on the voice step (UC-REG-12). The last screen is setup complete (UC-REG-16).
+    assert body["screen"]["id"] == "setup_complete"
+    assert load_copy()["voice_" + voice.value + "_label"] in body["screen"]["body"][0]
     assert _voice_of(api, subject) == voice.value
 
 
