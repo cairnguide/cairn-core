@@ -432,12 +432,12 @@ To use your own domain, open **Workers & Pages > cairn-api > Settings > Domains 
 
 ### 8. (Optional) Deploy from GitHub Actions
 
-[`.github/workflows/deploy-cloudflare.yml`](.github/workflows/deploy-cloudflare.yml) runs steps 2 and 7 for you: the schema, templates, then `wrangler deploy`.
+[`.github/workflows/deploy-cloudflare.yml`](.github/workflows/deploy-cloudflare.yml) runs steps 2 and 7 for you: the schema, data migrations, and templates (through [`deploy-database.yml`](.github/workflows/deploy-database.yml), which you can also run on its own), then `wrangler deploy`.
 
 Deploys run only by hand, from this workflow or `npx wrangler deploy`. Don't connect the repository to Cloudflare **Workers Builds** (Workers & Pages > Settings > Builds). It would deploy every merge to `main` without applying the schema or loading templates first. It also fails today, because it expects the Worker name in `cloudflare/wrangler.jsonc` (`cairn-api`) to match the dashboard project's name. The `cairn-core` project was disconnected from Workers Builds on 2026-10-05 for this reason, before anything was deployed.
 
 1. In the repository, open **Settings > Environments > New environment** and name it `cloudflare`. Add required reviewers if you want an approval before each deploy.
-2. Add four environment secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CAIRN_ADMIN_MONGODB_URI` (an administrator, for `apply.py`), and `CAIRN_LOADER_MONGODB_URI` (the `cairn_loader` user). On Atlas, also add the environment variable `CAIRN_MANAGE_ROLES` set to `false`, because Atlas manages the roles.
+2. Add four environment secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CAIRN_ADMIN_MONGODB_URI` (an administrator, for `apply.py`), and `CAIRN_LOADER_MONGODB_URI` (the `cairn_loader` user). On Atlas, also add the environment variable `CAIRN_MANAGE_ROLES` set to `false`, because Atlas manages the roles. If the Atlas access list doesn't admit GitHub's runners, also add `ATLAS_PUBLIC_KEY`, `ATLAS_PRIVATE_KEY`, and `ATLAS_PROJECT_ID`, and the workflow admits its own IP address for the run ([.github/README.md](.github/README.md#deploy-database-deploy-databaseyml)).
 3. Keep setting the Worker's own secrets with `wrangler secret put` (step 6). The workflow doesn't touch them.
 4. Open **Actions > Deploy to Cloudflare > Run workflow** and choose the branch. Tick **Load templates that haven't had counsel review** for staging only.
 
