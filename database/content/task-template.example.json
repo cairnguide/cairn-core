@@ -1,0 +1,22 @@
+{
+  "task_key": "example_task",
+  "version": 1,
+  "title": "Task title",
+  "plain_summary": "One or two plain sentences on what to do.",
+  "journey_week": 1,
+  "due_offset_days": 0,
+  "jurisdiction": "US",
+  "applies_when": {
+    "always": true
+  },
+  "attorney_referral": false,
+  "counsel_reviewed_at": null,
+  "citations": [
+    {
+      "authority_name": "Issuing authority",
+      "url": "https://example.invalid/",
+      "jurisdiction": "US",
+      "last_verified_on": null
+    }
+  ]
+}

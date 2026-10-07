@@ -39,6 +39,7 @@ db/schema.py       collections, validators, indexes, roles, and settings: the wh
 db/apply.py        makes a database match schema.py (CAIRN_ADMIN_MONGODB_URI, an administrator)
 content/schema/    JSON Schema for template files
 content/tasks/     template files, one folder per jurisdiction (us, nh, ...)
+content/task-template.example.json  a blank starter with only the required fields. Copy it into content/tasks/<jurisdiction>/. The loader never reads it.
 content/journeys/  journey selection rules: base paths, add-ons, completed items (case creation spec)
 tools/             load_templates.py, create_login_user.py, move_from_postgres.py, seed_test_db.py (local test logins)
 docs/              data model documents
