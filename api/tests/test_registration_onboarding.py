@@ -9,6 +9,7 @@ from __future__ import annotations
 import dataclasses
 import json
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -121,7 +122,11 @@ def test_support_resources_work_signed_out(contract_client):
     assert body["intro"] == plan["support_resources"]["copy"]["page_intro"]
     ids = [r["id"] for r in body["resources"]]
     assert ids == ["lifeline_988", "veterans_crisis_line", "crisis_text_line", "emergency_911"]
-    assert any("988lifeline.org" in r["url"] for r in body["resources"])
+    assert any(
+        (host := urlparse(r["url"]).hostname) is not None
+        and (host == "988lifeline.org" or host.endswith(".988lifeline.org"))
+        for r in body["resources"]
+    )
 
 
 def test_take_a_break_before_sign_in_saves_nothing(contract_client):
