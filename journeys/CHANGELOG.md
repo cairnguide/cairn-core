@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased (2026-10-06)
+
+Added
+- `answer_facts` on a module (schema `modules.schema.json`) and `resolve.answer_question`, so one answer can set more than one fact. M-EMPLOYED uses it: a no sets `was_employed` and `had_employer_plan` to false, so the question isn't queued again (UC-JEF-03, UC-JSU-03). No step, journey, or template version changes, so resolved plans are the same as 0.2.0.
+- The journey use case specs v1.1.0 for J-EXPECTED-FACILITY and J-SUDDEN-UNEXPECTED run as tests (`api/tests/test_journey_use_cases.py`).
+
 ## 0.2.0 (2026-09-25)
 
 Added

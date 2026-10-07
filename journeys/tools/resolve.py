@@ -13,6 +13,9 @@ template loader can port this logic, or call it at build time to pre-compute pla
   5. Compute target dates from date_of_death when it is known.
 
 Usage: python tools/resolve.py case.json [--mvp] > plan.json
+
+answer_question(facts, module_id, answer) applies a yes, no, skip, or I'm not sure to a module's qualifying
+question, using the module's answer_facts.
 """
 
 import json
@@ -70,6 +73,29 @@ def evaluate(cond, facts):
     if op == "not_in":
         return val not in (target or [])
     raise ValueError(f"unknown op {op}")
+
+
+def answer_question(facts, module_id, answer):
+    """Applies the answer to a module's qualifying question and returns the new facts. The caller resolves again,
+    which adds or keeps steps without touching progress on any other step.
+
+    yes and no set the facts in the module's answer_facts. Without answer_facts, yes sets the applies_when fact to
+    its value and no to the opposite (simple eq conditions only). skip and unsure set nothing, so the question stays
+    queued for a later session. One answer can cover two facts: M-EMPLOYED asks about working and a past employer
+    plan together, so a no sets both and the question is never queued again (UC-JEF-03, UC-JSU-03)."""
+    if answer in ("skip", "unsure"):
+        return dict(facts)
+    if answer not in ("yes", "no"):
+        raise ValueError(f"unknown answer {answer}")
+    module = next((m for m in load("modules/modules.json")["modules"] if m["id"] == module_id), None)
+    if module is None:
+        raise ValueError(f"unknown module {module_id}")
+    if "answer_facts" in module:
+        return {**facts, **module["answer_facts"][answer]}
+    cond = module["applies_when"]
+    if cond.get("op") != "eq" or not isinstance(cond.get("value"), bool):
+        raise ValueError(f"{module_id} needs answer_facts: its condition isn't a yes or no fact")
+    return {**facts, cond["fact"]: cond["value"] if answer == "yes" else not cond["value"]}
 
 
 def resolve(facts, mvp_only=False):

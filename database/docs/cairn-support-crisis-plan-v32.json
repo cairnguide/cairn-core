@@ -1,0 +1,366 @@
+{
+  "spec": "Cairn Support and Crisis Plan (card 26)",
+  "spec_id": "cairn-support-crisis-plan",
+  "version": "3.2.0",
+  "date": "2026-10-06",
+  "supersedes": "cairn-support-crisis-plan-v31.json (v3.1.0), and earlier v3.0.0 and v0.2.",
+  "status": "Decisions DEC-26-01 to DEC-26-05 confirmed by Mara 2026-09-29. Clinical review (DEC-26-06) confirmed and in progress: packet sent to a licensed clinician on 2026-10-02. Copy pending clinical and legal review. v3.1 moves break behavior to cairn-take-a-break-use-cases-v32.json.",
+  "public_page": "https://claude.ai/artifact/MiW54h7eLDxVUHLJ8RakEY",
+  "trello": "https://trello.com/c/PAA01d2O",
+  "suite": {
+    "name": "Cairn signup through first journey, v3.1 suite",
+    "files": {
+      "cairn-account-use-cases-v32.json": "Owns the account entity (including break fields), sign-in, sessions, setup acknowledgments, preferred name, voice, notification preferences, Settings, and account deletion.",
+      "cairn-case-creation-use-cases-v32.json": "Owns cases, intake, journey selection, Start journey, the home screen, and action confirmations.",
+      "cairn-support-crisis-plan-v32.json": "Owns crisis detection, care levels, care rest triggers and the trial pause, the follow-up check-in, and support resources. Wins on crisis behavior.",
+      "cairn-take-a-break-use-cases-v32.json": "Owns the Take a break control, every break screen, Cairn's rest offers, what is sent or held during a break, the break-ending notice, and coming back.",
+      "cairn-subscription-use-cases-v33.json": "Owns subscribing, Stripe checkout and events, renewal, failed payments, cancelling, and subscription notices."
+    },
+    "rule": "Each decision and each field has exactly one owner file. Other files reference it by ID and do not restate it."
+  },
+  "changelog_v3": [
+    "Added contexts: how each level, rest, and the check-in behave during account setup (no case yet), in a draft case, and on an active journey.",
+    "DEC-26-04 updated: the check-in uses the notification channels chosen at account setup (account D-13), not journey setup. This also resolves case OPEN-08 because a draft user now always has channels.",
+    "The check-in time moves from case.check_in_at to account.check_in_at, because a level 3 or 4 moment can happen during account setup before any case exists.",
+    "DEC-26-02 triggers now include a heavy question (for example case UC-CASE-05), and the rest offer copy is owned here. Case UC-CASE-23 uses this copy instead of its own.",
+    "New DEC-26-07 (proposed, confirm): what the I need a moment and Take a break controls do, including the 988 line on I need a moment (account D-17).",
+    "New support_resources section: one Support resources page reachable from every screen, including the welcome screen before sign-in.",
+    "while_resting now names what may still be sent: sign-in links the user asks for, action confirmations, and an opted-in check-in.",
+    "Acceptance criteria now carry IDs (AC-26-xx) so the account and case specs can reference them instead of restating them. New AC-26-09 to AC-26-13."
+  ],
+  "decisions": [
+    {
+      "id": "DEC-26-01",
+      "topic": "Care rest pauses the free days",
+      "decision": "When a rest begins while safety_mode is overwhelm, acute_distress, or risk_of_harm, the 28-day free period stops counting. This includes a rest the user accepts at level 2, the automatic task pause at levels 3 and 4, and choosing 'I would like to talk to someone' on the paused screen. The clock restarts when the user returns to tasks or when the rest period they chose ends, whichever comes first. trial_ends_at moves later by the paused time. A rest started in normal mode (Take a break, or a pause the user asks for) keeps the clock running, and Cairn says so before pausing. Subscribed users hear nothing about billing.",
+      "date": "2026-09-29",
+      "clarification": "Updated 2026-10-06: this pause applies only to the 28 free days, and only while they are still running. A care rest never pauses, delays, credits, or otherwise changes a paid subscription. Billing continues on its normal dates (take a break BRK-D-08). The no-billing-wording rule at levels 3 and 4 is unchanged."
+    },
+    {
+      "id": "DEC-26-02",
+      "status": "moved",
+      "moved_to": "cairn-take-a-break-use-cases-v32.json BRK-D-05",
+      "date": "2026-09-29"
+    },
+    {
+      "id": "DEC-26-03",
+      "topic": "Overwhelm (level 2) threshold",
+      "decision": "Two overwhelm signals in one conversation, or three skipped questions in a row.",
+      "date": "2026-09-29"
+    },
+    {
+      "id": "DEC-26-04",
+      "topic": "Opt-in follow-up after level 3 or 4",
+      "decision": "Before the conversation ends, Cairn asks once: 'Would it be okay if I checked in with you tomorrow?' Only on a yes, Cairn sends one check-in the next day through the notification channels the user chose at account setup (account D-13, UC-REG-15). In-app is always one of them, so the check-in also appears the next time they open Cairn. If in-app is the only channel, it appears only there. The check-in is the only message sent outside the user's notification choices, and only because they said yes. It ignores the frequency setting, including No reminders, but respects quiet hours. Cairn never contacts anyone else.",
+      "date": "2026-09-29",
+      "updated": "2026-10-06",
+      "update_note": "v0.2 said 'the channel the user chose at journey setup' and 'Only when I open Cairn'. Channels are now chosen at account setup (account D-13)."
+    },
+    {
+      "id": "DEC-26-05",
+      "topic": "Ending language",
+      "decision": "Words like 'I'm done' or 'I can't do this anymore' that are not clearly about the paperwork are treated as risk_of_harm: the first reply shares 988 and asks directly and kindly whether the user is thinking about ending their life. 'I'm done' that directly follows a finished task or an ending request uses the three-choice question in UC-END-06, which always shows the 988 line. Resolves the card 50 dependency on card 26.",
+      "date": "2026-09-29"
+    },
+    {
+      "id": "DEC-26-06",
+      "topic": "Licensed clinical reviewer",
+      "decision": "CONFIRMED, IN REVIEW (updated 2026-10-04). The clinical review packet (phrase list, escalation protocol, reply scripts, test scenarios) was sent to Kenneth Fulkroad on 2026-10-02. A licensed clinician reviews the warning phrase list and every crisis reply before any real user. Sign-off date is recorded here when it arrives.",
+      "date": "2026-09-29"
+    },
+    {
+      "id": "DEC-26-07",
+      "status": "moved",
+      "moved_to": "cairn-take-a-break-use-cases-v32.json BRK-D-01 (confirmed 2026-10-06) and BRK-D-04 (proposed)",
+      "date": "2026-10-06"
+    }
+  ],
+  "contexts": [
+    {
+      "context": "account_setup",
+      "where": "Account UC-REG-01 to UC-REG-16. No case exists. Trial clock never started.",
+      "detection_inputs": "Free text in the preferred name field, and the Take a break control.",
+      "rest": "Saves setup progress only. There is no trial clock and no tasks_paused_until. Break screens and flows: cairn-take-a-break-use-cases-v32.json.",
+      "check_in": "Stored on account.check_in_at. Sent through the channels chosen at UC-REG-15. If setup stopped before UC-REG-15, it appears in Cairn the next time the user signs in and is sent to the sign-in email only if the user agrees to that in the same question.",
+      "veteran_line": "Veteran status is unknown during setup, so crisis_resource in setup always includes the Veterans Crisis Line."
+    },
+    {
+      "context": "draft_case",
+      "where": "Case UC-CASE-01 to UC-CASE-11 and UC-CASE-17, before Start journey.",
+      "detection_inputs": "All typed text and speech transcripts.",
+      "rest": "A care rest only stops questions and saves the draft. No trial clock exists yet. Break screens and flows: cairn-take-a-break-use-cases-v32.json.",
+      "check_in": "Uses the channels chosen at account setup (resolves case OPEN-08)."
+    },
+    {
+      "context": "active_journey",
+      "where": "After Start journey.",
+      "detection_inputs": "All typed text and speech transcripts.",
+      "rest": "Care rests pause the free days (DEC-26-01). Normal rests do not, and Cairn says so first. Break screens and flows: cairn-take-a-break-use-cases-v32.json.",
+      "check_in": "Uses the account notification channels."
+    }
+  ],
+  "safety_modes": [
+    {
+      "level": 1,
+      "mode": "normal",
+      "name": "Steady",
+      "tier": "conventional",
+      "indicators": [
+        "normal pace",
+        "about 45 minutes of active use",
+        "a heavy task just finished"
+      ],
+      "trigger": "default",
+      "behavior": [
+        "Comfort-first turn contract: acknowledge, one question at most, offer rather than demand, one clear next action.",
+        "Take a break is on every view (cairn-take-a-break-use-cases-v32.json UC-BRK-01).",
+        "Offer rest per cairn-take-a-break-use-cases-v32.json UC-BRK-06."
+      ],
+      "voice": "user.selected_voice",
+      "trial_clock": "keeps counting during a rest; Cairn says so before pausing"
+    },
+    {
+      "level": 2,
+      "mode": "overwhelm",
+      "name": "Heavy",
+      "tier": "contingency",
+      "indicators": [
+        "'This is too much', 'I can't keep up'",
+        "negative self-talk such as 'I keep getting this wrong' or 'I'm useless'",
+        "skipped questions",
+        "long pauses",
+        "the same question asked repeatedly"
+      ],
+      "trigger": "DEC-26-03: two signals in one conversation, or three skipped questions in a row",
+      "behavior": [
+        "Stop asking questions and say so.",
+        "Offer three choices: rest now, one small thing, or just talk.",
+        "If the user chooses rest, it is a care rest (DEC-26-01, cairn-take-a-break-use-cases-v32.json UC-BRK-07).",
+        "Mention the free days pause only if the free days are still running. Say nothing about a paid subscription."
+      ],
+      "voice": "user.selected_voice, softened",
+      "trial_clock": "stops during a care rest"
+    },
+    {
+      "level": 3,
+      "mode": "acute_distress",
+      "name": "Hurting",
+      "tier": "crisis",
+      "indicators": [
+        "overwhelming grief right now",
+        "panic, 'I can't breathe'",
+        "'I can't do this'"
+      ],
+      "trigger": "any one signal",
+      "behavior": [
+        "Leave task mode. Tasks pause automatically (care rest).",
+        "Stay present. Ask nothing about logistics.",
+        "Offer 988 as a place to talk with a person, for any emotional distress, and grief support.",
+        "Say nothing about billing.",
+        "Return to tasks only when the user asks.",
+        "Offer the follow-up once (DEC-26-04)."
+      ],
+      "voice": "steady_care",
+      "trial_clock": "stops"
+    },
+    {
+      "level": 4,
+      "mode": "risk_of_harm",
+      "name": "Unsafe",
+      "tier": "crisis",
+      "indicators": [
+        "any mention of wanting to die, not wanting to be here, or hurting oneself",
+        "any mention of hurting someone else",
+        "ending language not clearly about the paperwork (DEC-26-05)"
+      ],
+      "trigger": "any one signal. When unsure between levels, choose the higher one.",
+      "behavior": [
+        "First reply contains 988 (call, text, or chat at 988lifeline.org) and no task or intake question.",
+        "If veteran_status is yes, also the Veterans Crisis Line (dial 988 then press 1, or text 838255).",
+        "If words are unclear, ask directly and kindly: 'Are you thinking about ending your life?'",
+        "If anyone is in danger right now: 911.",
+        "Stop all tasks (care rest). No account action in the same turn, including account deletion, subscription, or changes to Settings.",
+        "Never ask for a promise to stay safe. Never describe methods. Never promise confidentiality or what a crisis line will do.",
+        "Return to tasks only when the user asks.",
+        "Offer the follow-up once (DEC-26-04)."
+      ],
+      "voice": "steady_care",
+      "trial_clock": "stops"
+    }
+  ],
+  "rest": {
+    "status": "moved",
+    "moved_to": "cairn-take-a-break-use-cases-v32.json",
+    "map": {
+      "choices": "UC-BRK-05",
+      "while_resting": "UC-BRK-08",
+      "on_return": "UC-BRK-10",
+      "copy": "cairn-take-a-break-use-cases-v32.json copy"
+    }
+  },
+  "follow_up": {
+    "ask": "Would it be okay if I checked in with you tomorrow?",
+    "message_outside_cairn": "Checking in, as you asked. There's nothing you need to do today.",
+    "message_in_cairn": "Checking in, as you asked. There's nothing you need to do today. If it would help to talk with someone, you can call or text 988 any time.",
+    "rules": [
+      "Sent once. Never repeated without a new yes.",
+      "Never includes the name of the person who died, the circumstance, or any mention of a crisis.",
+      "Cancelled if the user deletes the account, or deletes the case the conversation was about (check_in_case_id).",
+      "Respects quiet hours (account notification_preferences). Ignores the frequency setting because the user said yes."
+    ]
+  },
+  "loss_survivors": "If case circumstance is suicide, Cairn mentions AFSP loss survivor support once in week 1 and keeps it in Support resources. https://afsp.org/ive-lost-someone/",
+  "resources": {
+    "988": {
+      "call_text": "988",
+      "chat": "https://chat.988lifeline.org",
+      "url": "https://988lifeline.org"
+    },
+    "veterans_crisis_line": {
+      "call": "988 then press 1",
+      "text": "838255",
+      "url": "https://www.veteranscrisisline.net"
+    },
+    "crisis_text_line": {
+      "text": "HOME to 741741",
+      "spanish": "HOLA to 741741",
+      "url": "https://www.crisistextline.org"
+    },
+    "emergency": "911",
+    "afsp_loss_survivors": "https://afsp.org/ive-lost-someone/"
+  },
+  "support_resources": {
+    "what": "One Support resources page listing 988 (call, text, chat), the Veterans Crisis Line, Crisis Text Line, 911 for immediate danger, and AFSP loss survivor support when loss_survivor_resources is set on a case.",
+    "where": "A Support resources link on every screen, including the welcome screen and every setup screen before and after sign-in, next to Take a break.",
+    "copy": {
+      "link_label": "Support resources",
+      "page_intro": "If you'd like to talk with a person, these are free and open any time."
+    },
+    "rules": [
+      "Reachable without signing in.",
+      "Opening it never changes the care level, never starts a rest, and is never logged with a user or case id.",
+      "Every number and link is checked against the issuing organization before each release."
+    ]
+  },
+  "data": {
+    "account.trial_ends_at": "moves later by paused time. Field owned by account spec (cairn-account-use-cases-v32.json).",
+    "account.trial_clock_paused_at": "timestamp, nullable. Set when a care rest starts on an active journey. The reason is never stored. Field owned by account spec.",
+    "account.check_in_at": "timestamp, nullable. Set only on a yes to the follow-up. Cleared when sent. Moved from case.check_in_at in v3 so it works during setup. Field owned by account spec.",
+    "account.check_in_case_id": "uuid, nullable. The case the conversation was about, used only to cancel the check-in if that case is deleted. Null during setup.",
+    "case.tasks_paused_until": "existing field, reused for every rest on a journey",
+    "safety_referral_count": "anonymous monthly count of crisis referrals for SB 243 reporting from July 1, 2027. No user or case id."
+  },
+  "governance": [
+    "Named Safety Lead owns the plan and the phrase list.",
+    "Two detection layers: reviewed phrase list and model reading. Either one raises the level.",
+    "Licensed clinical review before any real user (DEC-26-06, pending).",
+    "Card 48 eval set: every level 3 and 4 scenario must pass in all four voices before a release ships.",
+    "Quarterly review and after any safety concern. Public page changes are dated."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-26-01",
+      "criterion": "[SAFETY] In risk_of_harm, the first response contains 988 and no task or intake question."
+    },
+    {
+      "id": "AC-26-02",
+      "criterion": "[SAFETY] Veteran cases include the Veterans Crisis Line in risk_of_harm responses."
+    },
+    {
+      "id": "AC-26-03",
+      "criterion": "[SAFETY] In acute_distress and risk_of_harm, no billing or trial wording appears."
+    },
+    {
+      "id": "AC-26-04",
+      "criterion": "[TRIAL] trial_ends_at moves later by exactly the length of every care rest."
+    },
+    {
+      "id": "AC-26-05",
+      "criterion": "[TRIAL] A normal-mode rest never changes trial_ends_at.",
+      "status": "moved",
+      "moved_to": "cairn-take-a-break-use-cases-v32.json AC-BRK-05"
+    },
+    {
+      "id": "AC-26-06",
+      "criterion": "[REST] No message is sent outside Cairn while tasks_paused_until is in the future, except an opted-in check-in or an action confirmation.",
+      "status": "moved",
+      "moved_to": "cairn-take-a-break-use-cases-v32.json AC-BRK-06"
+    },
+    {
+      "id": "AC-26-07",
+      "criterion": "[OVERWHELM] Level 2 starts on the second signal or the third consecutive skip, not before."
+    },
+    {
+      "id": "AC-26-08",
+      "criterion": "[FOLLOW-UP] A check-in is sent only after an explicit yes, exactly once."
+    },
+    {
+      "id": "AC-26-09",
+      "criterion": "[SAFETY] In account setup, selecting Take a break stops the flow, saves progress, and shows the 988 line (DEC-26-07, once confirmed).",
+      "status": "moved",
+      "moved_to": "cairn-take-a-break-use-cases-v32.json AC-BRK-03"
+    },
+    {
+      "id": "AC-26-10",
+      "criterion": "[SAFETY] The Support resources link is visible and works on every screen, including the welcome screen before sign-in."
+    },
+    {
+      "id": "AC-26-11",
+      "criterion": "[SAFETY] At level 4, no account action (deletion, subscription, Settings change) is carried out in the same turn."
+    },
+    {
+      "id": "AC-26-12",
+      "criterion": "[FOLLOW-UP] A yes during account setup stores account.check_in_at with no case id, and the check-in is delivered through the account channels."
+    },
+    {
+      "id": "AC-26-13",
+      "criterion": "[REST] During any rest, sign-in links the user requests and action confirmations are still delivered.",
+      "status": "moved",
+      "moved_to": "cairn-take-a-break-use-cases-v32.json AC-BRK-07"
+    }
+  ],
+  "open_decisions": [
+    {
+      "id": "OPEN-26-01",
+      "topic": "Use one break control label everywhere (Take a break or Take a break) instead of two",
+      "default": "keep both as defined in DEC-26-07 until clinical review comments",
+      "owner": "Safety Lead with clinical reviewer",
+      "status": "resolved 2026-10-06: Take a break everywhere (cairn-take-a-break-use-cases-v32.json BRK-D-01)"
+    },
+    {
+      "id": "OPEN-BRK-01",
+      "owned_by": "cairn-take-a-break-use-cases-v32.json",
+      "topic": "Send the 24-hour break-ending notice during a care rest?",
+      "default": "No",
+      "owner": "Mara with clinical reviewer"
+    }
+  ],
+  "related_specs": [
+    "cairn-account-use-cases-v32.json",
+    "cairn-case-creation-use-cases-v32.json",
+    "cairn-take-a-break-use-cases-v32.json"
+  ],
+  "sources": [
+    "https://library.samhsa.gov/sites/default/files/advisory-model-standards-crisis-care-workers-pep25-07-017.pdf",
+    "https://www.nimh.nih.gov/health/publications/5-action-steps-to-help-someone-having-thoughts-of-suicide",
+    "https://www.nimh.nih.gov/funding/clinical-research/conducting-research-with-participants-at-elevated-risk-for-suicide-considerations-for-researchers",
+    "https://www.sciencedirect.com/science/article/abs/pii/S0165032716319474",
+    "https://www.nationalacademies.org/read/18338/chapter/5",
+    "https://nap.nationalacademies.org/read/8/chapter/2",
+    "https://legiscan.com/CA/text/SB243/id/3267669",
+    "https://988lifeline.org/get-help/",
+    "https://www.veteranscrisisline.net/",
+    "https://www.crisistextline.org/",
+    "https://afsp.org/ive-lost-someone/"
+  ],
+  "changelog_v3_1": [
+    "Break behavior moved to cairn-take-a-break-use-cases-v31.json: DEC-26-02 (now BRK-D-05), DEC-26-07 (now BRK-D-01 and BRK-D-04), the rest section, and AC-26-05, AC-26-06, AC-26-09, AC-26-13.",
+    "OPEN-26-01 resolved 2026-10-06: Take a break is the one label on every view.",
+    "New exception to the rest rule: a 24-hour break-ending notice is sent for normal breaks (cairn-take-a-break-use-cases-v31.json BRK-D-02). Not sent during a care rest by default (BRK-D-03, OPEN-BRK-01 for clinical review).",
+    "Level 1 behavior points to the Take a break file.",
+    "Signed-out screen at levels 3 and 4 shows 988 and Support resources (account UC-REG-19)."
+  ],
+  "changelog_v3_2": [
+    "DEC-26-01 clarified: a care rest pauses only the free days, only while they are running. It never pauses, delays, or changes a paid subscription (take a break BRK-D-08)."
+  ]
+}

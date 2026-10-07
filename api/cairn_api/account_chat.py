@@ -1,5 +1,5 @@
-"""Account requests typed to Cairn: delete my account (UC-REG-15), download my data (UC-REG-16), and
-change how Cairn keeps in touch (UC-CASE-20: "Stop texting me", "Email me instead").
+"""Account requests typed to Cairn: delete my account (UC-ACCT-01), download my data (UC-REG-16), and
+change how Cairn keeps in touch (UC-REG-17, which took in case UC-CASE-20: "Stop texting me", "Email me instead").
 
 Rule-based and deliberately narrow, like extraction.py, until a model does this.
 A message nobody recognizes gets a short list of what Cairn can do here.
@@ -17,7 +17,7 @@ import re
 from dataclasses import dataclass
 
 from . import safety
-from .schemas import NotificationChannel, NotificationChoice, SafetyMode
+from .schemas import NotificationChannel, NotificationChannelsIn, SafetyMode
 
 _DELETE = re.compile(
     r"\b(delete|remove|erase|close|get rid of|wipe)\b.{0,40}\b(account|profile|everything|all (of )?my "
@@ -52,7 +52,7 @@ def read(text: str) -> Reading:
     risk = safety.classify(text).mode == SafetyMode.risk_of_harm
     stop = _STOP.search(text)
     switch_to = (NotificationChannel.email if _EMAIL_INSTEAD.search(text)
-                 else NotificationChannel.push if _PUSH_INSTEAD.search(text) else None)
+                 else NotificationChannel.browser if _PUSH_INSTEAD.search(text) else None)
     if _DELETE.search(text):
         intent = "delete_account"
     elif _DOWNLOAD.search(text):
@@ -68,8 +68,8 @@ def read(text: str) -> Reading:
     return Reading(intent, risk)
 
 
-def switch_channel(current: NotificationChoice, channel: NotificationChannel,
-                   fallback: NotificationChoice) -> NotificationChoice:
-    """Use one channel instead, keeping the reasons, timing, and pace the user already chose, if any."""
-    base = current if current.reasons else fallback
-    return base.model_copy(update={"channels": [channel]})
+def switch_channel(channel: NotificationChannel) -> NotificationChannelsIn:
+    """Use one channel instead of the others. In-app always stays on. The pace and timing the user chose stay as
+    they are. Browser notifications still need the browser's permission, asked by the client."""
+    return NotificationChannelsIn(email=channel == NotificationChannel.email,
+                                  browser=channel == NotificationChannel.browser)

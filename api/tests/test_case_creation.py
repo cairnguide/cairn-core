@@ -20,7 +20,7 @@ import pytest
 from pymongo.errors import WriteError
 
 from cairn_api import maintenance
-from cairn_api.copy_store import load_case_copy
+from cairn_api.copy_store import load_break_copy, load_case_copy, load_subscription_copy
 from cairn_api.errors import RuleViolation
 from cairn_api.store import Session
 
@@ -517,7 +517,8 @@ def test_uc10_pause_saves_says_28_days_and_never_starts_trial_or_reminders(api):
     answer(api, "cc10", cid, "user_role", "child")
     r = api.post(f"/v1/cases/{cid}/intake/pause", headers=as_user("cc10"), json={})
     turn = r.json()
-    assert turn["next_step"]["prompt"] == COPY["pause"] and "28 days" in COPY["pause"]
+    pause = load_break_copy()["draft_pause"]
+    assert turn["next_step"]["prompt"] == pause and "28 days" in pause
     assert turn["case"]["last_intake_step"] == "display_name"
     assert trial(api, "cc10") == (None, None)
     assert api.db.trial_reminders.count_documents({"user_id": user_id(api, "cc10")}) == 0
@@ -532,7 +533,7 @@ def test_uc10_return_greets_and_says_where_they_left_off(api):
     back = api.get(f"/v1/cases/{cid}", headers=as_user("cc10b")).json()
     assert back["acknowledgment"] == COPY["resume_greeting"]
     assert back["body"] == [COPY["resume_where"].format(step=COPY["step_display_name"])]
-    assert back["next_step"]["prompt"] == COPY["resume_question"]
+    assert back["next_step"]["prompt"] == load_break_copy()["draft_resume_question"]
 
 
 def _age_draft(api, case_id, days):
@@ -612,11 +613,10 @@ def test_uc12_preview_then_start_starts_trial_once_in_local_time(api):
     assert preview["explanation"] and preview["start_available"]
     assert [w["week"] for w in preview["weeks"]] == [1, 2, 3, 4]
     assert preview["pre_button_notice"]["text"] == COPY["pre_button_notice"]
-    # Step 3 (UC-CASE-19) comes first: how Cairn keeps in touch. Then the notice and the buttons.
+    # Step 3 (UC-CASE-19) comes first: confirm how Cairn keeps in touch. Then the notice and the buttons.
     assert preview["notifications_chosen"] is False
-    assert preview["next_step"]["action"] == "choose_notifications"
-    assert [o["value"] for o in preview["next_step"]["options"]] == ["keep_it_simple", "set_up", "skip"]
-    r = api.put(f"/v1/cases/{cid}/notification-preferences", json={"preset": "skip"}, headers=as_user("cc12"))
+    assert preview["next_step"]["action"] == "confirm_keep_in_touch"
+    r = api.put(f"/v1/cases/{cid}/keep-in-touch", json={"skip": True}, headers=as_user("cc12"))
     assert r.status_code == 200, r.text
     preview = api.get(f"/v1/cases/{cid}/journey/preview", headers=as_user("cc12")).json()
     assert preview["notifications_chosen"] is True
@@ -634,17 +634,16 @@ def test_uc12_preview_then_start_starts_trial_once_in_local_time(api):
     assert ends - begun == timedelta(days=28)
     local_end = ends.astimezone(ZoneInfo("Pacific/Honolulu")).date()
     assert started["trial_end_date"] == local_end.isoformat()
-    # in_app_only: the trial reminder shows in Cairn only, so the channel clause is empty.
+    # Account D-14: the note is shown in Cairn and emailed a week before, to the sign-in email.
     assert started["confirmation"] == COPY["confirmation_first_case"].format(
-        trial_end_date=f"{local_end:%B} {local_end.day}, {local_end.year}",
-        reminder_channel_clause=COPY["reminder_channel_clause_in_cairn_only"])
+        trial_end_date=f"{local_end:%B} {local_end.day}, {local_end.year}", email="cc12@example.test")
     assert "$14.99 a month" in started["confirmation"] and started["legal_review_required"] is True
     case = started["case"]
     assert case["status"] == "active" and case["journey_template_key"] == "general"
     assert case["journey_template_version"] == 2 and case["journey_started_at"]
     reminder = [r["due_at"] for r in api.db.trial_reminders.find({"user_id": user_id(api, "cc12"),
                                                                   "kind": "trial_ends_soon"})]
-    assert reminder == [ends - timedelta(days=3)]
+    assert reminder == [ends - timedelta(days=7)]
 
 
 def test_uc12_not_yet_keeps_the_draft_and_the_trial_unstarted(api):
@@ -668,16 +667,22 @@ def test_uc12_no_subscription_prompt_before_the_trial_ends(api):
 
 
 def test_uc12_start_journey_never_asks_for_payment(api):
-    """[PRIVACY] No payment form, payment field, or payment SDK call in case creation or Start journey."""
+    """[PRIVACY] No payment form, payment field, or payment SDK call in case creation or Start journey. Outside it,
+    the subscription screens name billing states only. Card and bank details never reach Cairn (SUB-D-01)."""
     spec = api.app.openapi()
     pattern = re.compile(r"card|payment|billing|cvv|cvc|expiry|expiration|iban|routing", re.I)
+    details = re.compile(r"card|cvv|cvc|expiry|expiration|iban|routing", re.I)
+    subscription = {p for p, ops in spec["paths"].items() if any("Subscription" in o.get("tags", []) for o in
+                                                                 ops.values())}
     for path, ops in spec["paths"].items():
         for op in ops.values():
             for param in op.get("parameters", []):
-                assert not pattern.search(param["name"]), f"{path} {param['name']}"
+                assert not (details if path in subscription else pattern).search(param["name"]), path
+    billing_models = {"SubscriptionOut", "CancelSubscriptionResponse", "PortalIn", "PortalResponse", "CheckoutIn",
+                      "CheckoutResponse", "CheckoutResultResponse", "SubscriptionTermsResponse"}
     for name, schema in spec["components"]["schemas"].items():
         for prop in schema.get("properties", {}):
-            assert not pattern.search(prop), f"{name}.{prop}"
+            assert not (details if name in billing_models else pattern).search(prop), f"{name}.{prop}"
 
 
 # ------------------------------------------------------------------ UC-CASE-13
@@ -878,7 +883,9 @@ def test_uc18_read_only_account_can_draft_but_not_start_without_a_subscription(a
     assert turn["case"]["status"] == "draft"
     preview = api.get(f"/v1/cases/{draft}/journey/preview", headers=as_user("cc18b")).json()
     assert preview["start_available"] is False and preview["next_step"]["action"] == "choose_subscription"
-    assert preview["next_step"]["prompt"] == COPY["subscription_needed_new_journey"]
+    # UC-SUB-07 (UC-CASE-18): Subscribe or Not now. The draft is saved either way.
+    assert preview["next_step"]["prompt"] == load_subscription_copy()["new_journey_needs_subscription"]
+    assert [o["value"] for o in preview["next_step"]["options"]] == ["subscribe", "not_now"]
     r = api.post(f"/v1/cases/{draft}/journey/start", json={"pre_button_notice_version": "x"}, headers=as_user("cc18b"))
     assert r.status_code == 403 and r.json()["next_step"]["action"] == "choose_subscription"
     assert api.db.cases.find_one({"_id": UUID(draft)})["status"] == "draft"

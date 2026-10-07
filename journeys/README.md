@@ -50,6 +50,10 @@ python tools/check_examples.py                # resolve every example case, fail
 python tools/coverage.py > COVERAGE.md        # regenerate the state coverage matrix
 ```
 
+`resolve.answer_question(facts, module_id, answer)` applies a yes, no, skip, or I'm not sure to a module's qualifying question and returns the new facts. A module whose one question covers two facts lists them in `answer_facts`: M-EMPLOYED asks about working and a past employer plan together, so a no sets both `was_employed` and `had_employer_plan` to false and the question is never queued again (UC-JEF-03, UC-JSU-03). Skip and I'm not sure set nothing.
+
+The journey use case specs (`database/docs/cairn-journey-J-*-use-cases-v11.json`) are tests: `api/tests/test_journey_use_cases.py` runs every expected value in them against `resolve.py`. Regenerate those specs when a template change moves a step.
+
 The validator fails the build when a step mentions a phone number, dollar amount, form number, or deadline without a citation, when a researched overlay has no source, when any user-facing string contains an em dash or semicolon, when `copy.ask` holds more than one question, or when a step touching an SSN allows chat capture.
 
 `examples/` holds five sample cases and their resolved plans (full and MVP).

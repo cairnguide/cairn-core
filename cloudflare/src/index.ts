@@ -30,6 +30,15 @@ const API_KEYS = [
   "CAIRN_PRE_NEED_PATH",
   "CAIRN_OVERWHELM_SKIP_THRESHOLD",
   "CAIRN_CORS_ORIGINS",
+  "CAIRN_APP_URL",
+  "CAIRN_SUBSCRIPTION_PRICE_CENTS",
+  "CAIRN_STRIPE_SECRET_KEY",
+  "CAIRN_STRIPE_WEBHOOK_SECRET",
+  "CAIRN_STRIPE_PRODUCT_ID",
+  "CAIRN_VAPID_PUBLIC_KEY",
+  "CAIRN_INACTIVITY_TIMEOUT_SECONDS",
+  "CAIRN_TIMEOUT_WARNING_SECONDS",
+  "CAIRN_OVERALL_SESSION_DAYS",
 ] as const;
 
 // The jobs user's connection string and provider secrets reach only the jobs container.
@@ -57,15 +66,20 @@ const JOBS_KEYS = [
   "CAIRN_APPLE_TEAM_ID",
   "CAIRN_APPLE_KEY_ID",
   "CAIRN_APPLE_PRIVATE_KEY",
+  "CAIRN_STRIPE_SECRET_KEY",
+  "CAIRN_VAPID_PRIVATE_KEY",
+  "CAIRN_VAPID_SUBJECT",
+  "CAIRN_PRICE_CHANGE_EFFECTIVE_DATE",
+  "CAIRN_PRICE_CHANGE_NEW_PRICE",
 ] as const;
 
 // Cron expression (as written in wrangler.jsonc) to the jobs it runs, in order.
 // Job names match JOBS in api/cairn_api/jobs.py.
 export const JOBS_BY_CRON: Record<string, readonly string[]> = {
   "*/5 * * * *": ["outbound"],
-  "*/15 * * * *": ["identity_cleanup"],
-  "7 * * * *": ["purge_held_cases", "settle_trial_clocks"],
-  "30 3 * * *": ["purge_inactive_drafts", "expire_trials", "purge_stale_accounts"],
+  "*/15 * * * *": ["identity_cleanup", "process_stripe_events", "retry_cancellations"],
+  "7 * * * *": ["purge_held_cases", "settle_trial_clocks", "sync_early_subscriptions"],
+  "30 3 * * *": ["purge_inactive_drafts", "expire_trials", "purge_stale_accounts", "price_change_notices"],
 };
 
 function pick(env: Env, keys: readonly string[]): Settings {

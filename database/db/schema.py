@@ -39,7 +39,7 @@ from __future__ import annotations
 import hashlib
 import json
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # ------------------------------------------------------------------ building blocks
 
@@ -91,11 +91,15 @@ def not_null(field: str) -> dict:
 
 VOICES = ("steady_direct", "warm_patient", "brisk_businesslike", "plain_practical")  # voices/manifest.yaml
 SIGN_IN_METHODS = ("google", "apple", "email")
-ONBOARDING_STEPS = ("account_created", "privacy_terms_accepted", "trial_terms_accepted", "ai_notice_accepted",
-                    "preferred_name_saved", "complete")
-ACCOUNT_STATUSES = ("pending_onboarding", "active_no_case", "trial_active", "read_only", "subscribed",
-                    "pending_deletion")
-CONSENT_PURPOSES = ("privacy_terms", "trial_terms", "ai_notice",
+# The account spec's onboarding_sequence (UC-REG-01 to UC-REG-16). complete means notification choices were saved.
+ONBOARDING_STEPS = ("account_created", "adult_confirmed", "privacy_terms_accepted", "trial_terms_accepted",
+                    "ai_notice_accepted", "preferred_name_saved", "voice_saved", "complete")
+# D-19: status is the setup lifecycle only. access and subscription_status hold the billing state.
+ACCOUNT_STATUSES = ("pending_onboarding", "setup_complete", "pending_deletion")
+ACCESS_LEVELS = ("full", "read_only")
+SUBSCRIPTION_STATUSES = ("none", "active", "lapsed")
+BILLING_NOTICES = ("none", "payment_failed", "action_required")
+CONSENT_PURPOSES = ("privacy_terms", "trial_terms", "ai_notice", "subscription_terms",
                     "terms", "privacy", "ai_processing")  # the last three only for records moved from PostgreSQL
 # draft (case creation spec). The rest come from the card 50 data model. completed, closed_open_steps, and
 # pending_deletion belong to ending a journey (UC-END), which sets them. A 7-day hold is still recorded as
@@ -131,11 +135,18 @@ JURISDICTIONS = ("AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI
                  "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND",
                  "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC",
                  "PR", "GU", "VI", "AS", "MP")
-CHANNELS = ("email", "push", "in_app_only")  # no sms: card 50 and legal review first
+# Account-wide notification choices (account D-13, UC-REG-15). in_app is always one of the channels.
+# No sms: OPEN-05 keeps text messages out of the MVP.
+CHANNELS = ("email", "in_app", "browser")
+FREQUENCIES = ("due_only", "daily", "weekly", "none")
+DUE_DATE_LEADS = ("day_before", "three_days", "one_week")
+INACTIVITY_AFTER = ("off", "three_days", "one_week", "two_weeks")
 REASONS = ("due_date_upcoming", "inactivity")
-FREQUENCIES = ("as_it_happens", "daily_max", "weekly_max")
+# Only trial_ends_soon is scheduled since account D-14. The other two stay for rows written before it.
 REMINDER_KINDS = ("trial_day_21", "trial_day_27", "trial_ends_soon")
-CONFIRMATION_TYPES = ("case_deleted_now", "case_deleted_after_hold", "account_deleted")
+CONFIRMATION_TYPES = ("case_deleted_now", "case_deleted_after_hold", "account_deleted", "setup_complete",
+                      "settings_changed", "subscription_started", "subscription_canceled")
+HH_MM = {"bsonType": "string", "pattern": r"^([01][0-9]|2[0-3]):[0-5][0-9]$"}
 CONTEXT_KEYS = ("CERT_ORDER", "FUNERAL", "BANK_NOTICES", "CONVO_SUMMARY")
 SETTING_RANGES = {"draft_retention_days": (1, 365), "trial_reminder_days_before": (1, 27),
                   "case_deletion_hold_days": (1, 30)}
@@ -194,12 +205,20 @@ collection("users", closed({
     "sign_in_method": enum(*SIGN_IN_METHODS, nullable=True),
     "preferred_name": text(1, 100, nullable=True),
     "name_pronunciation": text(1, 200, nullable=True),
-    # A name shared by Google or Apple. Pre-fill for UC-REG-11 only, cleared once a preferred name is saved.
-    "name_prefill": text(1, 100, nullable=True),
+    # Retired by account spec 3.2.0 (D-16, UC-REG-11): nothing is pre-filled from a provider. Always null now. Kept
+    # so records moved from PostgreSQL validate. The v3 migration cleared every value.
+    "name_prefill": {"bsonType": "null"},
+    # UC-REG-06. Yes or no, and when. Never a birthdate or an age. Null until asked (accounts made before v3).
+    "adult_attested": {"bsonType": ["bool", "null"]},
+    "adult_attested_at": NULL_TIMESTAMP,
     "voice": enum(*VOICES),
     "time_zone": text(1, 64, nullable=True),
     "onboarding_step": enum(*ONBOARDING_STEPS),
     "status": enum(*ACCOUNT_STATUSES),
+    # D-19. read_only once the free days end with no active subscription. store.effective_access never waits
+    # for the job that keeps this field current.
+    "access": enum(*ACCESS_LEVELS),
+    "subscription_status": enum(*SUBSCRIPTION_STATUSES),
     # Set once, by store.start_journey on the account's first journey. Never reset.
     "trial_started_at": NULL_TIMESTAMP,
     # 28 days after the start, plus every care rest (DEC-26-01). Only ever moves later.
@@ -209,6 +228,36 @@ collection("users", closed({
     # The AI reminder (UC-CASE-23): when it was last shown, and on which local day for the once-a-day rule.
     "ai_reminder_shown_at": NULL_TIMESTAMP,
     "ai_reminder_shown_on": NULL_CALENDAR_DATE,
+    # D-20. The last request, for the 5-minute sign-out. Updated at most every few seconds.
+    "last_active_at": NULL_TIMESTAMP,
+    # DEC-26-04. One check-in the user said yes to: a time, never a reason. check_in_case_id only cancels it when
+    # that case is deleted, and is null during setup. check_in_by_email is the yes to email asked during setup
+    # before notification choices exist. check_in_sent_at is when it went outside Cairn. It also shows in Cairn.
+    "check_in_at": NULL_TIMESTAMP,
+    "check_in_case_id": NULL_UUID,
+    "check_in_by_email": BOOL,
+    "check_in_sent_at": NULL_TIMESTAMP,
+    # Take a break (cairn-take-a-break-use-cases-v32.json). A break covers the person, not one case (BRK-D-06).
+    # break_until is null for Until I come back. No break type, reason, or care level is stored.
+    "break_started_at": NULL_TIMESTAMP,
+    "break_until": NULL_TIMESTAMP,
+    "break_notice_at": NULL_TIMESTAMP,
+    "break_notice_sent_at": NULL_TIMESTAMP,
+    # UC-SUB-01. The subscribe prompt is shown at most once a day.
+    "subscribe_prompt_shown_on": NULL_CALENDAR_DATE,
+    # UC-SUB-18. The effective date of the price change this account was told about, so it is told once.
+    "price_notice_sent_for": NULL_CALENDAR_DATE,
+    # Subscription (cairn-subscription-use-cases-v33.json). Stripe ids only. Never a card, bank, or address.
+    "stripe_customer_id": text(5, 255, nullable=True, pattern=r"^cus_[A-Za-z0-9]+$"),
+    "stripe_subscription_id": text(5, 255, nullable=True, pattern=r"^sub_[A-Za-z0-9]+$"),
+    # The open Checkout Session, so there is only one at a time (UC-SUB-03). The id only, never its URL.
+    "stripe_checkout_session_id": text(5, 255, nullable=True, pattern=r"^cs_[A-Za-z0-9_]+$"),
+    "current_period_end": NULL_TIMESTAMP,
+    "cancel_at_period_end": BOOL,
+    "billing_notice": enum(*BILLING_NOTICES),
+    "subscribed_at": NULL_TIMESTAMP,
+    "annual_reminder_due_at": NULL_TIMESTAMP,
+    "cancel_requested_at": NULL_TIMESTAMP,
     # UC-REG-05. Other sign-ins the user added after signing in with the original one. Never added automatically.
     # Absent until the first link. idp_subject is unique across accounts (index below and store.link_identity).
     "linked_identities": {"bsonType": "array", "maxItems": len(SIGN_IN_METHODS) - 1, "items": document({
@@ -225,6 +274,14 @@ collection("users", closed({
              {"$and": [not_null("$trial_started_at"),
                        {"$gte": ["$trial_ends_at", {"$dateAdd": {"startDate": "$trial_started_at", "unit": "hour",
                                                                   "amount": 672}}]}]}]},
+    # A break's end and notice exist only during a break, and the end is after the start.
+    {"$or": [not_null("$break_started_at"),
+             {"$and": [is_null("$break_until"), is_null("$break_notice_at"), is_null("$break_notice_sent_at")]}]},
+    {"$or": [is_null("$break_until"), {"$gt": ["$break_until", "$break_started_at"]}]},
+    # A check-in belongs to a time. No case id or send time without one.
+    {"$or": [not_null("$check_in_at"), {"$and": [is_null("$check_in_case_id"), is_null("$check_in_sent_at")]}]},
+    # UC-REG-06. The answer and its time go together.
+    {"$eq": [is_null("$adult_attested"), is_null("$adult_attested_at")]},
 )
 
 # Append-only. Rows go only when the account is deleted.
@@ -235,7 +292,9 @@ collection("consents", closed({
     "granted_at": TIMESTAMP,
     "auth_provider": enum(*SIGN_IN_METHODS, nullable=True),
     "client": text(1, 100, nullable=True),
-}))
+    # subscription_terms only (UC-SUB-02): the price shown with the checkbox.
+    "price_shown": text(1, 40, nullable=True),
+}, optional=("price_shown",)))
 
 # The case is the security boundary. members decides who can see and change it.
 collection("cases", closed({
@@ -265,9 +324,8 @@ collection("cases", closed({
     "attorney_triggers": {"bsonType": "array", "uniqueItems": True, "items": enum(*ATTORNEY_TRIGGERS)},
     "shown_notices": {"bsonType": "array", "uniqueItems": True, "items": enum(*SHOWN_NOTICES)},
     # Lets the product step back from task mode, for every rest. Do not store distress inferences (decision 7).
+    # A break is the account's (BRK-D-06). This mirrors users.break_until on every active case.
     "tasks_paused_until": NULL_TIMESTAMP,
-    # The user said yes to one check-in tomorrow after a hard moment (DEC-26-04). Cleared once shown or sent.
-    "check_in_at": NULL_TIMESTAMP,
     # Only when the user themselves said the death was by suicide (UC-CASE-05). Adds loss survivor support.
     # Never shown back as a label.
     "loss_survivor_resources": BOOL,
@@ -400,25 +458,26 @@ collection("case_tasks", closed({
     {"$or": [is_null("$handled_by"), {"$eq": ["$status", "handled_elsewhere"]}]},
 )
 
-# How and when Cairn keeps in touch, per journey (UC-CASE-19). _id is the case id. No row, or in_app_only,
-# means nothing is sent outside the app (D-2026-09-25-N2). Never used for marketing or advertising.
+# How Cairn keeps in touch, for the whole account (account D-13, UC-REG-15, UC-REG-17). _id is the user id.
+# Channels and frequency are chosen at setup. due_date_lead and inactivity_after are confirmed with the first journey
+# (UC-CASE-19, journey_confirmed_at). Never used for marketing or advertising.
 collection("notification_preferences", closed({
     "channels": {"bsonType": "array", "minItems": 1, "uniqueItems": True, "items": enum(*CHANNELS)},
-    "reasons": {"bsonType": "array", "uniqueItems": True, "items": enum(*REASONS)},
-    "due_date_lead_days": enum(1, 3, 7, nullable=True),
-    "inactivity_days": enum(3, 7, 14, nullable=True),
     "frequency": enum(*FREQUENCIES),
-    # What the OS said when the user chose push. Push is never required for the app to work.
-    "push_permission_granted": BOOL,
+    # Read from the browser's time zone, never asked at setup. 21:00 to 08:00 by default.
+    "quiet_hours_start": HH_MM,
+    "quiet_hours_end": HH_MM,
+    # Only while browser is chosen and permission was granted. Deleted when turned off or with the account.
+    "browser_push_endpoint": text(12, 2048, nullable=True, pattern=r"^https://"),
+    "due_date_lead": enum(*DUE_DATE_LEADS),
+    "inactivity_after": enum(*INACTIVITY_AFTER),
+    "journey_confirmed_at": NULL_TIMESTAMP,
     "updated_at": TIMESTAMP,
 }),
-    # notification_choice_valid: in_app_only stands alone, any other channel needs a reason,
-    # and each reason needs its timing.
-    {"$cond": [{"$in": ["in_app_only", "$channels"]},
-               {"$and": [{"$eq": [{"$size": "$channels"}, 1]}, {"$eq": [{"$size": "$reasons"}, 0]}]},
-               {"$gte": [{"$size": "$reasons"}, 1]}]},
-    {"$eq": [not_null("$due_date_lead_days"), {"$in": ["due_date_upcoming", "$reasons"]}]},
-    {"$eq": [not_null("$inactivity_days"), {"$in": ["inactivity", "$reasons"]}]},
+    # in_app is always on (UC-REG-15).
+    {"$in": ["in_app", "$channels"]},
+    # A push endpoint only while browser is a channel.
+    {"$or": [is_null("$browser_push_endpoint"), {"$in": ["browser", "$channels"]}]},
 )
 
 # What was sent outside the app, and why. No text, no address.
@@ -426,16 +485,19 @@ collection("notification_log", closed({
     "case_id": UUID,
     "case_task_id": NULL_UUID,
     "reason": enum(*REASONS),
-    "channel": enum("email"),
+    "channel": enum("email", "browser"),
     "sent_at": TIMESTAMP,
 }))
 
+# The trial-ending note (account D-14): emailed 7 days before trial_ends_at and shown in Cairn. skipped_at means it
+# fell during a break and showed only in Cairn (UC-BRK-08).
 collection("trial_reminders", closed({
     "user_id": UUID,
     "kind": enum(*REMINDER_KINDS),
     "due_at": TIMESTAMP,
     "email_sent_at": NULL_TIMESTAMP,
-}))
+    "skipped_at": NULL_TIMESTAMP,
+}, optional=("skipped_at",)))
 
 # Auth0 user deletion and Apple token revocation, queued by account deletion and run by a job.
 collection("identity_deletion_requests", closed({
@@ -495,6 +557,17 @@ collection("safety_referral_counts", closed({
     "updated_at": TIMESTAMP,
 }))
 
+# Stripe webhook events (UC-SUB-22). Ids, type, and times only, never the payload. _id is Stripe's event id, so a
+# repeated delivery is seen and changes nothing.
+collection("stripe_events", closed({
+    "_id": text(5, 255, pattern=r"^evt_[A-Za-z0-9]+$"),
+    "type": text(1, 100, pattern=r"^[a-z_.]+$"),
+    "account_id": NULL_UUID,
+    "received_at": TIMESTAMP,
+    "processed_at": NULL_TIMESTAMP,
+    "attempts": {**INT, "minimum": 0},
+}))
+
 # Values that change without a code change. Jobs and the owner write. The app reads.
 collection("app_settings", closed({
     "_id": enum(*SETTING_RANGES),
@@ -530,14 +603,21 @@ INDEXES: list[tuple[str, list[tuple[str, int]], dict]] = [
     ("users", [("linked_identities.email_lower", 1)],
      {"name": "users_linked_email_idx",
       "partialFilterExpression": {"linked_identities.email_lower": {"$exists": True}}}),
+    ("users", [("stripe_customer_id", 1)],
+     {"unique": True, "name": "users_stripe_customer_uq",
+      "partialFilterExpression": {"stripe_customer_id": {"$type": "string"}}}),
+    ("users", [("check_in_at", 1)],
+     {"name": "users_check_in_idx", "partialFilterExpression": {"check_in_at": {"$type": "date"}}}),
+    ("users", [("break_notice_at", 1)],
+     {"name": "users_break_notice_idx", "partialFilterExpression": {"break_notice_at": {"$type": "date"}}}),
+    ("users", [("annual_reminder_due_at", 1)],
+     {"name": "users_annual_reminder_idx", "partialFilterExpression": {"annual_reminder_due_at": {"$type": "date"}}}),
     ("consents", [("user_id", 1), ("purpose", 1)], {"name": "consents_user_idx"}),
     ("cases", [("created_by", 1), ("created_at", 1)], {"name": "cases_created_by_idx"}),
     ("cases", [("members.user_id", 1)], {"name": "cases_members_idx"}),
     ("cases", [("status", 1), ("last_activity_at", 1)], {"name": "cases_status_activity_idx"}),
     ("cases", [("deletion_requested_at", 1)],
      {"name": "cases_deletion_requested_idx", "partialFilterExpression": {"deletion_requested_at": {"$type": "date"}}}),
-    ("cases", [("check_in_at", 1)],
-     {"name": "cases_check_in_idx", "partialFilterExpression": {"check_in_at": {"$type": "date"}}}),
     ("cases", [("purge_after", 1)],
      {"name": "cases_purge_after_idx", "partialFilterExpression": {"purge_after": {"$type": "date"}}}),
     ("deceased", [("case_id", 1)], {"unique": True, "name": "deceased_case_uq"}),
@@ -559,6 +639,7 @@ INDEXES: list[tuple[str, list[tuple[str, int]], dict]] = [
     ("audit_events", [("case_id", 1), ("occurred_at", 1)], {"name": "audit_events_case_idx"}),
     ("audit_events", [("actor_id", 1), ("occurred_at", 1)], {"name": "audit_events_actor_idx"}),
     ("context_items", [("case_id", 1), ("item_key", 1)], {"unique": True, "name": "context_items_case_key_uq"}),
+    ("stripe_events", [("processed_at", 1), ("received_at", 1)], {"name": "stripe_events_unprocessed_idx"}),
 ]
 
 # ------------------------------------------------------------------ roles
@@ -590,6 +671,7 @@ ROLES: dict[str, dict[str, list[str]]] = {
         "identity_deletion_requests": ["insert"],              # queued by account deletion, never read
         "action_confirmation_outbox": ["insert", "remove"],    # queued by deletions, never read
         "safety_referral_counts": ["insert", "update"],        # count up only, never read
+        "stripe_events": ["find", "insert", "update"],         # the webhook records and applies each event once
     },
     "cairnJobs": {
         "users": ["find", "update", "remove"],
@@ -598,7 +680,7 @@ ROLES: dict[str, dict[str, list[str]]] = {
         "deceased": ["find", "remove"],
         "case_intake_answers": ["find", "remove"],
         "case_tasks": ["find", "remove"],
-        "notification_preferences": ["find", "remove"],
+        "notification_preferences": ["find", "update", "remove"],  # update: drop a browser endpoint that is gone
         "context_items": ["find", "remove"],
         "notification_log": ["find", "insert", "remove"],
         "trial_reminders": ["find", "update", "remove"],
@@ -609,6 +691,7 @@ ROLES: dict[str, dict[str, list[str]]] = {
         "action_confirmation_log": ["insert"],                 # append-only
         "job_locks": ["find", "insert", "update"],
         "safety_referral_counts": ["find"],                    # the monthly report
+        "stripe_events": ["find", "update"],                   # retries events the webhook couldn't finish
     },
     "cairnLoader": {
         "task_templates": ["find", "insert", "update"],        # update: the active flag only, see load_templates.py
@@ -629,8 +712,8 @@ def role_document(name: str, db: str) -> dict:
 SETTINGS = {
     "draft_retention_days": (28, "DEC-07. A draft case with no activity for this many days is deleted. "
                                  "The pause copy says 28 days, so change the copy too."),
-    "trial_reminder_days_before": (3, "OPEN-DECISION-02. Days before trial_ends_at to schedule the "
-                                      "trial_ends_soon reminder."),
+    "trial_reminder_days_before": (7, "Account D-14 (resolves case OPEN-02). Days before trial_ends_at to send the "
+                                      "trial-ending note. The copy says a week, so change the copy too."),
     "case_deletion_hold_days": (7, "UC-END-13. A case the user chose to delete with a hold is deleted this many "
                                    "days later. The copy says 7 days, so change the copy too."),
 }

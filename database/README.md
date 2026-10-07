@@ -25,8 +25,8 @@ docs/               specs, data model, and gap audits
 
 | Login | Role | Used by | Can |
 |---|---|---|---|
-| `cairn_api` | `cairnApp` | The API container (`MONGODB_URI`) | Read and write user and case data. Append audit rows and never read them. Queue identity cleanup and confirmations and never read them. Read templates and settings. |
-| `cairn_jobs` | `cairnJobs` | The jobs container (`CAIRN_JOBS_MONGODB_URI`) | Purge, claim, and send. Append to the audit and confirmation logs and never change them. No access to templates. |
+| `cairn_api` | `cairnApp` | The API container (`MONGODB_URI`) | Read and write user and case data. Append audit rows and never read them. Queue identity cleanup and confirmations and never read them. Read templates and settings. Record Stripe events and mark them applied, never delete them. |
+| `cairn_jobs` | `cairnJobs` | The jobs container (`CAIRN_JOBS_MONGODB_URI`) | Purge, claim, and send. Append to the audit and confirmation logs and never change them. Mark Stripe events applied when retrying them, never add or delete one. Drop a browser push subscription that is gone. No access to templates. |
 | `cairn_loader` | `cairnLoader` | The deploy workflow (`CAIRN_LOADER_MONGODB_URI`) | Add template versions and flip their `active` flag. Nothing else. |
 | an administrator | Atlas admin, or dbAdmin and userAdmin | `db/apply.py`, `tools/move_from_postgres.py` (`CAIRN_ADMIN_MONGODB_URI`) | Everything. Never given to a running service. |
 

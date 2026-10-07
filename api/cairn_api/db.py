@@ -11,6 +11,7 @@ leaks between pooled connections. store.Session enforces the case boundary.
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 from typing import Iterator
 from uuid import UUID
 
@@ -20,7 +21,7 @@ from pymongo.read_concern import ReadConcern
 from pymongo.write_concern import WriteConcern
 
 from .errors import RuleViolation, map_db_error
-from .store import Session
+from .store import Session, end_session, session_activity
 
 __all__ = ["Database", "Session", "client_for"]
 
@@ -43,6 +44,22 @@ class Database:
 
     def close(self) -> None:
         self.client.close()
+
+    def check_activity(self, idp_subject: str, issued_at: datetime | None, now: datetime, *, timeout: timedelta,
+                       every: timedelta) -> bool:
+        """D-20. Outside any request transaction, so recording activity never conflicts with one."""
+        try:
+            return session_activity(self.db, idp_subject, issued_at, now, timeout=timeout, every=every)
+        except PyMongoError as exc:
+            raise map_db_error(exc) from None
+
+    def end_session(self, idp_subject: str, now: datetime, timeout: timedelta) -> None:
+        """UC-REG-19 Sign out. Marks the session as quiet since before now - timeout, so the token that signed out
+        stops working. A new sign-in issues a newer token, which works."""
+        try:
+            end_session(self.db, idp_subject, now - timeout - timedelta(seconds=1))
+        except PyMongoError as exc:
+            raise map_db_error(exc) from None
 
     @contextmanager
     def session(self, idp_subject: str | None = None, user_id: UUID | None = None) -> Iterator[Session]:

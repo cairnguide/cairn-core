@@ -22,8 +22,8 @@ from fastapi import Request
 from pydantic import TypeAdapter, ValidationError
 
 from . import account as acct
+from . import breaks, safety
 from . import journey_selection as js
-from . import safety
 from .copy_store import Copy
 from .db import Session
 from .errors import ApiError, case_access_denied
@@ -57,8 +57,6 @@ JURISDICTION_ORDER = ["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA"
                       "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV",
                       "WI", "WY", "DC", "PR", "GU", "VI", "AS", "MP"]
 assert set(JURISDICTION_ORDER) == US_STATE_CODES
-# The rest choices (crisis plan) and how long each one lasts. until_back has no end the user picked.
-REST_CHOICES = {"today": None, "three_days": timedelta(days=3), "week": timedelta(days=7), "until_back": None}
 
 # ------------------------------------------------------------------ context
 
@@ -72,6 +70,11 @@ class Ctx:
     @property
     def voice(self) -> str:
         return self.account["voice"]
+
+    @property
+    def brk(self) -> Copy:
+        """The Take a break copy (take a break spec 3.2.0)."""
+        return self.request.app.state.break_copy
 
     @property
     def today(self) -> date:
@@ -116,7 +119,7 @@ def case_out(c: Ctx, case: dict, answers: dict) -> CaseOut:
                                 "death_not_yet_occurred", "skip_explainers", "tasks_paused_until",
                                 "deletion_scheduled_for", "created_at")},
         status=effective_status(case), delete_after=case.get("deletion_scheduled_for"),
-        account_access="read_only" if c.account["status"] == "read_only" else "full",
+        account_access=c.account["access"],
         display_name=display_name(case, answers, c.copy),
     )
 
@@ -528,11 +531,12 @@ def _session_clock(c: Ctx, session: IntakeSession) -> tuple[IntakeSession, bool]
     return session.model_copy(update=update), started
 
 
-def announcements_for(c: Ctx, session: IntakeSession, *, heavy: bool = False) -> tuple[IntakeSession,
-                                                                                       list[Announcement]]:
+def announcements_for(c: Ctx, session: IntakeSession, *, heavy: bool = False,
+                      draft: bool = False) -> tuple[IntakeSession, list[Announcement]]:
     """UC-CASE-23. The AI reminder at the start of a session (at most once a day) and every 3 hours, never skipped,
-    at any level. The rest offer after about 45 minutes of active use, or after a heavy moment, once per session per
-    trigger, and only at level 1. Both are announced to screen readers."""
+    at any level. UC-BRK-06: the rest offer after about 45 minutes of active use, or after a heavy moment, once per
+    session per trigger, only at level 1, and declining never brings it back that session. In a draft it adds that
+    everything is saved. Both are announced to screen readers."""
     settings = c.request.app.state.settings
     session, started = _session_clock(c, session)
     out: list[Announcement] = []
@@ -542,11 +546,13 @@ def announcements_for(c: Ctx, session: IntakeSession, *, heavy: bool = False) ->
     if session.safety_mode == SafetyMode.normal and not session.intake_stopped:
         trigger = None
         if heavy and "heavy" not in session.rest_offered:
-            trigger, text = "heavy", c.copy["rest_offer_after_task"]
+            trigger, text = "heavy", c.brk["offer_after_task"]
         elif (session.active_seconds >= settings.rest_offer_after_minutes * 60
               and "time" not in session.rest_offered):
-            trigger, text = "time", c.copy["rest_offer"]
+            trigger, text = "time", c.brk["offer_after_time"]
         if trigger:
+            if draft:
+                text = f"{text} {c.brk['offer_draft_suffix']}"
             session = session.model_copy(update={"rest_offered": [*session.rest_offered, trigger]})
             out.append(Announcement(kind="rest_offer", text=text,
                                     options=[Option(value="take_a_break", label=c.copy["take_a_break"]),
@@ -573,7 +579,7 @@ def turn(c: Ctx, case: dict, answers: dict, session: IntakeSession, *, acknowled
             next_step = question_step(q)
         else:
             next_step = review_step(c)
-    session, announcements = announcements_for(c, session, heavy=heavy)
+    session, announcements = announcements_for(c, session, heavy=heavy, draft=case["status"] == "draft")
     # Read aloud in screen order. At level 4 the AI reminder comes after 988, never before it.
     text = " ".join(x for x in [acknowledgment, *body, next_step.prompt, *(a.text for a in announcements)] if x)
     return IntakeTurnResponse(
@@ -644,20 +650,15 @@ def begin_care_rest(c: Ctx, case: dict) -> bool:
     return c.s.begin_rest(case["id"], c.s.now + c.s.rest_until_return, care=True)
 
 
-def rest_until(c: Ctx, choice: str):
-    """The end of the rest the user chose, in their time zone for "the rest of today"."""
-    now = c.s.now
-    if choice == "today":
-        tz = ZoneInfo(c.account.get("time_zone") or "UTC")
-        local = now.astimezone(tz)
-        return datetime.combine(local.date() + timedelta(days=1), datetime.min.time(), tz).astimezone(timezone.utc)
-    if choice == "until_back":
-        return now + c.s.rest_until_return
-    return now + REST_CHOICES[choice]
-
-
 def rest_options(c: Ctx) -> list[Option]:
-    return [Option(value=k, label=c.copy[f"rest_{k}"]) for k in REST_CHOICES]
+    """The four rest choices (UC-BRK-05), from the Take a break copy."""
+    return [Option(value=k, label=c.brk[breaks.CHOICE_COPY[k]]) for k in breaks.CHOICES]
+
+
+def rest_until(c: Ctx, choice: str):
+    """When a rest chosen in a conversation ends (BRK-D-07). None is Until I come back."""
+    started = c.account["break_started_at"] if c.account.get("on_break") else c.s.now
+    return breaks.break_until(choice, started, c.s.now, c.account.get("time_zone"))
 
 
 def review_lines(c: Ctx, answers: dict, session: IntakeSession) -> tuple[list[ReviewLine], list[ReviewLine]]:

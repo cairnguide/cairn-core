@@ -16,7 +16,8 @@ What changes shape on the way:
 * case_members become each case's members array.
 * template_citations go inside their template.
 * case_tasks carry their template's task_key.
-* notification_preferences are keyed by the case id.
+* notification_preferences become one per account, from the account's most recent journey choice (account D-13),
+  and the rest of the v3 shape is applied the same way as db/apply.py's use_cases_v3 migration (_v3 below).
 * Calendar dates become "YYYY-MM-DD" strings. Times keep millisecond precision.
 
 What is left behind, on purpose:
@@ -111,7 +112,7 @@ def transform(src: dict[str, list[dict]]) -> dict[str, list[dict]]:
                              "last_intake_step", "last_activity_at", "death_not_yet_occurred", "skip_explainers",
                              "name_fallback", "attorney_triggers", "shown_notices", "tasks_paused_until",
                              "deletion_requested_at")},
-        "check_in_at": None, "loss_survivor_resources": False, "secure_now_first": False,
+        "loss_survivor_resources": False, "secure_now_first": False,
         "members": members.get(c["id"], [])}), "journey_started_on") for c in src["cases"]]
 
     out["deceased"] = [_dates(_id(dict(d)), "date_of_birth", "date_of_death") for d in src["deceased"]]
@@ -135,6 +136,47 @@ def transform(src: dict[str, list[dict]]) -> dict[str, list[dict]]:
     out["context_items"] = [dict(r) for r in src["context_items"]]
     out["app_settings"] = [{"_id": s["key"], "value": s["value"], "description": s["description"],
                             "updated_at": s["updated_at"]} for s in src["app_settings"]]
+    return _v3(out)
+
+
+def _v3(out: dict[str, list[dict]]) -> dict[str, list[dict]]:
+    """The use case suite of 2026-10-06, as db/apply.py's use_cases_v3 migration applies it: one account state model
+    (D-19), notification choices for the whole account (D-13), the account's new fields, and one trial note."""
+    owners = {c["_id"]: c["created_by"] for c in out["cases"]}
+    channel = {"email": "email", "push": None, "in_app_only": "in_app"}
+    frequency = {"as_it_happens": "due_only", "daily_max": "daily", "weekly_max": "weekly"}
+    lead = {1: "day_before", 3: "three_days", 7: "one_week"}
+    inactivity = {3: "three_days", 7: "one_week", 14: "two_weeks"}
+    newest: dict = {}
+    for p in sorted(out["notification_preferences"], key=lambda p: p["updated_at"]):
+        if p["_id"] in owners:
+            newest[owners[p["_id"]]] = p
+    out["notification_preferences"] = [{
+        "_id": user_id, "channels": ["email", "in_app"] if "email" in p["channels"] else ["in_app"],
+        "frequency": frequency[p["frequency"]] if p["reasons"] else "none",
+        "quiet_hours_start": "21:00", "quiet_hours_end": "08:00", "browser_push_endpoint": None,
+        "due_date_lead": lead.get(p["due_date_lead_days"], "three_days"),
+        "inactivity_after": inactivity.get(p["inactivity_days"], "off"),
+        "journey_confirmed_at": p["updated_at"], "updated_at": p["updated_at"]}
+        for user_id, p in newest.items() if any(channel[c] for c in p["channels"])]
+    statuses = {"pending_onboarding": "pending_onboarding", "pending_deletion": "pending_deletion"}
+    for u in out["users"]:
+        old = u["status"]
+        u.update({"status": statuses.get(old, "setup_complete"),
+                  "access": "read_only" if old == "read_only" else "full",
+                  "subscription_status": "active" if old == "subscribed" else "none", "name_prefill": None,
+                  "adult_attested": None, "adult_attested_at": None, "last_active_at": None, "check_in_at": None,
+                  "check_in_case_id": None, "check_in_by_email": False, "check_in_sent_at": None,
+                  "break_started_at": None, "break_until": None, "break_notice_at": None, "break_notice_sent_at": None,
+                  "subscribe_prompt_shown_on": None, "price_notice_sent_for": None, "stripe_customer_id": None,
+                  "stripe_subscription_id": None, "stripe_checkout_session_id": None, "current_period_end": None,
+                  "cancel_at_period_end": False, "billing_notice": "none", "subscribed_at": None,
+                  "annual_reminder_due_at": None, "cancel_requested_at": None})
+    out["trial_reminders"] = [{**r, "skipped_at": None} for r in out["trial_reminders"]
+                              if r["kind"] == "trial_ends_soon" or r["email_sent_at"] is not None]
+    for row in out["app_settings"]:
+        if row["_id"] == "trial_reminder_days_before" and row["value"] == 3:
+            row["value"] = 7
     return out
 
 

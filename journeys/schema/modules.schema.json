@@ -231,6 +231,25 @@
               "pattern": "^SRC-[A-Z0-9-]+$"
             },
             "uniqueItems": true
+          },
+          "answer_facts": {
+            "description": "What a yes or a no to the qualifying question sets. Without it, a yes sets the applies_when fact to its value and a no sets it to the opposite. Skip or I'm not sure sets nothing.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "yes",
+              "no"
+            ],
+            "properties": {
+              "yes": {
+                "type": "object",
+                "minProperties": 1
+              },
+              "no": {
+                "type": "object",
+                "minProperties": 1
+              }
+            }
           }
         }
       }

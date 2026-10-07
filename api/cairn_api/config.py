@@ -62,6 +62,9 @@ class Settings:
     voices_dir: str | None = None
     # Path to a replacement case creation copy file after legal review. None uses the bundled one.
     case_copy_path: str | None = None
+    # Replacement Take a break and subscription copy files. None uses the bundled ones.
+    break_copy_path: str | None = None
+    subscription_copy_path: str | None = None
     # Case creation open decisions (spec open_decisions), with the spec's defaults.
     # Only the default of each is built. Anything else is refused at startup.
     estate_plan_mode: str = "add_on"        # OPEN-DECISION-01: estate plan as an add-on, not a starting trailhead
@@ -72,13 +75,36 @@ class Settings:
     # build are allowed. Anything else is refused at startup, so a value can't silently do nothing.
     unsure_counts_as_skip: bool = False         # OPEN-07: "I'm not sure" does not count toward the three skips
     sms_enabled: bool = False                   # OPEN-05: text messages are off in the MVP
-    notification_scope: str = "per_journey"     # OPEN-04: notification choices per journey
-    draft_check_in: str = "next_open"           # OPEN-08: a draft's check-in shows the next time Cairn is opened
+    notification_scope: str = "account"         # OPEN-04, resolved by account D-13: one choice for the account
+    draft_check_in: str = "account_channels"    # OPEN-08, resolved by account D-13: the account's channels
+    # Take a break open decisions, with their defaults (cairn-take-a-break-use-cases-v32.json).
+    break_notice_during_care_rest: bool = False  # OPEN-BRK-01: no break-ending notice outside Cairn in a care rest
+    break_notice_without_reminders: bool = True  # OPEN-BRK-02: the notice still goes when frequency is none
     under_18_handling: str = "stop_intake"      # OPEN-09: stop intake and store nothing about age
     state_content_approach: str = "verified_link_confirm"  # OPEN-06: verified link plus "Please confirm"
     outside_us_handling: str = "out_of_scope_message"     # OPEN-10
-    # UC-CASE-12 config. The price is also written verbatim in the spec copy, pending legal review (card 55).
-    subscription_price_display: str = "$14.99 a month"
+    # D-04 and UC-SUB-02. One value for the price, used to show it and to charge it, so they can't differ. Every
+    # price in the copy files must match it, or the API refuses to start.
+    subscription_price_cents: int = 1499
+    # Stripe (cairn-subscription-use-cases-v33.json). Without a secret key the subscription routes answer that
+    # payments aren't available, and the webhook refuses everything. Secrets come from the secret manager.
+    stripe_secret_key: str | None = None
+    stripe_webhook_secret: str | None = None
+    stripe_product_id: str | None = None       # the Cairn subscription product. The price is set from the value above
+    app_url: str = "https://app.cairnguide.app"  # where Stripe sends the user back (success, cancel, portal return)
+    # Browser notifications (UC-REG-15). The VAPID public key the browser subscribes with. The private key lives only
+    # in the jobs container. Unset hides the browser choice, since nothing could be delivered.
+    vapid_public_key: str | None = None
+    # UC-SUB-18. A scheduled price change, shown in Cairn at care level 1 between 30 days before and the date. The
+    # jobs container emails it (price_change_notices). Unset when no change is scheduled.
+    price_change_effective_date: str | None = None
+    price_change_new_price: str | None = None
+    # D-20 and UC-REG-19. Sign out after this long with no activity, warn this long before, and sign in again at
+    # least every overall_session_days. last_active_at is written at most every activity_write_seconds.
+    inactivity_timeout_seconds: int = 300
+    warning_before_timeout_seconds: int = 20
+    overall_session_days: int = 30
+    activity_write_seconds: int = 15
     # UC-CASE-23. The AI reminder repeats after this much continuing interaction. The rest offer comes after this
     # much active use. A gap longer than active_gap_minutes between turns doesn't count as active use.
     ai_reminder_every_hours: int = 3
@@ -104,8 +130,8 @@ class Settings:
             # Text messages are not in the MVP (OPEN-05, decided 2026-10-05). The Twilio sender and Verify client
             # exist (twilio_client.py), but number collection, the consent line, and the sms channel don't.
             raise RuntimeError("CAIRN_SMS_ENABLED: text messages are not in the MVP (OPEN-05).")
-        for name, value, built in (("CAIRN_NOTIFICATION_SCOPE", self.notification_scope, "per_journey"),
-                                   ("CAIRN_DRAFT_CHECK_IN", self.draft_check_in, "next_open"),
+        for name, value, built in (("CAIRN_NOTIFICATION_SCOPE", self.notification_scope, "account"),
+                                   ("CAIRN_DRAFT_CHECK_IN", self.draft_check_in, "account_channels"),
                                    ("CAIRN_UNDER_18_HANDLING", self.under_18_handling, "stop_intake"),
                                    ("CAIRN_STATE_CONTENT_APPROACH", self.state_content_approach,
                                     "verified_link_confirm"),
@@ -114,10 +140,37 @@ class Settings:
                 raise RuntimeError(f"{name}: only {built} is built.")
         if not 1 <= self.ai_reminder_every_hours <= 3:
             raise RuntimeError("CAIRN_AI_REMINDER_EVERY_HOURS must be 1 to 3 (UC-CASE-23, legal gate).")
+        if self.break_notice_during_care_rest:
+            raise RuntimeError("CAIRN_BREAK_NOTICE_DURING_CARE_REST: OPEN-BRK-01 isn't decided. Only false is built.")
+        if not 60 <= self.inactivity_timeout_seconds <= 900:
+            raise RuntimeError("CAIRN_INACTIVITY_TIMEOUT_SECONDS must be 60 to 900 (D-20, at most 15 minutes).")
+        if not 20 <= self.warning_before_timeout_seconds < self.inactivity_timeout_seconds:
+            raise RuntimeError("CAIRN_TIMEOUT_WARNING_SECONDS must be at least 20 (WCAG 2.2.1) and under the timeout.")
+        if not 1 <= self.overall_session_days <= 30:
+            raise RuntimeError("CAIRN_OVERALL_SESSION_DAYS must be 1 to 30 (D-20, NIST AAL1).")
+        if self.subscription_price_cents < 50:
+            raise RuntimeError("CAIRN_SUBSCRIPTION_PRICE_CENTS must be at least 50.")
+        if not self.app_url.startswith("https://") and not self.app_url.startswith("http://localhost"):
+            raise RuntimeError("CAIRN_APP_URL must be an https URL.")
+        if bool(self.price_change_effective_date) != bool(self.price_change_new_price):
+            raise RuntimeError("Set CAIRN_PRICE_CHANGE_EFFECTIVE_DATE and CAIRN_PRICE_CHANGE_NEW_PRICE together.")
         if self.dev_auth_secret is not None and len(self.dev_auth_secret) < 32:
             raise RuntimeError("CAIRN_DEV_AUTH_SECRET must be at least 32 characters.")
         if "*" in self.cors_origins:
             raise RuntimeError("CAIRN_CORS_ORIGINS must list origins. A wildcard is refused.")
+
+    @property
+    def price_text(self) -> str:
+        """The price as the copy writes it, for example $14.99."""
+        return f"${self.subscription_price_cents // 100}.{self.subscription_price_cents % 100:02d}"
+
+    @property
+    def subscription_price_display(self) -> str:
+        return f"{self.price_text} a month"
+
+    @property
+    def stripe_enabled(self) -> bool:
+        return bool(self.stripe_secret_key and self.stripe_product_id)
 
     @property
     def auth0_issuer(self) -> str:
@@ -154,17 +207,32 @@ def load_settings() -> Settings:
         registration_copy_path=os.environ.get("CAIRN_REGISTRATION_COPY") or None,
         voices_dir=os.environ.get("CAIRN_VOICES_DIR") or None,
         case_copy_path=os.environ.get("CAIRN_CASE_COPY") or None,
+        break_copy_path=os.environ.get("CAIRN_BREAK_COPY") or None,
+        subscription_copy_path=os.environ.get("CAIRN_SUBSCRIPTION_COPY") or None,
         estate_plan_mode=os.environ.get("CAIRN_ESTATE_PLAN_MODE", "add_on"),
         pre_need_path=os.environ.get("CAIRN_PRE_NEED_PATH", "not_built"),
         overwhelm_skip_threshold=int(os.environ.get("CAIRN_OVERWHELM_SKIP_THRESHOLD", "3")),
         unsure_counts_as_skip=os.environ.get("CAIRN_UNSURE_COUNTS_AS_SKIP", "false").lower() == "true",
         sms_enabled=os.environ.get("CAIRN_SMS_ENABLED", "false").lower() == "true",
-        notification_scope=os.environ.get("CAIRN_NOTIFICATION_SCOPE", "per_journey"),
-        draft_check_in=os.environ.get("CAIRN_DRAFT_CHECK_IN", "next_open"),
+        notification_scope=os.environ.get("CAIRN_NOTIFICATION_SCOPE", "account"),
+        draft_check_in=os.environ.get("CAIRN_DRAFT_CHECK_IN", "account_channels"),
+        break_notice_during_care_rest=os.environ.get("CAIRN_BREAK_NOTICE_DURING_CARE_REST", "false").lower() == "true",
+        break_notice_without_reminders=os.environ.get("CAIRN_BREAK_NOTICE_WITHOUT_REMINDERS",
+                                                      "true").lower() == "true",
         under_18_handling=os.environ.get("CAIRN_UNDER_18_HANDLING", "stop_intake"),
         state_content_approach=os.environ.get("CAIRN_STATE_CONTENT_APPROACH", "verified_link_confirm"),
         outside_us_handling=os.environ.get("CAIRN_OUTSIDE_US_HANDLING", "out_of_scope_message"),
-        subscription_price_display=os.environ.get("CAIRN_SUBSCRIPTION_PRICE_DISPLAY", "$14.99 a month"),
+        subscription_price_cents=int(os.environ.get("CAIRN_SUBSCRIPTION_PRICE_CENTS", "1499")),
+        stripe_secret_key=secret_from_env("CAIRN_STRIPE_SECRET_KEY"),
+        stripe_webhook_secret=secret_from_env("CAIRN_STRIPE_WEBHOOK_SECRET"),
+        stripe_product_id=os.environ.get("CAIRN_STRIPE_PRODUCT_ID") or None,
+        app_url=os.environ.get("CAIRN_APP_URL", "https://app.cairnguide.app").rstrip("/"),
+        vapid_public_key=os.environ.get("CAIRN_VAPID_PUBLIC_KEY") or None,
+        price_change_effective_date=os.environ.get("CAIRN_PRICE_CHANGE_EFFECTIVE_DATE") or None,
+        price_change_new_price=os.environ.get("CAIRN_PRICE_CHANGE_NEW_PRICE") or None,
+        inactivity_timeout_seconds=int(os.environ.get("CAIRN_INACTIVITY_TIMEOUT_SECONDS", "300")),
+        warning_before_timeout_seconds=int(os.environ.get("CAIRN_TIMEOUT_WARNING_SECONDS", "20")),
+        overall_session_days=int(os.environ.get("CAIRN_OVERALL_SESSION_DAYS", "30")),
         ai_reminder_every_hours=int(os.environ.get("CAIRN_AI_REMINDER_EVERY_HOURS", "3")),
         rest_offer_after_minutes=int(os.environ.get("CAIRN_REST_OFFER_AFTER_MINUTES", "45")),
         cors_origins=cors_origins_from_env(),

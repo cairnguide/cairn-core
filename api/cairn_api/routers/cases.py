@@ -9,6 +9,7 @@ from fastapi import APIRouter, Body, Depends, Request
 
 from .. import account as acct
 from .. import intake
+from ..account import CareLevel
 from ..auth import Identity, get_identity
 from ..errors import ApiError, case_access_denied
 from ..schemas import (
@@ -101,7 +102,8 @@ def list_cases(request: Request, identity: Identity = Depends(get_identity)) -> 
     ),
     responses=_DENIED,
 )
-def get_case(case_id: UUID, request: Request, identity: Identity = Depends(get_identity)) -> CaseResponse:
+def get_case(case_id: UUID, request: Request, identity: Identity = Depends(get_identity),
+             care_level: CareLevel = 1) -> CaseResponse:
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
         ready = acct.require_ready(s, request, write=False)
@@ -120,14 +122,14 @@ def get_case(case_id: UUID, request: Request, identity: Identity = Depends(get_i
             where = (c.copy["resume_where"].format(step=c.copy[f"step_{step_key}"]) if step_key
                      else c.copy["resume_done"] if answers else c.copy["resume_start"])
             ack, body = c.copy["resume_greeting"], [where]
-            step = NextStep(action="resume", prompt=c.copy["resume_question"],
+            step = NextStep(action="resume", prompt=c.brk["draft_resume_question"],
                             options=[Option(value="keep_going", label=c.copy["keep_going"]),
                                      Option(value="something_else", label=c.copy["look_at_something_else"])])
         else:
             ack, body = None, []
             step = NextStep(action="view_journey", prompt=c.copy["journey_preview_intro"])
         announcements = []
-        if s.take_due_check_in(case_id):
+        if s.take_due_check_in():
             # DEC-26-04 and OPEN-08. The check-in the user said yes to, shown once, because it isn't going by email.
             announcements.append(Announcement(kind="check_in", text=c.copy["check_in_in_cairn"]))
         every = timedelta(hours=request.app.state.settings.ai_reminder_every_hours)

@@ -191,21 +191,25 @@ class Voice(str, Enum):
 
 
 class AccountStatus(str, Enum):
+    """D-19. The setup lifecycle only. Billing state is access and subscription_status."""
     pending_onboarding = "pending_onboarding"
-    active_no_case = "active_no_case"
-    trial_active = "trial_active"
-    read_only = "read_only"
-    subscribed = "subscribed"
+    setup_complete = "setup_complete"
     pending_deletion = "pending_deletion"
 
 
+AccessLevel = Literal["full", "read_only"]
+SubscriptionStatus = Literal["none", "active", "lapsed"]
+
+
 class OnboardingStep(str, Enum):
-    """The last completed step."""
+    """The last completed step, in the account spec's onboarding_sequence."""
     account_created = "account_created"
+    adult_confirmed = "adult_confirmed"
     privacy_terms_accepted = "privacy_terms_accepted"
     trial_terms_accepted = "trial_terms_accepted"
     ai_notice_accepted = "ai_notice_accepted"
     preferred_name_saved = "preferred_name_saved"
+    voice_saved = "voice_saved"
     complete = "complete"
 
 
@@ -217,13 +221,17 @@ class ConsentType(str, Enum):
 
 class ScreenId(str, Enum):
     welcome = "welcome"
+    adult = "adult"
+    under_18 = "under_18"
     privacy_terms = "privacy_terms"
     trial_terms = "trial_terms"
     ai_notice = "ai_notice"
     declined = "declined"
     preferred_name = "preferred_name"
     personality = "personality"
-    case_handoff = "case_handoff"
+    notification_channels = "notification_channels"
+    notification_frequency = "notification_frequency"
+    setup_complete = "setup_complete"
     ready = "ready"
     paused = "paused"
 
@@ -266,13 +274,29 @@ class Screen(ResponseModel):
     links: list[Link] = []
     ai_provider: str | None = Field(default=None, description="Third-party AI provider, named before any "
                                                              "data is sent to it.")
+    push_public_key: str | None = Field(default=None, description="The VAPID key to subscribe the browser with, "
+                                                                  "after the user chose browser notifications.")
     legal_review_required: bool = False
 
 
 class Support(ResponseModel):
-    """Shown on every onboarding screen (UC-REG-14)."""
-    need_a_moment_label: str
+    """On every screen, before and after sign-in (account available_on_every_screen, UC-BRK-01, AC-26-10)."""
+    take_a_break_label: str = Field(description="Take a break. One select, no confirmation. Opens the break "
+                                                 "screen for where the user is (UC-BRK-01).")
+    support_resources_label: str = Field(description="Opens GET /v1/support-resources. Works signed out.")
+    read_this_to_me: str
     crisis_resource: str
+
+
+class SessionPolicy(ResponseModel):
+    """D-20 and UC-REG-19. Sign out after 5 minutes with no activity, with a warning first."""
+    inactivity_timeout_seconds: int
+    warning_before_timeout_seconds: int = Field(description="Show timeout_warning this long before. At least 20.")
+    overall_session_days: int
+    timeout_warning: str
+    timeout_warning_button: str
+    session_timed_out: str = Field(description="Shown the next time the page is used after a timeout.")
+    signed_out: str
 
 
 class SignInOption(ResponseModel):
@@ -309,22 +333,34 @@ class EmailSignInCopy(ResponseModel):
     resend: str
 
 
+class MagicLinkCopy(ResponseModel):
+    """UC-REG-04. The Cairn page the email link opens. The token is used only when the user selects Continue, so an
+    email security scanner that opens the link never uses it up."""
+    landing: str
+    landing_button: str
+    other_device: str = Field(description="Shown in the original tab when the link was opened somewhere else.")
+    send_new_link_here: str
+
+
 class WelcomeResponse(ResponseModel):
     acknowledgment: str
     methods: list[SignInOption] = Field(description="Equally weighted. Show all three with the same emphasis.")
     sign_in_label: str
     not_ready: Link
     email_sign_in: EmailSignInCopy
+    magic_link: MagicLinkCopy
+    cant_get_into_email: str = Field(description="Opens GET /v1/sign-in-help (UC-REG-20).")
     notes: list[Note]
     support: Support
+    session: SessionPolicy
 
 
 class RegistrationRequest(RequestModel):
-    name_from_provider: Name | None = Field(
-        default=None,
-        description="A name Google or Apple shared at sign-in. Kept only to pre-fill the preferred name "
-                    "question. Apple sends it on the first sign-in only, so send it then.")
-    time_zone: TimeZone | None = Field(default=None, description="Used to show trial dates in local time.")
+    """Only what sign-in needs. A name or photo from Google or Apple is never requested, sent, or stored (D-16): Cairn
+    asks the user what to call them (UC-REG-11). The setup API refuses any field it doesn't list
+    (data_boundary.enforcement)."""
+    time_zone: TimeZone | None = Field(default=None, description="Read from the browser, never asked. Used for "
+                                                                 "quiet hours and to show dates in local time.")
 
 
 class AccountOut(ResponseModel):
@@ -336,11 +372,16 @@ class AccountOut(ResponseModel):
     preferred_name: str | None
     name_pronunciation: str | None
     voice: Voice = Field(description="The voice chosen in onboarding or Settings. Tone only.")
-    status: AccountStatus = Field(description="Effective status. read_only once the trial has ended.")
+    status: AccountStatus = Field(description="D-19. Setup lifecycle only.")
+    access: AccessLevel = Field(description="read_only once the free days end without an active subscription.")
+    subscription_status: SubscriptionStatus
+    adult_attested: bool | None = Field(description="UC-REG-06. Null until asked. Never a birthdate or an age.")
     onboarding_step: OnboardingStep
     trial_started_at: datetime | None
     trial_ends_at: datetime | None
     trial_end_date: date | None = Field(description="trial_ends_at as a date in the account's time zone.")
+    free_days_running: bool
+    on_break: bool = Field(description="A break is running (UC-BRK-08). Open GET /v1/me/break first.")
     time_zone: str | None
     ai_label: str | None = Field(description="Show in every chat view once set.")
 
@@ -362,6 +403,40 @@ class PauseResponse(ResponseModel):
 class AccountResponse(ResponseModel):
     account: AccountOut
     notes: list[Note] = Field(description="The read-only banner or a due trial reminder, when there is one.")
+    session: SessionPolicy
+
+
+class AdultAnswerIn(RequestModel):
+    """UC-REG-06. Yes or no. No birthdate or age is asked for or stored."""
+    answer: Literal["yes", "no"]
+
+
+class SetupCheckInIn(RequestModel):
+    """DEC-26-04 during setup. yes uses the account's channels. Before UC-REG-15 there are none yet, so the question
+    also asks about email: yes_email sends it to the sign-in email too, yes_in_cairn shows it only in Cairn."""
+    answer: Literal["yes", "yes_email", "yes_in_cairn", "no"]
+
+
+class SignOutResponse(ResponseModel):
+    """UC-REG-19. The token used for this request stops working. Everything is saved."""
+    message: str
+    support: list[str] = Field(default_factory=list, description="At care levels 3 and 4, the crisis resource "
+                                                                 "and the Support resources link.")
+
+
+class SignInHelpResponse(ResponseModel):
+    """UC-REG-20. Can't get into the sign-in email. Never a dead end."""
+    intro: str
+    provider_recovery: Link | None = Field(default=None, description="For Google or Apple accounts, the "
+                                                                     "provider's own recovery page.")
+    next_step: NextStep
+
+
+class SupportResourcesPage(ResponseModel):
+    """The crisis plan's Support resources page. Reachable without signing in. Opening it changes nothing and is
+    never logged with a user or case id."""
+    intro: str
+    resources: list[SupportResource]
 
 
 class AcknowledgmentIn(RequestModel):
@@ -388,15 +463,18 @@ class VoiceChoiceIn(RequestModel):
 
 
 class AccountPatch(RequestModel):
-    """Settings. The voice can be changed at any time. Omitted fields are unchanged."""
+    """Settings (UC-REG-17). The voice can be changed at any time. Omitted fields are unchanged. Each change is read
+    back in one line and confirmed to the sign-in email."""
     preferred_name: Name | None = None
     name_pronunciation: Pronunciation | None = None
     voice: Voice | None = None
     time_zone: TimeZone | None = None
+    care_level: Annotated[int, Field(ge=1, le=4)] = Field(default=1, description="At level 4 no Settings change "
+                                                                                 "is made in the same turn (AC-26-11).")
 
     @model_validator(mode="after")
     def _check(self):
-        if not self.model_fields_set:
+        if not self.model_fields_set - {"care_level"}:
             raise ValueError("send at least one field to change")
         for required in ("preferred_name", "voice"):
             if required in self.model_fields_set and getattr(self, required) is None:
@@ -420,8 +498,8 @@ class AccountDeletionInfo(ResponseModel):
     """UC-REG-15. What will be deleted, where the confirmation goes, and one button. No reason is asked."""
     explanation: str = Field(description="Account, every case, every task, all conversation text, and "
                                          "notification settings.")
-    subscription_note: Note | None = Field(description="Only when there is a subscription. Information, not a "
-                                                       "question: store subscriptions are cancelled in the store.")
+    subscription_note: Note | None = Field(description="Only with an active subscription: deleting cancels it "
+                                                       "right away, with no refund (UC-SUB-16, SUB-D-05).")
     masked_email: str = Field(description="The account email, masked. The one confirmation goes here.")
     confirmation_destination: str
     next_step: NextStep = Field(description="One option: Delete my account and everything in it.")
@@ -429,6 +507,8 @@ class AccountDeletionInfo(ResponseModel):
 
 class AccountDeletionRequest(RequestModel):
     confirm: Literal[True] = Field(description="Must be true. Sent only after the user taps the one button.")
+    care_level: Annotated[int, Field(ge=1, le=4)] = Field(default=1, description="At level 4 nothing is deleted in "
+                                                                                 "the same turn (AC-26-11).")
 
 
 class AccountDeletionResponse(ResponseModel):
@@ -1225,163 +1305,271 @@ class CaseStatusResponse(ResponseModel):
 
 # ------------------------------------------------------------------ keeping in touch (UC-CASE-19, UC-CASE-20)
 #
-# Per journey (one journey per case). No choice, or skipping, means in_app_only:
-# nothing is sent outside the app (D-2026-09-25-N2). SMS is not offered: it is an
-# open question for the MVP and needs legal review (card 50).
+# One set of choices for the whole account (account D-13). Channels and frequency are chosen at setup (UC-REG-15),
+# due date lead time and inactivity notices when the first journey is confirmed (UC-CASE-19). in_app is always on.
+# SMS is not offered (OPEN-05, D-12).
 
 class NotificationChannel(str, Enum):
     email = "email"
-    push = "push"
-    in_app_only = "in_app_only"
-
-
-class NotificationReason(str, Enum):
-    due_date_upcoming = "due_date_upcoming"
-    inactivity = "inactivity"
+    in_app = "in_app"
+    browser = "browser"
 
 
 class NotificationFrequency(str, Enum):
-    as_it_happens = "as_it_happens"
-    daily_max = "daily_max"
-    weekly_max = "weekly_max"
+    due_only = "due_only"
+    daily = "daily"
+    weekly = "weekly"
+    none = "none"
 
 
-class NotificationChoice(RequestModel):
-    """in_app_only stands alone. Any other channel needs at least one reason, and each reason its timing."""
-    channels: list[NotificationChannel] = Field(min_length=1, max_length=3)
-    reasons: list[NotificationReason] = Field(default_factory=list, max_length=2)
-    due_date_lead_days: Literal[1, 3, 7] | None = None
-    inactivity_days: Literal[3, 7, 14] | None = None
-    frequency: NotificationFrequency = NotificationFrequency.daily_max
-
-    @model_validator(mode="after")
-    def _shape(self):
-        if len(set(self.channels)) != len(self.channels) or len(set(self.reasons)) != len(self.reasons):
-            raise ValueError("choose each channel and reason once")
-        if NotificationChannel.in_app_only in self.channels:
-            if len(self.channels) > 1:
-                raise ValueError("in_app_only can't be combined with another channel")
-            if self.reasons or self.due_date_lead_days or self.inactivity_days:
-                raise ValueError("in_app_only has no reasons or timing")
-            return self
-        if not self.reasons:
-            raise ValueError("choose at least one reason for Cairn to reach out")
-        for reason, days, name in ((NotificationReason.due_date_upcoming, self.due_date_lead_days,
-                                    "due_date_lead_days"),
-                                   (NotificationReason.inactivity, self.inactivity_days, "inactivity_days")):
-            if (reason in self.reasons) != (days is not None):
-                raise ValueError(f"{name} goes with the {reason.value} reason, and only with it")
-        return self
+class DueDateLead(str, Enum):
+    day_before = "day_before"
+    three_days = "three_days"
+    one_week = "one_week"
 
 
-class NotificationPreset(str, Enum):
-    keep_it_simple = "keep_it_simple"
-    skip = "skip"
-    same_as = "same_as"
+class InactivityAfter(str, Enum):
+    off = "off"
+    three_days = "three_days"
+    one_week = "one_week"
+    two_weeks = "two_weeks"
 
 
-class NotificationSetIn(RequestModel):
-    """Send a choice, or a shortcut. same_as copies another journey's choice (UC-CASE-18)."""
-    choice: NotificationChoice | None = None
-    preset: NotificationPreset | None = None
-    same_as_case_id: UUID | None = None
-
-    @model_validator(mode="after")
-    def _one(self):
-        if (self.choice is None) == (self.preset is None):
-            raise ValueError("send a choice or a preset, not both")
-        if (self.preset == NotificationPreset.same_as) != (self.same_as_case_id is not None):
-            raise ValueError("same_as_case_id goes with the same_as preset, and only with it")
-        return self
+HHMM = Annotated[str, Field(pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$", examples=["21:00"])]
+PushEndpoint = Annotated[str, Field(min_length=12, max_length=2048, pattern=r"^https://\S+$")]
 
 
 class NotificationPreferencesOut(ResponseModel):
-    case_id: UUID
-    stored: bool = Field(description="False when nothing was chosen yet. The effective choice is then in_app_only.")
+    stored: bool = Field(description="False before UC-REG-15. Then nothing goes outside Cairn except service "
+                                     "notices (D-14).")
     channels: list[NotificationChannel]
-    reasons: list[NotificationReason]
-    due_date_lead_days: int | None
-    inactivity_days: int | None
     frequency: NotificationFrequency
-    push_permission_granted: bool
-    readback: str = Field(description="The choice in plain language, one sentence.")
+    quiet_hours_start: str
+    quiet_hours_end: str
+    browser_notifications_on: bool = Field(description="Browser is chosen and a push subscription is stored. "
+                                                       "The endpoint itself is never sent back.")
+    due_date_lead: DueDateLead
+    inactivity_after: InactivityAfter
+    journey_confirmed: bool = Field(description="Lead time and inactivity notices were confirmed (UC-CASE-19).")
+    readback: str = Field(description="The choices in plain language, one line.")
     updated_at: datetime | None
 
 
-class NotificationQuestion(ResponseModel):
-    id: Literal["channels", "reasons", "due_date_lead_days", "inactivity_days", "frequency"]
-    prompt: str
-    multi_select: bool
-    options: list[Option]
-    asked_when: str = Field(description="When the client shows this question.")
+class NotificationChannelsIn(RequestModel):
+    """UC-REG-15 first screen, or Settings. in_app is always on and isn't sent. Ask browser permission only after
+    the user chose browser, then send what the browser said."""
+    email: bool
+    browser: bool = False
+    browser_permission: Literal["granted", "denied", "unsupported"] | None = Field(
+        default=None, description="What the browser said. denied or unsupported takes browser off the channels.")
+    browser_push_endpoint: PushEndpoint | None = Field(
+        default=None, description="The push subscription endpoint, only when permission was granted.")
+
+    @model_validator(mode="after")
+    def _check(self):
+        if self.browser_push_endpoint is not None and (not self.browser or self.browser_permission != "granted"):
+            raise ValueError("send browser_push_endpoint only with browser and permission granted")
+        return self
 
 
-class NotificationSetupResponse(ResponseModel):
-    """UC-CASE-19. The explanation, the shortcuts (same as another journey first), then one question at a time."""
-    case_id: UUID
-    display_name: str
-    explanation: str
+class NotificationFrequencyIn(RequestModel):
+    """UC-REG-15 second screen. One question."""
+    frequency: NotificationFrequency
+
+
+class NotificationSettingsPatch(RequestModel):
+    """UC-REG-17. Each choice is editable on its own. stop_all_reminders sets frequency none in one step, with no
+    persuasion. Always free, on a read-only account too."""
+    channels: NotificationChannelsIn | None = None
+    frequency: NotificationFrequency | None = None
+    quiet_hours_start: HHMM | None = None
+    quiet_hours_end: HHMM | None = None
+    due_date_lead: DueDateLead | None = None
+    inactivity_after: InactivityAfter | None = None
+    stop_all_reminders: bool = False
+    care_level: Annotated[int, Field(ge=1, le=4)] = Field(default=1, description="At level 4 no Settings change "
+                                                                                 "is made in the same turn (AC-26-11).")
+
+    @model_validator(mode="after")
+    def _something(self):
+        if not self.stop_all_reminders and not (self.model_fields_set - {"care_level", "stop_all_reminders"}):
+            raise ValueError("send at least one choice to change, or stop_all_reminders")
+        return self
+
+
+class NotificationSettingsResponse(ResponseModel):
     preferences: NotificationPreferencesOut
-    masked_email: str = Field(description="Where email goes, shown masked. Works with Apple private email relay.")
-    shortcuts: list[Option] = Field(description="Use the same as another journey (when there is one), Keep it "
-                                                "simple for me, Choose for myself, Only in the app.")
-    questions: list[NotificationQuestion]
+    acknowledgment: str | None
+    next_step: NextStep
+    push_public_key: str | None = Field(default=None, description="For subscribing the browser. Null when browser "
+                                                                  "notifications aren't available.")
+
+
+class KeepInTouchQuestion(ResponseModel):
+    id: Literal["due_date_lead", "inactivity_after"]
+    prompt: str
+    options: list[Option]
+
+
+class KeepInTouchResponse(ResponseModel):
+    """UC-CASE-19. Reads back the account choices, then asks only lead time and inactivity, one per screen."""
+    opening: str
+    preferences: NotificationPreferencesOut
+    questions: list[KeepInTouchQuestion] = Field(description="Empty when the account frequency is none.")
+    change_link: Option = Field(description="Change how you hear from me: opens Settings (UC-REG-17).")
     next_step: NextStep
     read_aloud: ReadAloud
 
 
-class NotificationReadbackResponse(ResponseModel):
-    """Read back before saving. Nothing is stored."""
-    preferences: NotificationPreferencesOut
+class KeepInTouchIn(RequestModel):
+    """UC-CASE-19. Omit both, or send skip, to keep the defaults (OPEN-03)."""
+    due_date_lead: DueDateLead | None = None
+    inactivity_after: InactivityAfter | None = None
+    skip: bool = False
+
+
+# ------------------------------------------------------------------ Take a break (cairn-take-a-break-use-cases-v32)
+
+BreakScreenId = Literal["S-01", "S-02", "S-02b", "S-03", "S-04", "S-05", "S-06", "S-07"]
+BreakChoice = Literal["today", "three_days", "week", "until_back"]
+
+
+class BreakIn(RequestModel):
+    """Take a break. Without choice, opens the screen for where the user is. On an active journey, choice starts
+    the break (UC-BRK-05). care_level 2 to 4 makes it a care rest (UC-BRK-07)."""
+    choice: BreakChoice | None = None
+    care_level: Annotated[int, Field(ge=1, le=4)] = 1
+    session: IntakeSession | None = Field(default=None, description="Sets the care level from the conversation.")
+
+
+class BreakChangeIn(RequestModel):
+    """UC-BRK-11. Change how long."""
+    choice: BreakChoice
+    care_level: Annotated[int, Field(ge=1, le=4)] = 1
+
+
+class BreakState(ResponseModel):
+    on_break: bool
+    started_at: datetime | None
+    until: datetime | None = Field(description="Null with on_break means Until I come back.")
+    end_date: str | None = Field(description="The end in the user's time zone, in words.")
+    notice_at: datetime | None = Field(description="When the break-ending notice goes (UC-BRK-09). Null when none.")
+    notice_channels: list[NotificationChannel] = Field(default_factory=list)
+
+
+class BreakResponse(ResponseModel):
+    """One break screen (S-01 to S-07). Break screens show nothing from a case except the end date (UC-BRK-12)."""
+    screen: BreakScreenId
+    text: str
+    body: list[str] = Field(default_factory=list)
+    choices: list[Option] = Field(default_factory=list)
+    current_choice: BreakChoice | None = None
+    quiet_988_line: str | None = Field(default=None, description="BRK-D-04. On break screens after sign-in.")
+    support_resources_label: str
+    state: BreakState | None = None
     next_step: NextStep
 
 
-class NotificationSavedResponse(ResponseModel):
-    preferences: NotificationPreferencesOut
-    acknowledgment: str
-    next_step: NextStep = Field(description="request_push_permission when push was chosen and the OS hasn't "
-                                            "been asked, so the prompt only ever follows the user's choice.")
+# ------------------------------------------------------------------ home screen (UC-CASE-25)
 
-
-class PushPermissionIn(RequestModel):
-    granted: bool = Field(description="What the OS permission prompt returned.")
-
-
-class JourneyNotifications(ResponseModel):
-    case_id: UUID
-    display_name: str
+class HomeCaseCard(ResponseModel):
+    id: UUID
     status: str
-    preferences: NotificationPreferencesOut
+    display_name: str = Field(description="Shown on the card only. Never in the page title or browser tab.")
+    where_left_off: str | None = None
+    draft_notice: str | None = Field(default=None, description="The 28-day draft notice (UC-CASE-10).")
+    draft_expires_at: datetime | None = None
+    next_task: str | None = None
+    trial_line: str | None = Field(default=None, description="The free days end date. Never at care levels 3 and 4.")
+    actions: list[Option]
 
 
-class AccountNotificationsResponse(ResponseModel):
-    journeys: list[JourneyNotifications]
+class SubscribePrompt(ResponseModel):
+    """UC-SUB-01. At most once a session and once a day. Never at care levels 2 to 4 or during a break."""
+    title: str
+    body: str
+    options: list[Option]
+
+
+class HomeResponse(ResponseModel):
+    route: Literal["resume_setup", "resume_draft", "resting", "home"] = Field(
+        description="UC-REG-18. Where a returning sign-in goes first.")
+    greeting: str
+    page_title: str = Field(description="Never names the person who died.")
+    resting: BreakResponse | None = None
+    subscribe_prompt: SubscribePrompt | None = None
+    cases: list[HomeCaseCard]
+    notes: list[Note]
+    ai_reminder: str | None = Field(default=None, description="The session-start AI reminder, when due "
+                                                              "(UC-CASE-23).")
+    always_visible: list[str] = Field(description="Take a break, Support resources, Settings, Sign out, AI guide, "
+                                                  "Read this to me.")
+    support: Support
     next_step: NextStep
 
 
-class NotificationChangeIn(RequestModel):
-    """UC-CASE-20. stop_everything applies in one step. A choice is read back first and applied on confirm."""
-    scope: Literal["all"] | list[UUID] | None = Field(
-        default=None, description="Which journeys. Omit when there is only one. stop_everything with no scope "
-                                  "means all of them.")
-    stop_everything: bool = False
-    choice: NotificationChoice | None = None
-    confirm: bool = Field(default=False, description="true once the user said yes to the readback.")
+# ------------------------------------------------------------------ subscription (cairn-subscription-use-cases-v33)
 
-    @model_validator(mode="after")
-    def _what(self):
-        if self.stop_everything == (self.choice is not None):
-            raise ValueError("send stop_everything or a choice")
-        if isinstance(self.scope, list) and not self.scope:
-            raise ValueError("scope needs at least one journey")
-        return self
+class SubscriptionOut(ResponseModel):
+    """UC-SUB-23. From Cairn's stored fields. Loads without calling Stripe."""
+    status_line: str | None = Field(description="Null at care levels 3 and 4: no price wording there.")
+    breaks_note: str | None
+    subscription_status: SubscriptionStatus
+    access: AccessLevel
+    billing_notice: str | None
+    cancel_at_period_end: bool
+    current_period_end: datetime | None
+    actions: list[Option] = Field(description="Only the actions that apply.")
+    next_step: NextStep
 
 
-class NotificationChangeResponse(ResponseModel):
-    applied: bool
-    acknowledgment: str | None
-    readback: str | None
-    journeys: list[JourneyNotifications]
+class SubscriptionTermsResponse(ResponseModel):
+    """UC-SUB-02. Everything before any payment detail is asked for. The renewal terms sit next to the button."""
+    title: str
+    lines: list[str]
+    checkbox: Checkbox
+    button: str
+    links: list[Link]
+    price: str
+    legal_review_required: bool = True
+
+
+class CheckoutIn(RequestModel):
+    """UC-SUB-02 and UC-SUB-03. Sent when the user checked the box and selected Continue to payment."""
+    agreed: Literal[True]
+    document_version: Annotated[str, Field(min_length=1, max_length=200)]
+    client: ClientId
+    care_level: Annotated[int, Field(ge=1, le=4)] = 1
+
+
+class CheckoutResponse(ResponseModel):
+    checkout_url: str = Field(description="Stripe's hosted page. Redirect right away. Never stored.")
+
+
+class CheckoutResultResponse(ResponseModel):
+    """UC-SUB-04 and UC-SUB-05. From Cairn's own status, never from the redirect alone."""
+    state: Literal["finishing", "finishing_slow", "success", "left"]
+    message: str
+    next_step: NextStep
+
+
+class PortalIn(RequestModel):
+    purpose: Literal["update_payment", "invoices"]
+
+
+class PortalResponse(ResponseModel):
+    portal_url: str = Field(description="Created on demand. Never stored or emailed.")
+
+
+class CancelSubscriptionIn(RequestModel):
+    confirm: bool = Field(default=False, description="false shows the explainer. true cancels at the period end.")
+    care_level: Annotated[int, Field(ge=1, le=4)] = 1
+
+
+class CancelSubscriptionResponse(ResponseModel):
+    canceled: bool
+    message: str
+    subscription: SubscriptionOut
     next_step: NextStep
 
 
@@ -1465,7 +1653,6 @@ class ExportCase(ResponseModel):
     person_who_died: dict | None = Field(description="Legal identity, if it was given inside a task. Never the "
                                                      "Social Security number digits.")
     tasks: list[ExportTask]
-    notification_preferences: NotificationPreferencesOut
     notifications_sent: list[ExportNotificationSent]
     conversation: list[dict] = Field(description="Conversation text and records kept for this case.")
 
@@ -1478,6 +1665,8 @@ class DataExport(ResponseModel):
     profile: dict
     acknowledgments: list[ExportConsent]
     trial_reminders: list[ExportReminder]
+    notification_preferences: NotificationPreferencesOut
+    subscription: dict = Field(description="Status and dates only. Never a card, bank, or billing address.")
     cases: list[ExportCase]
 
 
@@ -1500,8 +1689,8 @@ class AccountMessageResponse(ResponseModel):
     acknowledgment: str | None
     body: list[str] = Field(default_factory=list, description="Statements, never questions.")
     support: list[SupportResource] = Field(default_factory=list)
-    proposal: NotificationChoice | None = Field(default=None, description="A notification change to read back. "
-                                                                          "Nothing is saved until confirmed.")
+    proposal: NotificationChannelsIn | None = Field(default=None, description="A channel change to read back. "
+                                                                              "Nothing is saved until confirmed.")
     redactions: list[str] = Field(default_factory=list)
     masked_text: str | None = None
     next_step: NextStep

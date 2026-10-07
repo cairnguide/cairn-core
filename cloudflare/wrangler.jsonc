@@ -46,9 +46,11 @@
   "triggers": {
     "crons": [
       "*/5 * * * *",   // outbound email
-      "*/15 * * * *",  // identity cleanup
-      "7 * * * *",     // held case deletion (UC-END-13) and trial clocks after a care rest (DEC-26-01), hourly
-      "30 3 * * *"     // draft cleanup (DEC-07), trial status, and sign-ups unfinished after 90 days (UC-REG-10), daily
+      "*/15 * * * *",  // identity cleanup, Stripe events and cancellations to retry (UC-SUB-22, UC-SUB-13)
+      "7 * * * *",     // held case deletion (UC-END-13), trial clocks after a care rest (DEC-26-01), early
+                       // subscribers' first charge (UC-SUB-06), hourly
+      "30 3 * * *"     // draft cleanup (DEC-07), access after the free days (D-19), sign-ups unfinished after 90 days
+                       // (UC-REG-10), and price change notices when one is scheduled (UC-SUB-18), daily
     ]
   },
 

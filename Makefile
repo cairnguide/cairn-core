@@ -7,7 +7,7 @@ PY := $(VENV)/bin/python
 MONGO_ADMIN_URI ?= mongodb://admin:admin@localhost:27017/?replicaSet=rs0
 LOGIN ?= test.user
 
-.PHONY: help setup db-apply seed-test-db dev-token run run-jobs job test test-db db-check lint openapi docker-build docker-run cf-install cf-types cf-check cf-dev cf-deploy cf-tail
+.PHONY: help setup db-apply seed-test-db dev-token run run-jobs job test test-db coverage db-check lint openapi docker-build docker-run cf-install cf-types cf-check cf-dev cf-deploy cf-tail
 
 help: ## List the commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-14s %s\n", $$1, $$2}'
@@ -40,6 +40,9 @@ test: ## Fast test suite, no database
 
 test-db: ## Every API test, including the use case and security suites, on a scratch database
 	cd api && CAIRN_TEST_MONGODB_URI='$(MONGO_ADMIN_URI)' ../$(PY) -m pytest -q -ra
+
+coverage: ## Every test with a coverage report for cairn_api. Fails under the floor in api/pyproject.toml
+	cd api && CAIRN_TEST_MONGODB_URI='$(MONGO_ADMIN_URI)' ../$(PY) -m pytest -q --cov --cov-report=term
 
 db-check: ## The data security suite only (roles, validators, case boundary, jobs) on a scratch database
 	cd api && CAIRN_TEST_MONGODB_URI='$(MONGO_ADMIN_URI)' ../$(PY) -m pytest -q -ra tests/test_data_security.py

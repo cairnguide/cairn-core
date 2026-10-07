@@ -409,12 +409,13 @@ def continue_intake(case_id: UUID, request: Request, req: SessionIn | None = Non
         session = session.model_copy(update={"safety_mode": SafetyMode.normal, "consecutive_skips": 0,
                                              "overwhelm_signals": 0})
         body = []
-        if case["status"] != "draft" and case["tasks_paused_until"] is not None:
+        if case["status"] != "draft" and c.account["break_started_at"] is not None:
+            # Coming back to tasks ends the break for the person (UC-BRK-10).
             paused = s.end_rest(case_id)
             case = intake.load_case(s, case_id)
             account = acct.load_account(s)
             if paused:
-                body.append(c.copy["rest_return_paused_note"].format(
+                body.append(c.brk["trial_resumed_after_care_rest"].format(
                     trial_end_date=acct.format_date(acct.local_trial_end(account))))
         response = intake.turn(c, case, answers, session, body=body,
                                acknowledgment=c.copy["continue_ack"] if was_level > 1 else None)
@@ -446,9 +447,11 @@ def level_2_choice(case_id: UUID, req: Level2ChoiceIn, request: Request,
                 _save_pending_step(c, case, answers, session)
                 case = intake.load_case(s, case_id)
                 return _pause_turn(c, case, answers, session, [], [], {})
-            step = NextStep(action="choose_rest", prompt=c.copy["rest_question"], options=intake.rest_options(c))
-            body = [] if c.account["status"] == "subscribed" or safety.no_billing(session) else [
-                c.copy["rest_care_clock_note"]]
+            # UC-BRK-07 at level 2: the care note once, only while the free days run. Nothing about a subscription.
+            step = NextStep(action="choose_rest", prompt=c.brk["rest_choices_question"],
+                            options=intake.rest_options(c))
+            body = [c.brk["rest_care_clock_note"]] if acct.on_free_days(c.account) and not safety.no_billing(
+                session) else []
             return intake.turn(c, case, answers, session, body=body, next_step=step)
         if req.choice == "small_thing":
             step = NextStep(action="small_task", prompt=c.copy["small_task_example"])
@@ -463,9 +466,11 @@ def level_2_choice(case_id: UUID, req: Level2ChoiceIn, request: Request,
     response_model=IntakeTurnResponse,
     summary="May Cairn check in tomorrow?",
     description=(
-        "DEC-26-04. Only on a yes, one private check-in tomorrow: by email if the user chose email for this "
-        "journey, otherwise the next time they open Cairn (OPEN-08 for drafts). It never names the person who "
-        "died, the circumstance, or any crisis, and it is cancelled if the case is deleted. A no stores nothing."
+        "DEC-26-04. Only on a yes, one private check-in tomorrow, stored on the account with this case's id: through "
+        "the account's notification channels (account D-13, which resolves OPEN-08), and in Cairn the next time the "
+        "user opens it. It ignores the frequency setting and respects quiet hours. It never names the person who "
+        "died, the circumstance, or any crisis, and it is cancelled if this case or the account is deleted. A no "
+        "stores nothing."
     ),
     responses=_DENIED,
 )
@@ -475,7 +480,7 @@ def check_in(case_id: UUID, req: CheckInIn, request: Request,
         c, case = _open_for_safety(s, request, case_id)
         session = (req.session or IntakeSession()).model_copy(update={"check_in_asked": True})
         if req.answer == "yes":
-            s.set_check_in(case_id, s.now + timedelta(days=1))
+            s.set_check_in(s.now + timedelta(days=1), case_id)
             s.audit("check_in_scheduled", case_id, "case", case_id)
         case, answers = _reload(c, case_id)
         ack = c.copy["check_in_yes_saved" if req.answer == "yes" else "check_in_no_saved"]
@@ -485,7 +490,7 @@ def check_in(case_id: UUID, req: CheckInIn, request: Request,
 
 def _pause_turn(c, case, answers, session, body, support, privacy, ack=None) -> IntakeTurnResponse:
     """UC-CASE-10. Plainly confirms everything is saved and that an untouched draft is deleted after 28 days."""
-    step = NextStep(action="paused", prompt=c.copy["pause"],
+    step = NextStep(action="paused", prompt=c.brk["draft_pause"],
                     options=[Option(value="keep_going", label=c.copy["keep_going"])])
     return intake.turn(c, case, answers, session, acknowledgment=ack or c.copy["answer_saved"], body=body,
                        support=support, next_step=step, **privacy)

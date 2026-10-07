@@ -7,8 +7,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request
 
 from .. import account as acct
-from .. import intake, journey, messages, safety
+from .. import breaks, intake, journey, messages, safety, subscription
 from .. import notifications as nt
+from ..account import CareLevel
 from ..auth import Identity, get_identity
 from ..db import Session
 from ..errors import ApiError, case_access_denied
@@ -58,7 +59,7 @@ def _journey_view(s: Session, request: Request, account: dict, case_id: UUID, no
         return JourneyResponse(**base, mode="not_started", weeks=[],
                                next_step=NextStep(action="preview_journey", prompt=c.copy["journey_preview_intro"]))
 
-    if s.take_due_check_in(case_id):
+    if s.take_due_check_in():
         # DEC-26-04. The check-in the user said yes to, shown once, because it isn't going by email.
         base["notes"] = [Note(kind="crisis", text=c.copy["check_in_in_cairn"]), *base["notes"]]
 
@@ -92,7 +93,7 @@ def _notice(c: intake.Ctx) -> PreButtonNotice | None:
     """UC-CASE-12 and UC-CASE-18. Before the button: when the free days begin, or that they don't change.
     A subscribed account sees no trial wording."""
     account = c.account
-    if account["status"] == "subscribed":
+    if acct.has_subscription(account) and not acct.on_free_days(account):
         text = c.copy["pre_button_notice_subscribed"]
     elif account["trial_started_at"] is None:
         text = c.copy["pre_button_notice"]
@@ -158,7 +159,8 @@ def preview(case_id: UUID, request: Request, identity: Identity = Depends(get_id
         path = definition["paths"][sel.path_key]
         explanation = c.copy[path["why_copy_key"]]
         is_draft = case["status"] == "draft"
-        chosen = nt.load(s, case_id) is not None
+        prefs = nt.load(s)
+        chosen = bool(prefs and prefs.get("journey_confirmed_at"))
         if not is_draft:
             notice, available = None, False
             step = NextStep(action="view_journey", prompt=c.copy["journey_preview_intro"])
@@ -172,17 +174,17 @@ def preview(case_id: UUID, request: Request, identity: Identity = Depends(get_id
             step = NextStep(action="death_not_yet", prompt=c.copy["death_not_yet_explain"],
                             options=[Option(value="save_draft", label=c.copy["save_draft_now"]),
                                      Option(value="has_happened", label=c.copy["death_has_happened"])])
-        elif ready.account["status"] == "read_only":
-            # UC-CASE-18. The only place outside day 29 where the subscription prompt is shown.
+        elif acct.is_read_only(ready.account):
+            # UC-SUB-07 (UC-CASE-18). The draft and its answers stay as they are either way.
+            sub = request.app.state.subscription_copy
             notice, available = None, False
-            step = NextStep(action="choose_subscription", prompt=c.copy["subscription_needed_new_journey"],
-                            options=[Option(value="subscribe", label=request.app.state.copy["subscribe_button"])])
+            step = NextStep(action="choose_subscription", prompt=sub["new_journey_needs_subscription"],
+                            options=acct.subscribe_step(sub).options)
         elif not chosen:
-            # UC-CASE-12 step 3 (UC-CASE-19): how Cairn keeps in touch, before the notice and the buttons.
+            # UC-CASE-12 step 3 (UC-CASE-19): confirm how Cairn keeps in touch, before the notice and the buttons.
             notice, available = _notice(c), True
-            names = nt.display_names(s, c.copy)
-            step = NextStep(action="choose_notifications", prompt=c.copy["notifications_intro"],
-                            options=nt.shortcuts(s, c.copy, case_id, names))
+            step = NextStep(action="confirm_keep_in_touch", prompt=c.copy["journey_preview_intro"],
+                            options=[Option(value="keep_in_touch", label=c.copy["change_notifications"])])
         else:
             notice, available = _notice(c), True
             step = NextStep(action="start_journey", prompt=notice.text,
@@ -231,9 +233,10 @@ def start(case_id: UUID, req: StartJourneyIn, request: Request,
         if req.session is not None and safety.no_billing(req.session):
             # UC-CASE-12 care_level_3_or_4. Nothing about billing. Setup waits until level 1.
             raise ApiError(409, "not_now", c.copy["safety_next"])
-        if ready.account["status"] == "read_only":
-            raise ApiError(403, "account_read_only", c.copy["subscription_needed_new_journey"],
-                           next_step=acct.subscribe_step(request.app.state.copy).model_dump())
+        if acct.is_read_only(ready.account):
+            sub = request.app.state.subscription_copy
+            raise ApiError(403, "account_read_only", sub["new_journey_needs_subscription"],
+                           next_step=acct.subscribe_step(sub).model_dump())
         if case["status"] != "draft":
             raise ApiError(409, "journey_already_started", "This journey has already started.")
         if case["death_not_yet_occurred"]:
@@ -248,21 +251,19 @@ def start(case_id: UUID, req: StartJourneyIn, request: Request,
         trial_started_now = s.start_journey(case_id, sel.template_version, sel.path_key)
         case = intake.load_case(s, case_id)
         intake.sync_tasks(s, case, answers, sel)
-        # No choice made at step 3 means in_app_only (UC-CASE-19).
-        nt.ensure_default(s, case_id)
 
         account = acct.load_account(s)
         c = intake.ctx(s, request, account)
         end_date = acct.local_trial_end(account)
         end = acct.format_date(end_date) if end_date else None
-        if account["status"] == "subscribed":
+        if trial_started_now:
+            key = "confirmation_first_case"
+        elif acct.has_subscription(account):
             key = "confirmation_subscribed"  # UC-CASE-18: no trial wording
         else:
-            key = "confirmation_first_case" if trial_started_now else "confirmation_existing_trial"
-        # The trial reminder always shows in Cairn. It also goes out only when the user chose a channel (OPEN-02).
-        clause = (c.copy["reminder_channel_clause_channel_chosen"].format(channel=c.copy["reminder_channel_email"])
-                  if nt.any_email_choice(s) else c.copy["reminder_channel_clause_in_cairn_only"])
-        confirmation = c.copy[key].format(trial_end_date=end, reminder_channel_clause=clause)
+            key = "confirmation_existing_trial"
+        # Account D-14: the trial-ending note is shown in Cairn and emailed a week before, to the sign-in email.
+        confirmation = c.copy[key].format(trial_end_date=end, email=account["email"])
 
         rows = journey.load_tasks(s, case_id)
         context = journey.task_context(c, case, answers)
@@ -296,7 +297,7 @@ def not_yet(case_id: UUID, request: Request, identity: Identity = Depends(get_id
         intake.touch(s, case_id)
         case, answers = intake.load_case(s, case_id), intake.load_answers(s, case_id)
         return FirstTaskResponse(case=intake.case_out(c, case, answers), acknowledgment=c.copy["not_yet_saved"],
-                                 task=None, next_step=NextStep(action="paused", prompt=c.copy["pause"]))
+                                 task=None, next_step=NextStep(action="paused", prompt=c.brk["draft_pause"]))
 
 
 @router.post(
@@ -323,7 +324,8 @@ def first_task(case_id: UUID, req: FirstTaskIn, request: Request,
         out = intake.case_out(c, case, answers)
         if req.choice == "not_today":
             # DEC-07: the free days keep counting while away. A subscribed account hears nothing about billing.
-            key = "not_today" if c.account["status"] == "trial_active" else "not_today_subscribed"
+            # Not today is not a break: no break fields are set (case UC-CASE-13 note).
+            key = "not_today" if acct.on_free_days(c.account) else "not_today_subscribed"
             return FirstTaskResponse(case=out, acknowledgment=c.copy[key], task=None,
                                      next_step=NextStep(action="paused", prompt=c.copy[key]))
         if req.choice == "small_task":
@@ -347,11 +349,12 @@ def first_task(case_id: UUID, req: FirstTaskIn, request: Request,
     description="UC-9 and UC-12. While paused, a calm check-in and no task list. A draft points to the preview.",
     responses=_DENIED,
 )
-def get_journey(case_id: UUID, request: Request, identity: Identity = Depends(get_identity)) -> JourneyResponse:
+def get_journey(case_id: UUID, request: Request, identity: Identity = Depends(get_identity),
+                care_level: CareLevel = 1) -> JourneyResponse:
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
         ready = acct.require_ready(s, request, write=False)
-        if ready.account["status"] != "read_only":
+        if not acct.is_read_only(ready.account):
             # Coming back to the journey is activity, for the inactivity reason (UC-CASE-19).
             intake.touch(s, case_id)
         return _journey_view(s, request, ready.account, case_id, notes=ready.notes)
@@ -362,9 +365,10 @@ def get_journey(case_id: UUID, request: Request, identity: Identity = Depends(ge
     response_model=JourneyResponse,
     summary="Step back from tasks for a while",
     description=(
-        "UC-12. Holds all progress exactly as it is. Stores only the time the pause ends. "
-        "No reason or feeling is collected or stored. Pausing doesn't stop or extend the 28 free days, and "
-        "the response says so (D-2026-09-25-P1). It also offers to change how Cairn keeps in touch (UC-CASE-20)."
+        "UC-12, kept for older clients. A normal break on the account for pause_days (UC-BRK-05), covering every "
+        "journey (BRK-D-06). Stores only when it ends. No reason or feeling is collected or stored. The free days "
+        "keep counting, and the response says so (DEC-07). A subscriber hears that the subscription keeps going as "
+        "normal (BRK-D-08). Prefer POST /v1/me/break."
     ),
     responses=_DENIED,
 )
@@ -374,18 +378,23 @@ def pause_journey(case_id: UUID, request: Request, req: PauseRequest | None = No
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
         ready = acct.require_ready(s, request, write=True)
-        s.update_case(case_id, activity=False, started_only=True,
-                      tasks_paused_until=s.now + timedelta(days=days))
+        if intake.load_case(s, case_id)["status"] == "draft":
+            raise case_access_denied()
+        s.begin_rest(case_id, s.now + timedelta(days=days), care=False)
         s.audit("journey_paused", case_id, "case", case_id)
         c = intake.ctx(s, request, ready.account)
         notes = [Note(kind="info", text=c.copy["pause_notifications_offer"])]
-        if ready.account["status"] == "trial_active":
-            notes.insert(0, Note(kind="account", text=c.copy["pause_trial_note"]))
+        if acct.on_free_days(ready.account):
+            notes.insert(0, Note(kind="account", text=c.brk["rest_normal_clock_note"].format(
+                trial_end_date=acct.format_date(acct.local_trial_end(ready.account)))))
+        if acct.has_subscription(ready.account):
+            notes.insert(0, Note(kind="account", text=c.brk["rest_subscription_note"]))
         return _journey_view(s, request, ready.account, case_id, notes=notes)
 
 
 @router.post("/journey/resume", response_model=JourneyResponse, summary="Pick the tasks back up",
-             description="UC-12. Returns the journey with the same single next action as before the pause.",
+             description="UC-12 and UC-BRK-10. Ends the break on the account and returns the journey with the same "
+                         "single next action as before.",
              responses=_DENIED)
 def resume_journey(case_id: UUID, request: Request, identity: Identity = Depends(get_identity)) -> JourneyResponse:
     with request.app.state.db.session(identity.subject) as s:
@@ -394,25 +403,29 @@ def resume_journey(case_id: UUID, request: Request, identity: Identity = Depends
         paused = s.end_rest(case_id)
         s.audit("journey_resumed", case_id, "case", case_id)
         notes = [messages.RESUMED]
+        account = acct.load_account(s)
         if paused:
-            # Crisis plan on_return: said once, after a care rest stopped the free days.
-            account = acct.load_account(s)
+            # UC-BRK-10: said once, after a care rest stopped the free days.
             c = intake.ctx(s, request, account)
-            notes.append(Note(kind="account", text=c.copy["rest_return_paused_note"].format(
+            notes.append(Note(kind="account", text=c.brk["trial_resumed_after_care_rest"].format(
                 trial_end_date=acct.format_date(acct.local_trial_end(account)))))
-        return _journey_view(s, request, acct.load_account(s), case_id, notes=notes)
+        view = _journey_view(s, request, account, case_id, notes=notes)
+    if paused:
+        subscription.sync_first_charge(request.app.state.stripe, account, datetime.now(timezone.utc))
+    return view
 
 
 @router.post(
     "/take-a-break",
     response_model=IntakeTurnResponse,
-    summary="Take a break",
+    summary="Take a break from this case",
     description=(
-        "Global rule take_a_break: one select, no confirmation. In a draft it saves and shows the pause message "
-        "(UC-CASE-10). On a journey, without rest_choice it offers the rest choices, and with one it sets the tasks "
-        "aside until then. A rest chosen at level 2 or above is a care rest and pauses the free days (DEC-26-01). "
-        "A rest in normal mode keeps them counting, and Cairn says so before pausing. Never needs a writable "
-        "account."
+        "UC-BRK-04 and UC-BRK-05 from inside a case conversation. One select, no confirmation. In a draft it saves "
+        "where the user left off and shows the draft pause (S-03), with the 28-day draft notice. On a journey, "
+        "without rest_choice it offers the four rest choices (S-04), and with one it starts a break on the account "
+        "for every journey (BRK-D-06). At care level 2 or above it is a care rest and pauses the free days while they "
+        "run (DEC-26-01). A normal rest keeps them counting, and Cairn says so first. Never needs a writable account, "
+        "and never touches a subscription (BRK-D-08)."
     ),
     responses=_DENIED,
 )
@@ -427,29 +440,31 @@ def take_a_break(case_id: UUID, request: Request, req: TakeABreakIn | None = Non
             raise case_access_denied()
         answers = intake.load_answers(s, case_id)
         session = req.session or IntakeSession()
-        care = safety.care_level(session) >= 2
+        level = safety.care_level(session)
         if case["status"] == "draft":
             if s.account_can_edit_drafts():
                 step = intake.next_field(answers, session)
                 s.update_case(case_id, last_intake_step=step.value if step else None)
                 case = intake.load_case(s, case_id)
             return intake.turn(c, case, answers, session, acknowledgment=c.copy["answer_saved"],
-                               next_step=NextStep(action="paused", prompt=c.copy["pause"],
+                               next_step=NextStep(action="paused", prompt=c.brk["draft_pause"],
                                                   options=[Option(value="keep_going", label=c.copy["keep_going"])]))
-        billing_ok = c.account["status"] == "trial_active" and not safety.no_billing(session)
         if req.rest_choice is None:
-            body = []
-            if billing_ok:
-                body.append(c.copy["rest_care_clock_note"] if care else c.copy["rest_normal_clock_note"].format(
-                    trial_end_date=acct.format_date(acct.local_trial_end(c.account))))
-            return intake.turn(c, case, answers, session, body=body, next_step=NextStep(
-                action="choose_rest", prompt=c.copy["rest_question"], options=intake.rest_options(c)))
-        s.begin_rest(case_id, intake.rest_until(c, req.rest_choice), care=care)
+            screen = breaks.rest_choices(c.brk, c.account, care_level=level if not safety.no_billing(session) else 3)
+            return intake.turn(c, case, answers, session, body=screen.body, next_step=NextStep(
+                action="choose_rest", prompt=c.brk["rest_choices_question"], options=intake.rest_options(c)))
+        until = intake.rest_until(c, req.rest_choice)
+        started = c.account["break_started_at"] if c.account["on_break"] else s.now
+        notice = breaks.notice_at(started, until, care=level >= 2, tz=c.account["time_zone"], prefs=nt.load(s),
+                                  send_without_reminders=request.app.state.settings.break_notice_without_reminders)
+        s.begin_break(until, care=level >= 2, notice_at=notice)
         s.audit("journey_rest_started", case_id, "case", case_id)
+        account = acct.load_account(s)
+        screen = breaks.started(c.brk, account, nt.load(s), care_level=level)
         case = intake.load_case(s, case_id)
-        return intake.turn(c, case, answers, session, acknowledgment=c.copy["rest_saved"], ask=False,
-                           next_step=NextStep(action="resting", prompt=c.copy["welcome_back_rest"],
-                                              options=[Option(value="resume", label=c.copy["keep_going"])]))
+        return intake.turn(c, case, answers, session, acknowledgment=screen.text, body=screen.body, ask=False,
+                           next_step=NextStep(action="resting", prompt=screen.text,
+                                              options=[Option(value="resume", label=c.brk["resting_back"])]))
 
 
 @router.get(
@@ -459,7 +474,8 @@ def take_a_break(case_id: UUID, request: Request, req: TakeABreakIn | None = Non
     description="UC-13. Grouped by certificates, agencies, financial institutions, and other areas.",
     responses=_DENIED,
 )
-def case_status(case_id: UUID, request: Request, identity: Identity = Depends(get_identity)) -> CaseStatusResponse:
+def case_status(case_id: UUID, request: Request, identity: Identity = Depends(get_identity),
+                care_level: CareLevel = 1) -> CaseStatusResponse:
     with request.app.state.db.session(identity.subject) as s:
         s.require_user()
         ready = acct.require_ready(s, request, write=False)

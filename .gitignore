@@ -10,3 +10,5 @@ api/results.xml
 node_modules/
 .wrangler/
 cloudflare/worker-configuration.d.ts
+.coverage
+htmlcov/

@@ -112,6 +112,7 @@ def delete_account(db, cs, idp_subject: str) -> bool:
     db.cases.update_many({"members.user_id": uid}, {"$pull": {"members": {"user_id": uid}}}, session=cs)
     for name in ("action_confirmation_outbox", "consents", "trial_reminders"):
         db[name].delete_many({"user_id": uid}, session=cs)
+    db.notification_preferences.delete_one({"_id": uid}, session=cs)
     db.users.delete_one({"_id": uid}, session=cs)
     return True
 
@@ -135,7 +136,7 @@ def seed(admin_uri: str, db_name: str, password: str, reset: bool = False,
                 s = store.Session(db, cs, cache={})
                 exists = s.resolve_user(login["idp_subject"]) is not None
                 if login["with_account"] and not exists:
-                    s.create_account(login["idp_subject"], login["email"], "email", None, "America/New_York")
+                    s.create_account(login["idp_subject"], login["email"], "email", time_zone="America/New_York")
                     done.append(f"created the {login['username']} account (onboarding not started)")
                 elif not login["with_account"] and exists:
                     done.append(f"{login['username']} has registered already. Run with --reset to register again")
