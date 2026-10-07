@@ -135,9 +135,31 @@ MIGRATIONS: list[tuple[str, object]] = [
 ]
 
 
-def _client(uri: str):
+CONNECT_ATTEMPTS = 6
+CONNECT_FIRST_DELAY = 2  # seconds, doubled after each failed attempt: 2, 4, 8, 16, 32
+
+
+def _client(uri: str, attempts: int = CONNECT_ATTEMPTS, first_delay: float = CONNECT_FIRST_DELAY):
+    """Connects and pings, retrying with exponential backoff. Just after a deploy run joins the Atlas IP
+    access list, the first connections can fail (often as a TLS handshake error) until Atlas has applied it."""
+    import time
     from pymongo import MongoClient
-    return MongoClient(uri, uuidRepresentation="standard", tz_aware=True)
+    from pymongo.errors import ConnectionFailure
+    delay = first_delay
+    for attempt in range(1, attempts + 1):
+        client = MongoClient(uri, uuidRepresentation="standard", tz_aware=True, serverSelectionTimeoutMS=10_000)
+        try:
+            client.admin.command("ping")
+            return client
+        except ConnectionFailure as exc:
+            client.close()
+            if attempt == attempts:
+                raise
+            # The error's type only. Its message can name hosts, and the URI is never logged.
+            print(f"Connecting to MongoDB failed ({type(exc).__name__}), attempt {attempt} of {attempts}. "
+                  f"Trying again in {delay:g} seconds.", file=sys.stderr)
+            time.sleep(delay)
+            delay *= 2
 
 
 def apply_collections(db, log=print) -> None:
