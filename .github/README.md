@@ -7,7 +7,8 @@
 | Push to any branch except `main` | [`branch-push.yml`](workflows/branch-push.yml) | Lint, plus the test files the push added or changed. If no test files changed, it runs the fast suite, which needs no database. |
 | Pull request into `main` | [`pull-request.yml`](workflows/pull-request.yml) | Lint, then every API test, including the data security suite (`api/tests/test_data_security.py`), on MongoDB 7.0 and 8.0. A skipped test counts as a failure. Coverage of `cairn_api` is reported, and the job fails under the floor in `api/pyproject.toml` (`[tool.coverage.report] fail_under`, 90%). |
 | Merge to `main` | [`pull-request.yml`](workflows/pull-request.yml) | The same full set, so `main` is re-verified after every merge. |
-| Run by hand | [`deploy-cloudflare.yml`](workflows/deploy-cloudflare.yml) | Deploys to Cloudflare: the MongoDB schema, templates, then the Worker and container image. See the repository README. The only way to deploy: Cloudflare Workers Builds is not connected. |
+| Run by hand | [`deploy-cloudflare.yml`](workflows/deploy-cloudflare.yml) | Deploys to Cloudflare: the database (`deploy-database.yml`), then the Worker and container image. See the repository README. The only way to deploy: Cloudflare Workers Builds is not connected. |
+| Run by hand, or called by the Cloudflare deploy | [`deploy-database.yml`](workflows/deploy-database.yml) | Deploys the MongoDB database for one GitHub environment: validates the templates, applies `database/db/schema.py`, runs any data migration in `MIGRATIONS` that hasn't run, then loads the templates. The run summary lists the migrations it ran. See [Deploy database](#deploy-database-deploy-databaseyml). |
 | Run by hand | [`twilio-integration.yml`](workflows/twilio-integration.yml) | Live checks against Twilio. Always checks the credentials (free). Sends one text, one Verify code, or one email only for the boxes you tick. Never runs on a push, a pull request, or a schedule, to save the Twilio trial's messages. |
 
 Database tests run against a throwaway MongoDB replica set with authentication on, started by [`scripts/start-mongodb.sh`](scripts/start-mongodb.sh) in Docker. The API connects to it as a `cairnApp` user, exactly as in production.
@@ -16,7 +17,27 @@ Database tests run against a throwaway MongoDB replica set with authentication o
 
 Every push and pull request runs the mocked Twilio tests in `api/tests/test_twilio_client.py`, which send nothing. The live tests are in `api/integration/`, outside pytest's `testpaths`, so those workflows never collect them.
 
-### Twilio integration ([`twilio-integration.yml`](workflows/twilio-integration.yml))
+### Deploy database ([`deploy-database.yml`](workflows/deploy-database.yml))
+
+Open **Actions > Deploy database > Run workflow** and pick the environment, or:
+
+```bash
+gh workflow run deploy-database.yml --ref main -f environment=cloudflare
+```
+
+It reads these from the chosen GitHub environment (Settings > Environments), or from the repository:
+
+| Name | Kind | Needed for |
+|---|---|---|
+| `CAIRN_ADMIN_MONGODB_URI` | Secret | Every run. A database administrator, for `database/db/apply.py` only |
+| `CAIRN_LOADER_MONGODB_URI` | Secret | Loading templates. The `cairn_loader` user (`cairnLoader` role only) |
+| `ATLAS_PUBLIC_KEY`, `ATLAS_PRIVATE_KEY`, `ATLAS_PROJECT_ID` | Secrets, optional | Admitting the runner's IP address to the Atlas access list for the run, then removing it. The API key needs the Project IP Access List Admin role. Leave all three out if the access list already admits GitHub's runners |
+| `CAIRN_MONGODB_DB` | Variable, optional | The database name, `cairn` when unset |
+| `CAIRN_MANAGE_ROLES` | Variable | `false` on Atlas, where roles are managed in Atlas |
+
+It refuses unreviewed templates when the environment is named `production`. Add required reviewers to an environment to approve each run.
+
+ ([`twilio-integration.yml`](workflows/twilio-integration.yml))
 
 Open **Actions > Twilio integration > Run workflow**, or:
 

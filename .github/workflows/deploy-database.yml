@@ -1,0 +1,182 @@
+# Deploys the MongoDB database: validates the templates, applies database/db/schema.py
+# (collections, validators, indexes, settings, then any data migration in MIGRATIONS
+# that hasn't run), and loads the task and journey templates.
+# Run it by hand from the Actions tab (Deploy database > Run workflow), or let
+# deploy-cloudflare.yml call it before deploying the Worker.
+#
+# Secrets, per GitHub environment (or the repository):
+#   CAIRN_ADMIN_MONGODB_URI    a database administrator, for database/db/apply.py only
+#   CAIRN_LOADER_MONGODB_URI   the cairnLoader user, for the template loader only
+#   ATLAS_PUBLIC_KEY           optional: an Atlas API key that can edit the project's IP
+#   ATLAS_PRIVATE_KEY            access list. When set, the run admits its own IP address
+#   ATLAS_PROJECT_ID             for the run and removes it afterwards.
+# Variables, per GitHub environment (or the repository):
+#   CAIRN_MONGODB_DB           the database name, cairn when unset
+#   CAIRN_MANAGE_ROLES         "false" on Atlas, where roles are managed in Atlas (database/README.md)
+name: Deploy database
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "GitHub environment whose secrets point at the database"
+        type: environment
+        required: true
+      allow_unreviewed_templates:
+        description: "Load templates that haven't had counsel review (never production)"
+        type: boolean
+        default: false
+      skip_templates:
+        description: "Apply the schema and migrations only"
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+      allow_unreviewed_templates:
+        type: boolean
+        default: false
+      skip_templates:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  database:
+    name: Database (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: deploy-database-${{ inputs.environment }}
+      cancel-in-progress: false
+    env:
+      CAIRN_MONGODB_DB: ${{ vars.CAIRN_MONGODB_DB || 'cairn' }}
+      ATLAS_PUBLIC_KEY: ${{ secrets.ATLAS_PUBLIC_KEY }}
+      ATLAS_PRIVATE_KEY: ${{ secrets.ATLAS_PRIVATE_KEY }}
+      ATLAS_PROJECT_ID: ${{ secrets.ATLAS_PROJECT_ID }}
+      ATLAS_API: https://cloud.mongodb.com/api/atlas/v2
+    steps:
+      - name: Refuse unreviewed templates in production
+        if: ${{ inputs.allow_unreviewed_templates && inputs.environment == 'production' }}
+        run: |
+          echo "::error::Unreviewed templates can't be loaded into production."
+          exit 1
+
+      - name: Check the secrets are set
+        env:
+          ADMIN_URI: ${{ secrets.CAIRN_ADMIN_MONGODB_URI }}
+          LOADER_URI: ${{ secrets.CAIRN_LOADER_MONGODB_URI }}
+          SKIP_TEMPLATES: ${{ inputs.skip_templates }}
+        run: |
+          missing=()
+          [[ -n "$ADMIN_URI" ]] || missing+=(CAIRN_ADMIN_MONGODB_URI)
+          [[ "$SKIP_TEMPLATES" == "true" || -n "$LOADER_URI" ]] || missing+=(CAIRN_LOADER_MONGODB_URI)
+          if [[ -n "$ATLAS_PUBLIC_KEY$ATLAS_PRIVATE_KEY$ATLAS_PROJECT_ID" &&
+                ( -z "$ATLAS_PUBLIC_KEY" || -z "$ATLAS_PRIVATE_KEY" || -z "$ATLAS_PROJECT_ID" ) ]]; then
+            missing+=("ATLAS_PUBLIC_KEY, ATLAS_PRIVATE_KEY, and ATLAS_PROJECT_ID (all three or none)")
+          fi
+          if (( ${#missing[@]} )); then
+            for name in "${missing[@]}"; do
+              echo "::error::Missing secret in the '${{ inputs.environment }}' environment: $name"
+            done
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: database/tools/requirements.txt
+
+      - name: Install database tools
+        run: pip install -r database/tools/requirements.txt
+
+      # Before touching the database, so bad content can't leave a half-finished deploy.
+      - name: Validate templates
+        if: ${{ !inputs.skip_templates }}
+        env:
+          ALLOW_UNREVIEWED: ${{ inputs.allow_unreviewed_templates }}
+        run: |
+          args=(--dry-run)
+          if [[ "$ALLOW_UNREVIEWED" == "true" ]]; then
+            args+=(--allow-unreviewed)
+          fi
+          python database/tools/load_templates.py "${args[@]}"
+
+      - name: Admit this runner to the Atlas IP access list
+        id: atlas
+        if: ${{ env.ATLAS_PUBLIC_KEY != '' }}
+        run: |
+          ip="$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')"
+          expires="$(date -u -d '+1 hour' +%Y-%m-%dT%H:%M:%SZ)"
+          atlas() {
+            curl -fsS --digest -u "$ATLAS_PUBLIC_KEY:$ATLAS_PRIVATE_KEY" \
+              -H 'Accept: application/vnd.atlas.2023-01-01+json' \
+              -H 'Content-Type: application/json' "$@"
+          }
+          atlas -X POST "$ATLAS_API/groups/$ATLAS_PROJECT_ID/accessList" -o /dev/null \
+            -d "[{\"ipAddress\": \"$ip\", \"comment\": \"GitHub Actions run $GITHUB_RUN_ID\", \"deleteAfterDate\": \"$expires\"}]"
+          echo "ip=$ip" >> "$GITHUB_OUTPUT"
+          for _ in $(seq 1 24); do
+            status="$(atlas "$ATLAS_API/groups/$ATLAS_PROJECT_ID/accessList/$ip/status" | jq -r .STATUS)"
+            if [[ "$status" == "ACTIVE" ]]; then
+              echo "Access list entry is active."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::The Atlas access list entry didn't become active within 2 minutes (last status: $status)."
+          exit 1
+
+      - name: Apply the schema and run pending migrations
+        env:
+          CAIRN_ADMIN_MONGODB_URI: ${{ secrets.CAIRN_ADMIN_MONGODB_URI }}
+          MANAGE_ROLES: ${{ vars.CAIRN_MANAGE_ROLES || 'true' }}
+        run: |
+          args=(--db "$CAIRN_MONGODB_DB")
+          if [[ "$MANAGE_ROLES" == "false" ]]; then
+            args+=(--skip-roles)
+          fi
+          set -o pipefail
+          python database/db/apply.py "${args[@]}" | tee apply.log
+          {
+            echo "### Schema (${{ inputs.environment }}, database \`$CAIRN_MONGODB_DB\`)"
+            echo
+            echo "Migrations run this deploy:"
+            grep '^migrate ' apply.log | sed 's/^migrate /- /' || echo "- none pending"
+            if grep -q '^WARNING' apply.log; then
+              echo
+              grep '^WARNING' apply.log | sed 's/^/> /'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          grep '^WARNING' apply.log | sed 's/^WARNING /::warning::/' || true
+
+      - name: Load templates
+        if: ${{ !inputs.skip_templates }}
+        env:
+          CAIRN_LOADER_MONGODB_URI: ${{ secrets.CAIRN_LOADER_MONGODB_URI }}
+          ALLOW_UNREVIEWED: ${{ inputs.allow_unreviewed_templates }}
+        run: |
+          args=(--git-release "${GITHUB_SHA::12}")
+          if [[ "$ALLOW_UNREVIEWED" == "true" ]]; then
+            args+=(--allow-unreviewed)
+          fi
+          set -o pipefail
+          python database/tools/load_templates.py "${args[@]}" | tee load.log
+          { echo; echo "### Templates"; echo; tail -n 1 load.log; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove this runner from the Atlas IP access list
+        if: ${{ always() && steps.atlas.outputs.ip != '' }}
+        env:
+          RUNNER_IP: ${{ steps.atlas.outputs.ip }}
+        run: |
+          curl -fsS --digest -u "$ATLAS_PUBLIC_KEY:$ATLAS_PRIVATE_KEY" \
+            -H 'Accept: application/vnd.atlas.2023-01-01+json' \
+            -X DELETE "$ATLAS_API/groups/$ATLAS_PROJECT_ID/accessList/$RUNNER_IP" -o /dev/null
