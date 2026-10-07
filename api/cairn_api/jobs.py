@@ -237,7 +237,7 @@ def create_jobs_app(jobs: dict[str, Callable[[], dict]] | None = None) -> FastAP
             result = job()
         except NotConfigured as missing:
             log.warning("job %s skipped: %s is not set", name, missing)
-            return JSONResponse({"job": name, "status": "skipped", "missing": str(missing)})
+            return JSONResponse({"job": name, "status": "skipped"})
         except Exception as exc:  # reported by class name only, never the message
             log.error("job %s failed: %s", name, type(exc).__name__)
             return JSONResponse({"job": name, "status": "error", "error": type(exc).__name__}, status_code=500)
