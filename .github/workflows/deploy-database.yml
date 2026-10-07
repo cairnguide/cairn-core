@@ -124,15 +124,18 @@ jobs:
           atlas -X POST "$ATLAS_API/groups/$ATLAS_PROJECT_ID/accessList" -o /dev/null \
             -d "[{\"ipAddress\": \"$ip\", \"comment\": \"GitHub Actions run $GITHUB_RUN_ID\", \"deleteAfterDate\": \"$expires\"}]"
           echo "ip=$ip" >> "$GITHUB_OUTPUT"
-          for _ in $(seq 1 24); do
+          # Up to 3 minutes. Atlas can report ACTIVE a little before the cluster accepts
+          # connections from the new address, so wait 10 more seconds once it does.
+          for _ in $(seq 1 36); do
             status="$(atlas "$ATLAS_API/groups/$ATLAS_PROJECT_ID/accessList/$ip/status" | jq -r .STATUS)"
             if [[ "$status" == "ACTIVE" ]]; then
               echo "Access list entry is active."
+              sleep 10
               exit 0
             fi
             sleep 5
           done
-          echo "::error::The Atlas access list entry didn't become active within 2 minutes (last status: $status)."
+          echo "::error::The Atlas access list entry didn't become active within 3 minutes (last status: $status)."
           exit 1
 
       - name: Apply the schema and run pending migrations
