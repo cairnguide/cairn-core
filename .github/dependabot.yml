@@ -1,12 +1,63 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
+# Dependabot version updates. One weekly pull request per ecosystem, with minor and patch updates grouped
+# so the queue stays short. Security updates are separate: turn on Dependabot alerts and security updates
+# under Settings > Code security, and they open pull requests as soon as an advisory lands.
+# Every pull request runs the full CI (.github/workflows/pull-request.yml) like any other change.
 # https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 
 version: 2
 updates:
-  - package-ecosystem: "" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  # The API and the jobs (api/pyproject.toml).
+  - package-ecosystem: "pip"
+    directory: "/api"
     schedule:
       interval: "weekly"
+    groups:
+      python-minor-and-patch:
+        update-types: ["minor", "patch"]
 
+  # The database tools (database/tools/requirements.txt), used by the deploy workflow.
+  - package-ecosystem: "pip"
+    directory: "/database/tools"
+    schedule:
+      interval: "weekly"
+    groups:
+      database-tools-minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  # The Cloudflare Worker (cloudflare/package.json): wrangler, @cloudflare/containers, typescript.
+  - package-ecosystem: "npm"
+    directory: "/cloudflare"
+    schedule:
+      interval: "weekly"
+    groups:
+      worker-minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  # The container image Cloudflare runs (Dockerfile). Python stays on 3.12, the version CI tests, until it's
+  # moved on purpose, so only patch updates of the base image are proposed.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    ignore:
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+
+  # The Codespaces environment (.devcontainer/docker-compose.yml). MongoDB stays on the versions CI tests
+  # (7.0 and 8.0), so only patch updates are proposed.
+  - package-ecosystem: "docker-compose"
+    directory: "/.devcontainer"
+    schedule:
+      interval: "weekly"
+    ignore:
+      - dependency-name: "mongo"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+
+  # The actions the workflows use (actions/checkout, setup-python, setup-node).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]
