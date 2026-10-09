@@ -4,6 +4,8 @@ Core functionality for the Cairn app: the HTTP API, the MongoDB schema, journey 
 
 Cairn walks a family through the logistics of a death, one step at a time. The data is highly sensitive, so security comes first: the case is the security boundary, enforced in one data-access layer that every request goes through (`api/cairn_api/store.py`), with MongoDB validators and least-privilege roles as the backstop.
 
+The full documentation (architecture diagrams, setting up an environment from nothing, secrets, encryption, and every third-party integration) is in [docs/](docs/README.md).
+
 - [Repository layout](#repository-layout)
 - [How it runs](#how-it-runs)
 - [Run it in GitHub Codespaces](#run-it-in-github-codespaces)
@@ -16,6 +18,7 @@ Cairn walks a family through the logistics of a death, one step at a time. The d
 
 | Folder | What's in it | More detail |
 |---|---|---|
+| `docs/` | Architecture, setup from the ground up, security, and integrations | [docs/README.md](docs/README.md) |
 | `api/` | The Cairn API (Python, FastAPI) and the scheduled jobs | [api/README.md](api/README.md) |
 | `database/` | The MongoDB schema (validators, indexes, roles), the template loader, and the user and data-moving tools | [database/README.md](database/README.md), [database/CLAUDE.md](database/CLAUDE.md) |
 | `journeys/` | Journey templates and their tools | [journeys/README.md](journeys/README.md) |

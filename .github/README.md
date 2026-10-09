@@ -37,7 +37,7 @@ It reads these from the chosen GitHub environment (Settings > Environments), or 
 
 It refuses unreviewed templates when the environment is named `production`. Add required reviewers to an environment to approve each run.
 
- ([`twilio-integration.yml`](workflows/twilio-integration.yml))
+### Twilio integration ([`twilio-integration.yml`](workflows/twilio-integration.yml))
 
 Open **Actions > Twilio integration > Run workflow**, or:
 
